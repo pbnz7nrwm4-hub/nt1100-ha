@@ -1,7 +1,7 @@
 name: NT1100 Jazdy
-version: "1.1.0"
+version: "1.2.0"
 slug: nt1100_jazdy
-description: Jazdy ze skrzynki telemetrycznej Hondy NT1100 - ta sama strona co w skrzynce, czujniki i powiadomienie po jezdzie
+description: Jazdy ze skrzynki telemetrycznej Hondy NT1100 - strona jazd, urzadzenie NT1100 przez MQTT, pogoda, serwis i powiadomienia
 arch:
   - amd64
   - aarch64
@@ -15,6 +15,8 @@ panel_title: NT1100 Jazdy
 homeassistant_api: true
 hassio_api: true
 hassio_role: manager
+services:
+  - mqtt:want
 map:
   - type: share
     read_only: false
@@ -30,3 +32,7 @@ schema:
   powiadomienie: str?
   adres_spoza_domu: str?
   klucz: str?
+  mqtt_host: str?
+  mqtt_port: port?
+  mqtt_user: str?
+  mqtt_password: password?

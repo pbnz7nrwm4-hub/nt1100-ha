@@ -6,4 +6,5 @@ Instalacja: Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria
 `https://github.com/pbnz7nrwm4-hub/nt1100-ha` → NT1100 Jazdy → Zainstaluj.
 
 - `nt1100_jazdy/` – strona jazd w Home Assistant (panel w menu bocznym), odbiór jazd ze skrzynki
-  (port 8098, tylko z kluczem), czujniki `sensor.nt1100_*`, powiadomienie po jeździe.
+  (port 8098, tylko z kluczem), urządzenie NT1100 przez MQTT, pogoda na trasie, przebieg
+  i serwis, powiadomienie po jeździe z rekordami.
