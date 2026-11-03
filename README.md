@@ -1,0 +1,9 @@
+# NT1100 Telemetria – dodatki Home Assistant
+
+Repozytorium dodatków Home Assistant dla skrzynki telemetrycznej Hondy NT1100.
+
+Instalacja: Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria → dodaj
+`https://github.com/pbnz7nrwm4-hub/nt1100-ha` → NT1100 Jazdy → Zainstaluj.
+
+- `nt1100_jazdy/` – strona jazd w Home Assistant (panel w menu bocznym), odbiór jazd ze skrzynki
+  (port 8098, tylko z kluczem), czujniki `sensor.nt1100_*`, powiadomienie po jeździe.
