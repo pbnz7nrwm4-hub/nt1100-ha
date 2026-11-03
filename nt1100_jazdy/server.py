@@ -24,7 +24,7 @@ import urllib.request
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 WWW = os.environ.get("NT_WWW", os.path.join(os.path.dirname(os.path.abspath(__file__)), "www"))
