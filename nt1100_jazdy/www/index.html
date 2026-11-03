@@ -305,8 +305,18 @@ let g='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="NT110
 for(const p of pts){g+='<trkpt lat="'+p[0]+'" lon="'+p[1]+'">';if(p[4]!==null)g+='<ele>'+p[4]+'</ele>';if(st!==null&&p[5]!==null)g+='<time>'+new Date(st+p[5]*1000).toISOString()+'</time>';g+='</trkpt>\n'}
 g+='</trkseg></trk></gpx>\n';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([g],{type:'application/gpx+xml'}));a.download=nm+'.gpx';a.click()}
 let SCANS=[];const pad3=n=>String(n).padStart(3,'0');
-function scanCard(L){if(!SCANS.length)return;const c=el('div','card');c.append(el('b',null,'Skany motocykla'));
+let SCANRUN=false;
+function scanCard(L){if(!SCANS.length&&isHA())return;const c=el('div','card');c.append(el('b',null,'Skany motocykla'));
+if(!isHA()){c.append(el('p','mut','Skan uruchamiasz stąd; skrzynka może zostać zamknięta w obudowie. Zapłon włączony, silnik na luzie (do skanu rozszerzonego najlepiej odpalony). Postęp i polecenia pojawią się tu.'));
+const a=el('div','acts');const b1=el('button','pri','Skan OBD2 (1,5 min)');const b2=el('button',null,'Skan rozszerzony (ok. 7 min)');const m=el('small');a.append(b1,b2,m);c.append(a);
+const pr=el('div','note');pr.hidden=true;c.append(pr);
+const start=async mode=>{b1.disabled=b2.disabled=true;m.className='';m.textContent=' uruchamianie...';try{const r=await api('api/scan?mode='+mode,{method:'POST'});if(!r.ok)throw await r.text();m.textContent='';follow(pr,b1,b2)}catch(e){m.className='bad-msg';m.textContent=' '+(typeof e==='string'&&e?e:'nie udało się');b1.disabled=b2.disabled=false}};
+b1.onclick=()=>start(1);b2.onclick=()=>start(2);if(SCANRUN)follow(pr,b1,b2)}
 for(const s of SCANS){const r=el('div','row scan');r.style.padding='6px 0';r.append(el('span',null,'Skan nr '+s.n),el('a',null,'pokaż ›'));r.onclick=()=>scanView(s);c.append(r)}L.append(c)}
+function follow(pr,b1,b2){pr.hidden=false;b1.disabled=b2.disabled=true;SCANRUN=true;let miss=0;const tick=async()=>{let j;try{j=await (await fetch('api/scanstatus')).json()}catch(e){if(++miss>3){pr.textContent='';pr.append(el('b',null,'Brak połączenia ze skrzynką'),el('div','mut','Sprawdź, czy telefon jest nadal w sieci Wi-Fi NT1100 (albo w tej samej sieci co skrzynka). Skan trwa dalej w skrzynce.'))}setTimeout(tick,2000);return}
+miss=0;pr.textContent='';if(j.running||j.pending){pr.append(el('b',null,j.pending&&!j.running?'Skan zaraz się zacznie...':'Skan nr '+j.number+' trwa · '+j.seconds+' s'));j.lines.forEach((l,i)=>{if(l)pr.append(el('div',i?null:'big',l))});setTimeout(tick,1000);return}
+SCANRUN=false;b1.disabled=b2.disabled=false;if(!j.finished){pr.hidden=true;return}pr.append(el('b',null,'Skan nr '+j.number+' zakończony'));for(const l of j.lines)if(l)pr.append(el('div',null,l));
+try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){}const s=SCANS.find(x=>x.n===j.number);if(s){const b=el('button','pri','Pokaż wynik');b.onclick=()=>scanView(s);const a=el('div','acts');a.append(b);pr.append(a)}};tick()}
 function table(head,rows){const w=el('div','tw');const t=el('table');const h=el('tr');for(const x of head)h.append(el('th',null,x));t.append(h);for(const r of rows){const tr=el('tr');for(const x of r){const td=el('td');if(x instanceof Node)td.append(x);else td.textContent=x;tr.append(td)}t.append(tr)}w.append(t);return w}
 function bytes(last,chg){const s=el('span','mono');const b=last?last.split(' '):[];b.forEach((x,i)=>{if(i)s.append(' ');s.append(el('span',chg&&chg[i]==='X'?'chg':null,x))});return s}
 const dtcName={'03':'zapisane','07':'oczekujące','0A':'stałe'};
@@ -442,7 +452,7 @@ const lk=el('input');lk.type='number';lk.value=it.last_km??'';lk.placeholder='km
 const a6=el('div','acts');const ad=el('button',null,'Dodaj pozycję');ad.onclick=()=>{svc.push({name:'',interval_km:6000,last_km:h.odo??null});drawS()};const sv=el('button','pri','Zapisz serwis');const m6=el('small');a6.append(ad,sv,m6);k.append(a6,el('small','mut','Gdy zostanie mniej niż 300 km, przyjdzie powiadomienie. Przycisk „Zrobione” jest w zakładce Stan i w Home Assistant (urządzenie NT1100).'));
 sv.onclick=async()=>{if(await save({service:svc.filter(x=>String(x.name).trim())},m6))await getState()}}
 
-async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){SCANS=[]}DATA=await (await fetch('api/rides')).json();DATA.rides.sort((a,b)=>rkey(b)-rkey(a)||b.n-a.n);document.getElementById('info').textContent=(isHA()?'Home Assistant · dodatek ':'rejestrator jazd · ')+DATA.fw;list();getState()}
+async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){SCANS=[]}DATA=await (await fetch('api/rides')).json();if(DATA.source!=='ha'){try{const q=await (await fetch('api/scanstatus')).json();SCANRUN=!!(q.running||q.pending)}catch(e){SCANRUN=false}}DATA.rides.sort((a,b)=>rkey(b)-rkey(a)||b.n-a.n);document.getElementById('info').textContent=(isHA()?'Home Assistant · dodatek ':'rejestrator jazd · ')+DATA.fw;list();getState()}
 async function remove(r){if(!confirm('Usunąć przejazd '+pad(r.n)+(isHA()?' z Home Assistant? Na karcie skrzynki zostaje.':' z karty? Tej operacji nie można cofnąć.')))return;
 const q=await api('api/delete?n='+r.n,{method:'POST'});if(!q.ok){alert('Nie udało się usunąć.');return}await reload()}
 async function detail(r){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);D._seek=null;
