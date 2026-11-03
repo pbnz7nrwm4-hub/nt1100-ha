@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NT1100 Jazdy</title>
+<style>
+:root{--bg:#0b1220;--card:#121b2d;--card2:#18233a;--ink:#e8edf6;--mut:#8b98ae;--line:#24324d;--acc:#3d8bfd;--acc2:#f76707;--thumb:#9cc2ff;--ok:#40c057;--warn:#fab005;--bad:#fa5252;color-scheme:dark}
+:root[data-theme=light]{--bg:#eef1f6;--card:#fff;--card2:#f4f6fa;--ink:#141a26;--mut:#5d6b80;--line:#dde3ec;--acc:#1c6ef2;--thumb:#2f4f7a;color-scheme:light}
+@media(prefers-color-scheme:light){:root[data-theme=auto]{--bg:#eef1f6;--card:#fff;--card2:#f4f6fa;--ink:#141a26;--mut:#5d6b80;--line:#dde3ec;--acc:#1c6ef2;--thumb:#2f4f7a;color-scheme:light}}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:18px 16px 8px;max-width:760px;margin:0 auto}
+h1{font-size:22px;margin:0;letter-spacing:.02em}h1 em{font-style:normal;color:var(--acc)}h2{font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin:22px 4px 6px}
+small,.mut{color:var(--mut)}
+.pills{display:flex;gap:6px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--card);border:1px solid var(--line);cursor:pointer}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex:0 0 8px}.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+main{padding:4px 12px 24px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
+.card>b:first-child{display:block;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:6px}
+.ride{cursor:pointer;display:flex;gap:14px;align-items:center;padding:10px;transition:border-color .15s}.ride:hover{border-color:var(--acc)}
+.ride .th{flex:0 0 112px;width:112px;height:84px;border-radius:10px;background:var(--card2) repeating-linear-gradient(35deg,transparent 0 14px,color-mix(in srgb,var(--line) 55%,transparent) 14px 15px)}
+.ride .tx{flex:1;min-width:0}.row{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.chev{color:var(--mut);font-size:22px;padding-right:4px}
+.big{font-size:17px;font-weight:600}.tag{font-size:12px;padding:2px 8px;border-radius:9px;background:var(--line);white-space:nowrap}
+.tag.ok{background:color-mix(in srgb,var(--ok) 25%,transparent)}.tag.wait{background:color-mix(in srgb,var(--warn) 25%,transparent)}.tag.bad{background:color-mix(in srgb,var(--bad) 25%,transparent)}
+.tot{display:flex;gap:8px}.tot div{flex:1;background:var(--card2);border-radius:10px;padding:10px 12px}.tot b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.tot span{font-size:12px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.grid div{background:var(--card2);border-radius:10px;padding:8px 10px}.grid b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.grid span{font-size:12px;color:var(--mut)}
+.card>svg{width:100%;height:auto;display:block;background:var(--card2);border-radius:10px}
+#map{height:340px;border-radius:10px;background:var(--card2)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin:8px 0 0}.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
+a{color:var(--acc)}button,select,input{font:inherit;color:var(--ink)}button{padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card2);cursor:pointer}button:hover{border-color:var(--acc)}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}button.warn{color:var(--bad)}.acts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.files a{display:inline-block;margin:4px 12px 4px 0}.pl{font-size:14px;margin-top:2px;color:var(--mut)}
+.tw{overflow-x:auto;margin-top:6px}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12px}.mono{font-family:ui-monospace,Menlo,monospace;white-space:nowrap}.chg{color:var(--acc2);font-weight:700}.scan{cursor:pointer}
+.lab{font:600 12px sans-serif;background:#fff;color:#1d2129;border:1px solid #999;border-radius:6px;padding:1px 5px;white-space:nowrap}
+.gauge{display:block;width:100%;max-width:420px;margin:6px auto 0}.pinfo{margin:6px 0 8px;font-variant-numeric:tabular-nums;text-align:center}.pc{display:flex;gap:8px;align-items:center;justify-content:center}.pc button{min-width:52px}.pc select{padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}input[type=range]{width:100%;margin-top:12px;accent-color:var(--acc)}
+.st{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}.st:first-of-type{border-top:0}.st .dot{margin-top:7px}.st div{flex:1;min-width:0}.st b{font-weight:600}.st .v{float:right;color:var(--mut);font-variant-numeric:tabular-nums;margin-left:8px}.st small{display:block}
+.seg{display:flex;background:var(--card2);border-radius:10px;padding:3px;margin:12px 0 2px;gap:3px}.seg button{flex:1;border:0;background:none;padding:7px}.seg button.on{background:var(--card);box-shadow:0 1px 3px #0003;font-weight:600}
+.mm{display:flex;gap:10px;margin:8px 0 2px;flex-wrap:wrap}.mm div{flex:1;min-width:58px;border-top:1px solid var(--line);padding-top:6px}.mm b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.mm b small{font-size:13px;font-weight:400}.mm span{font-size:12px;color:var(--mut)}
+.zb{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:10px 0 8px;background:var(--line)}.zr{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:14px}.zr i{width:12px;height:12px;border-radius:3px;flex:none}.zr span:nth-child(2){flex:1}.zr b{font-variant-numeric:tabular-nums;font-weight:600}.zr small{width:44px;text-align:right}
+.note{white-space:pre-wrap;margin:8px 0 0;padding:8px 10px;border-left:3px solid var(--acc);background:var(--card2);border-radius:6px}.note1{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+textarea{font:inherit;color:var(--ink);width:100%;min-height:76px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);box-sizing:border-box}
+.f{display:grid;gap:4px;margin:10px 0}.f label{font-size:13px;color:var(--mut)}.f input,.f select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}
+details summary{cursor:pointer;color:var(--acc);margin:6px 0}.ok-msg{color:var(--ok)}.bad-msg{color:var(--bad)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));z-index:1000}
+nav.tabs button{flex:1;max-width:180px;background:none;border:0;border-top:3px solid transparent;border-radius:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:var(--mut);padding:6px 4px}
+nav.tabs button.on{color:var(--acc);border-top-color:var(--acc)}nav.tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.star{border:0;background:none;font-size:24px;padding:0 4px;color:var(--warn);line-height:1}.star:not(.on){color:var(--mut)}.acts input{flex:1;min-width:0;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}.acts select{padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card2);max-width:100%}
+.trip{cursor:pointer;border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}.th.wide{width:100%;height:120px;flex:none;margin-top:10px}.legs{margin-top:8px;border-top:1px solid var(--line)}.leg{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer}.leg:hover{color:var(--acc)}
+.hb{display:grid;grid-template-columns:84px 1fr 52px;gap:8px;align-items:center;font-size:13px;margin:7px 0}.hb div{height:10px;background:var(--card2);border-radius:5px;overflow:hidden}.hb i{display:block;height:100%}.hb span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<header class="top"><div><h1>NT1100 <em>Telemetria</em></h1><small id="info">wczytywanie...</small></div><div id="pills" class="pills"></div></header>
+<main>
+<section id="v-rides"><div id="list"></div><div id="detail" hidden></div></section>
+<section id="v-stats" hidden></section>
+<section id="v-state" hidden></section>
+<section id="v-set" hidden><div class="card" id="upd"><b>Aktualizacja oprogramowania</b>
+<form method="POST" action="update" enctype="multipart/form-data" style="margin-top:8px">
+<input type="file" name="fw" accept=".bin"> <button type="submit">Wgraj</button></form>
+<small>Po wgraniu skrzynka uruchomi się ponownie.</small></div></section>
+</main>
+<nav class="tabs">
+<button id="t-rides" class="on" onclick="tab('rides')"><svg viewBox="0 0 24 24"><path d="M2 20l6-10 4 6 3-4 7 8z"/><circle cx="17" cy="5" r="2"/></svg>Jazdy</button>
+<button id="t-stats" onclick="tab('stats')"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Statystyki</button>
+<button id="t-state" onclick="tab('state')"><svg viewBox="0 0 24 24"><path d="M2 12h4l3-7 5 14 3-7h5"/></svg>Stan</button>
+<button id="t-set" onclick="tab('set')"><svg viewBox="0 0 24 24"><path d="M3 6h11M18 6h3M3 12h3M10 12h11M3 18h13M20 18h1"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Ustawienia</button>
+</nav>
+<script>
+const C=[[15,'#8fa3b8','do 15°'],[25,'#2f9e44','15–25°'],[35,'#f2c200','25–35°'],[45,'#f76707','35–45°'],[999,'#e03131','ponad 45°']];
+const col=l=>{if(l===null||isNaN(l))return '#8fa3b8';const a=Math.abs(l);for(const c of C)if(a<c[0])return c[1];return C[4][1]};
+const fmt=(v,d)=>v===null||v===undefined||isNaN(v)?'–':Number(v).toFixed(d||0);
+const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!==undefined)e.textContent=txt;return e};
+const pad=n=>String(n).padStart(4,'0');
+const dur=m=>m===null||m===undefined||isNaN(m)?'–':(m>=60?Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0')+' min':Math.round(m)+' min');
+let DATA=null,LEAF=null,STOP=null,AX='t',CSEL=null;try{AX=localStorage.getItem('nt-axis')||'t'}catch(e){}
+function kmArr(pts){const km=[0];for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i],dy=(b[0]-a[0])*111.2,dx=(b[1]-a[1])*111.2*Math.cos(a[0]*Math.PI/180),d=Math.hypot(dx,dy);km.push(km[i-1]+(d<5?d:0))}return km}
+function idxIn(xs,x){let a=0,b=xs.length-1;while(a<b){const m=(a+b)>>1;if(xs[m]<x)a=m+1;else b=m}return a}
+function hms(s){s=Math.round(s);return s>=3600?Math.floor(s/3600)+' h '+String(Math.floor(s%3600/60)).padStart(2,'0')+' min':s>=60?Math.floor(s/60)+' min '+String(s%60).padStart(2,'0')+' s':s+' s'}
+function mm(items){const d=el('div','mm');for(const [v,u,l] of items){const x=el('div');const b=el('b',null,v);if(v!=='–'&&u)b.append(el('small',null,u));x.append(b,el('span',null,l));d.append(x)}return d}
+function zones(pts){const sec=C.map(()=>0);let L=0,R=0;for(let i=0;i<pts.length;i++){const p=pts[i],l=p[2];if(l===null||p[3]===null||p[3]<10)continue;const a=Math.abs(l);let k=0;while(k<C.length-1&&a>=C[k][0])k++;sec[k]++;if(a>=15){if(l<0)L++;else R++}}
+const tot=sec.reduce((a,b)=>a+b,0);if(tot<10)return null;const k=el('div','card');k.append(el('b',null,'Czas w strefach przechyłu'));const bar=el('div','zb');k.append(bar);
+C.forEach((c,i)=>{if(!sec[i])return;const s=el('span');s.style.width=(100*sec[i]/tot)+'%';s.style.background=c[1];bar.append(s)});
+C.forEach((c,i)=>{const r=el('div','zr');const d=el('i');d.style.background=c[1];r.append(d,el('span',null,c[2]),el('b',null,hms(sec[i])),el('small','mut',Math.round(100*sec[i]/tot)+'%'));k.append(r)});
+if(L+R>0)k.append(el('p','mut','Zakręty od 15°: w lewo '+Math.round(100*L/(L+R))+'%, w prawo '+Math.round(100*R/(L+R))+'%. Liczone przy prędkości od 10 km/h.'));return k}
+function when(s){if(!s||!s.start)return 'brak czasu GPS';const d=new Date(s.start);
+return d.toLocaleDateString('pl-PL',{weekday:'short',day:'numeric',month:'short',year:'numeric'})+', '+d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})}
+function state(f,s){if(!DATA.upload)return['',''];if(f.lpbad!==undefined)return['odrzucona','bad'];if(s&&!(s.distance_km>0.1))return['',''];if(f.up!==undefined)return['wysłana','ok'];if(f.lp!==undefined)return['czeka na wysyłkę','wait'];return['','']}
+function stat(g,v,u,label){const d=el('div');d.append(el('b',null,v+(v==='–'?'':u)),el('span',null,label));g.append(d)}
+function stats(s,x){const g=el('div','grid');
+const nv=(a,b)=>a!==undefined&&a!==null?a:b;
+stat(g,fmt(s.distance_km,1),' km','dystans');stat(g,fmt(s.avg_speed),' km/h','średnia w ruchu');stat(g,fmt(s.max_speed),' km/h','prędkość maks.');
+stat(g,dur(s.moving_min),'','w ruchu');stat(g,s.total_min>=s.moving_min?dur(s.total_min-s.moving_min):'–','','postój');stat(g,dur(s.total_min),'','łącznie');
+stat(g,fmt(s.max_lean_left),'°','przechył w lewo');stat(g,fmt(s.max_lean_right),'°','przechył w prawo');stat(g,fmt(s.elevation_gain),' m','↑ wznios');
+stat(g,fmt(nv(s.elevation_loss,x.loss)),' m','↓ spadek');stat(g,fmt(nv(s.min_alt,x.minAlt)),' m','najniżej');stat(g,fmt(nv(s.max_alt,x.maxAlt)),' m','najwyżej');
+stat(g,fmt(s.max_accel_g,2),' g','przyspieszenie');stat(g,fmt(s.max_brake_g,2),' g','hamowanie');stat(g,fmt(s.max_lat_g,2),' g','w zakręcie');
+if(s.max_rpm)stat(g,fmt(s.max_rpm),'','obroty maks.');return g}
+async function text(url){const r=await fetch(url);if(!r.ok)throw 0;return r.text()}
+const parse=txt=>txt.split('\n').map(l=>l.split(',')).filter(a=>a.length>=2&&a[0]!=='').map(a=>{const n=i=>a[i]===''||a[i]===undefined?null:+a[i];return[+a[0],+a[1],n(2),n(3),n(4),n(5),n(6),n(7),n(8),n(9),n(10),n(11)]});
+function svgEl(t,a){const e=document.createElementNS('http://www.w3.org/2000/svg',t);for(const k in a)e.setAttribute(k,a[k]);return e}
+function proj(pts,W,H,P){const lat0=pts.reduce((a,p)=>a+p[0],0)/pts.length;const k=Math.cos(lat0*Math.PI/180);
+const xs=pts.map(p=>p[1]*k),ys=pts.map(p=>-p[0]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+const sc=Math.min((W-2*P)/Math.max(x1-x0,1e-9),(H-2*P)/Math.max(y1-y0,1e-9));const ox=(W-(x1-x0)*sc)/2,oy=(H-(y1-y0)*sc)/2;
+return{X:i=>((xs[i]-x0)*sc+ox).toFixed(1),Y:i=>((ys[i]-y0)*sc+oy).toFixed(1),far:i=>{if(i<1)return false;const km=Math.hypot((xs[i]-xs[i-1])*111,(ys[i]-ys[i-1])*111),dt=pts[i][5]!=null&&pts[i-1][5]!=null?pts[i][5]-pts[i-1][5]:0;return dt>0?dt>60||km/dt*3600>300:km>0.5}}}
+function thumb(pts,W,H){W=W||96;H=H||72;const svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H,class:'th'});if(pts.length<2)return svg;const p=proj(pts,W,H,6);
+let d='';for(let i=0;i<pts.length;i++)d+=(p.far(i)?'M':i?'L':'M')+p.X(i)+' '+p.Y(i);
+svg.append(svgEl('path',{d,fill:'none',stroke:'var(--thumb)','stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round'}));
+svg.append(svgEl('circle',{cx:p.X(0),cy:p.Y(0),r:3,fill:'#2f9e44'}));return svg}
+function list(){if(STOP)STOP();const L=document.getElementById('list');L.textContent='';document.getElementById('detail').hidden=true;L.hidden=false;
+const real=DATA.rides.filter(r=>r.summary&&r.summary.distance_km>0.1);
+if(real.length){const t=el('div','card');const g=el('div','tot');const km=real.reduce((a,r)=>a+r.summary.distance_km,0),mn=real.reduce((a,r)=>a+(r.summary.moving_min||0),0);
+for(const [v,l] of [[real.length,'jazd'],[fmt(km,0)+' km','łącznie'],[dur(mn),'w drodze']]){const d=el('div');d.append(el('b',null,String(v)),el('span',null,l));g.append(d)}t.append(g);L.append(t)}
+scanCard(L);
+if(!DATA.rides.length){L.append(el('div','card mut','Brak jazd na karcie.'));return}
+const todo=[];let mon='';const groups=trips();
+for(const t of groups){const r0=t.rides[0];const s0=r0.summary;const mk=s0&&s0.start?new Date(s0.start).toLocaleDateString('pl-PL',{month:'long',year:'numeric'}):'bez daty';if(mk!==mon){mon=mk;L.append(el('h2',null,mk))}
+L.append(t.rides.length>1?tripCard(t,todo):rideCard(r0,todo))}
+(async()=>{for(const [x,th] of todo){try{let tp=[];if(x.rides){for(const r of x.rides.slice().reverse())tp=tp.concat(await thmOf(r))}else tp=await thmOf(x);th.replaceWith(thumb(tp,x.rides?320:96,x.rides?120:72))}catch(e){}}
+if(!navigator.onLine)return;for(const [x,th] of todo){if(x.rides)continue;const r=x;if(r.name||r.auto||!r._thm||r._thm.length<2)continue;try{const p=r._thm;const a=await place(p[0][0],p[0][1]),b=await place(p[p.length-1][0],p[p.length-1][1]);if(a||b){r.auto=(a||'?')+' → '+(b||'?');const t=document.getElementById('rt'+r.n);if(t)t.textContent=r.auto}await new Promise(z=>setTimeout(z,1100))}catch(e){break}}})()}
+async function thmOf(r){if(!r._thm)r._thm=parse(await text('dl?view=1&f=/rides/'+pad(r.n)+'.thm'));return r._thm}
+function rname(r){return r.name||r.auto||when(r.summary)}
+async function setName(r,o){const q=new URLSearchParams({n:r.n});if(o.name!==undefined)q.set('name',o.name);if(o.fav!==undefined)q.set('fav',o.fav?'1':'0');if(o.note!==undefined)q.set('note',o.note);const x=await fetch('api/name?'+q,{method:'POST'});if(!x.ok)throw 0;if(o.name!==undefined)r.name=o.name;if(o.fav!==undefined)r.fav=!!o.fav;if(o.note!==undefined)r.note=o.note}
+function rideCard(r,todo){const c=el('div','card ride');const s=r.summary;const st=state(r.files,s);const th=el('div','th');c.append(th);const tx=el('div','tx');c.append(tx);
+const h=el('div','row');const ttl=el('span','big',(r.fav?'★ ':'')+rname(r));ttl.id='rt'+r.n;h.append(ttl);if(st[0])h.append(el('span','tag '+st[1],st[0]));tx.append(h);if(r.note)tx.append(el('small','mut note1',r.note));
+if(!s){tx.append(el('div','mut','jeszcze nie przeliczona'))}
+else if(!(s.distance_km>0.1)){tx.append(el('div','mut','postój, bez jazdy'))}
+else{tx.append(el('div',null,fmt(s.distance_km,1)+' km · '+dur(s.moving_min)+' · śr. '+fmt(s.avg_speed)+' km/h'));
+tx.append(el('div','mut','maks. '+fmt(s.max_speed)+' km/h · przechył '+fmt(s.max_lean_left)+'° / '+fmt(s.max_lean_right)+'°'));if(r.files.thm!==undefined)todo.push([r,th])}
+tx.append(el('small',null,when(s)+' · przejazd '+pad(r.n)));c.append(el('span','chev','›'));c.onclick=()=>detail(r);return c}
+function trips(){const out=[];let cur=null;for(const r of DATA.rides){const s=r.summary,real=s&&s.distance_km>0.1&&s.start&&s.end;if(!real){if(cur){out.push(cur);cur=null}out.push({rides:[r]});continue}
+const st=new Date(s.start).getTime(),en=new Date(s.end).getTime();if(cur&&cur.first-en>=0&&cur.first-en<(DATA.trip_gap_h??3)*3600e3){cur.rides.push(r);cur.first=st}else{if(cur)out.push(cur);cur={rides:[r],first:st,last:en}}}if(cur)out.push(cur);
+for(const t of out)if(t.rides.length>1){const rs=t.rides;t.km=rs.reduce((a,r)=>a+r.summary.distance_km,0);t.min=rs.reduce((a,r)=>a+(r.summary.moving_min||0),0);t.total=(t.last-t.first)/60000;t.stops=rs.length-1;t.maxv=Math.max(...rs.map(r=>r.summary.max_speed||0));t.ml=Math.max(...rs.map(r=>r.summary.max_lean_left||0));t.mr=Math.max(...rs.map(r=>r.summary.max_lean_right||0));t.gain=rs.reduce((a,r)=>a+(r.summary.elevation_gain||0),0);t.loss=rs.every(r=>r.summary.elevation_loss!==undefined)?rs.reduce((a,r)=>a+r.summary.elevation_loss,0):null;t.ride=rs.reduce((a,r)=>a+(r.summary.total_min||0),0)}return out}
+function tripName(t){const rs=t.rides,o=rs[rs.length-1],n=rs[0];const a=(o.name||o.auto||'').split(' → ')[0],b=(n.name||n.auto||'').split(' → ').pop();if(a&&b&&a!==b)return a+' → '+b;if(a)return a;return new Date(t.first).toLocaleDateString('pl-PL',{weekday:'short',day:'numeric',month:'short'})}
+function tripCard(t,todo){const rs=t.rides,c=el('div','card trip');const h=el('div','row');h.append(el('span','big','Wyjazd · '+tripName(t)),el('span','tag','jazd: '+rs.length));c.append(h);
+c.append(el('div',null,fmt(t.km,1)+' km · '+dur(t.min)+' w drodze · '+dur(t.total)+' razem · postoje: '+t.stops));
+const th=el('div','th wide');c.append(th);todo.push([t,th]);
+const legs=el('div','legs');for(const r of rs.slice().reverse()){const l=el('div','leg');l.append(el('span',null,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+(r.name||r.auto||'przejazd '+pad(r.n))),el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=e=>{e.stopPropagation();detail(r)};legs.append(l)}c.append(legs);c.onclick=()=>tripDetail(t);return c}
+async function tripDetail(t){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);
+const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);const c=el('div','card');D.append(c);c.append(el('div','big','Wyjazd · '+tripName(t)),el('small',null,when(t.rides[t.rides.length-1].summary)+' · '+t.rides.length+' jazd'));
+const g=el('div','grid');c.append(g);stat(g,fmt(t.km,1),' km','dystans');stat(g,fmt(t.min>0?t.km/(t.min/60):null),' km/h','średnia w ruchu');stat(g,fmt(t.maxv),' km/h','prędkość maks.');
+stat(g,dur(t.min),'','w ruchu');stat(g,dur(t.total-t.min),'','postoje i przerwy');stat(g,dur(t.total),'','łącznie z przerwami');
+stat(g,dur(Math.max(0,t.ride-t.min)),'','postoje z zapłonem');stat(g,dur(Math.max(0,t.total-t.ride)),'','przerwy ('+t.stops+')');stat(g,fmt(t.gain),' m','↑ wznios');
+stat(g,fmt(t.ml),'°','przechył w lewo');stat(g,fmt(t.mr),'°','przechył w prawo');stat(g,fmt(t.loss),' m','↓ spadek');
+const m=el('div','card');D.append(m);m.append(el('p','mut','wczytywanie trasy...'));let pts=[];try{for(const r of t.rides.slice().reverse())if(r.files.trk!==undefined)pts=pts.concat(parse(await text('dl?view=1&f=/rides/'+pad(r.n)+'.trk')));m.textContent='';
+if(pts.length>1){const mk=marks(pts);const mapDiv=el('div');mapDiv.id='map';m.append(mapDiv,legend());const z=zones(pts);if(z)m.after(z);const online=await leaflet();if(online){try{mapView(mapDiv,pts,mk)}catch(e){mapDiv.replaceWith(track(pts,mk))}}else mapDiv.replaceWith(track(pts,mk))}}catch(e){m.textContent='';m.append(el('p','mut','Błąd wczytywania trasy.'))}
+const k=el('div','card');k.append(el('b',null,'Jazdy w tym wyjeździe'));const legs=el('div','legs');for(const r of t.rides.slice().reverse()){const l=el('div','leg');l.append(el('span',null,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+rname(r)),el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=()=>detail(r);legs.append(l)}k.append(legs);D.append(k)}
+const SER={3:['Prędkość','km/h','#1971c2'],4:['Wysokość','m','#2f9e44'],2:['Przechył','°','#e8590c'],6:['Obroty','','#be4bdb'],7:['Bieg','','#868e96'],8:['Gaz','%','#f59f00'],9:['Temp. silnika','°C','#e03131'],10:['Przysp./hamowanie','g','#0ca678'],11:['Boczne g','g','#7950f2']};
+function opt(a){const s=SER[a];const o={color:s[2],unit:'',fill:a===3||a===4||a===8};if(a===3)o.zero=true;if(a===2){o.min=-60;o.max=60;o.step=30;o.lab=v=>(v>0?'P ':v<0?'L ':'')+Math.abs(v);o.unit='°'}if(a===7){o.min=0;o.max=6;o.step=1}if(a===8){o.min=0;o.max=100;o.step=25;o.unit='%'}return o}
+function sstat(ys,pos){let lo=Infinity,hi=-Infinity,sum=0,n=0;for(const y of ys){if(y===null||(pos&&y<=0))continue;if(y<lo)lo=y;if(y>hi)hi=y;sum+=y;n++}return n?{lo,hi,avg:sum/n}:null}
+function chart2(xs,pts,a,b,dist){const o=opt(a);o.right=b!==null;o.dist=dist;const svg=chart(xs,pts.map(p=>p[a]),o);if(b===null||!svg._X)return svg;
+const ys=pts.map(p=>p[b]);let lo=Infinity,hi=-Infinity;for(const y of ys)if(y!==null){lo=Math.min(lo,y);hi=Math.max(hi,y)}if(!isFinite(lo))return svg;if(b===2){lo=-60;hi=60}if(hi-lo<1)hi=lo+1;const step=b===2?30:nice((hi-lo)/4);if(b!==2){lo=Math.floor(lo/step)*step;hi=Math.ceil(hi/step)*step}
+const W=700,H=240,T=14,B=30,X=svg._X,Y=y=>(T+(H-T-B)*(1-(y-lo)/(hi-lo))).toFixed(1);
+for(let v=lo;v<=hi+1e-9;v+=step){const t=svgEl('text',{x:W-52,y:+Y(v)+5,'font-size':14,fill:SER[b][2],'text-anchor':'start'});t.textContent=(b===2?(v>0?'P ':v<0?'L ':'')+Math.abs(v):Math.round(v*100)/100)+SER[b][1];svg.append(t)}
+let d='',pen=false;for(let i=0;i<xs.length;i++){const y=ys[i];if(y===null){pen=false;continue}d+=(pen?'L':'M')+X(xs[i])+' '+Y(Math.max(lo,Math.min(hi,y)));pen=true}
+svg.append(svgEl('path',{d,fill:'none',stroke:SER[b][2],'stroke-width':2,'stroke-dasharray':'7 4'}));return svg}
+function customChart(D,pts,xs,CH,dist){const avail=Object.keys(SER).map(Number).filter(k=>pts.some(p=>p[k]!==null));if(avail.length<2)return;
+const k=el('div','card');k.append(el('b',null,'Własny wykres'));const row=el('div','acts');const mk=(lab,def,none)=>{const s=el('select');s.setAttribute('aria-label',lab);if(none){const o=el('option',null,'— tylko lewa —');o.value='';s.append(o)}for(const a of avail){const o=el('option',null,SER[a][0]+(none?' (prawa oś, przerywana)':''));o.value=a;if(a===def)o.selected=true;s.append(o)}return s};
+const sa=mk('Lewa oś',CSEL&&avail.includes(CSEL[0])?CSEL[0]:avail.includes(6)?6:avail[0]),sb=mk('Prawa oś',CSEL?(CSEL[1]!==null&&avail.includes(CSEL[1])?CSEL[1]:null):avail.includes(8)?8:(avail.includes(10)?10:null),true);if(CSEL&&CSEL[1]===null)sb.value='';row.append(sa,sb);k.append(row);let cur=null;
+let hd=null;const draw=()=>{const a=+sa.value,b=sb.value===''?null:+sb.value;CSEL=[a,b];const svg=chart2(xs,pts,a,b,dist);
+const ss=sstat(pts.map(p=>p[a]),a===6||a===7),d=a===10||a===11?2:0,u=SER[a][1]?' '+SER[a][1]:'';const h=ss?mm([[fmt(ss.lo,d),u,'minimum'],[fmt(ss.avg,d),u,'średnio'],[fmt(ss.hi,d),u,'maksimum']]):el('div');if(hd)hd.replaceWith(h);else k.append(h);hd=h;
+if(cur){const i=CH.indexOf(cur);if(i>=0)CH.splice(i,1);cur.replaceWith(svg)}else k.append(svg);cur=svg;CH.push(svg);if(CH._click)CH._click(svg);if(CH._i!==undefined)svg._cur(svg._xs[CH._i])};sa.onchange=sb.onchange=draw;D.append(k);draw()}
+function bars(keys,vals){const W=700,H=220,L=50,R=10,T=18,B=36;const svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H});const hi=Math.max(...vals,1);const step=nice(hi/3);const top=Math.ceil(hi/step)*step;const Y=v=>T+(H-T-B)*(1-v/top);
+for(let v=0;v<=top+1e-9;v+=step){svg.append(svgEl('line',{x1:L,x2:W-R,y1:Y(v),y2:Y(v),stroke:'#8885'}));const t=svgEl('text',{x:L-6,y:Y(v)+5,'font-size':13,fill:'#888','text-anchor':'end'});t.textContent=Math.round(v);svg.append(t)}
+const bw=(W-L-R)/keys.length;keys.forEach((k,i)=>{const x=L+bw*i+bw*0.15;svg.append(svgEl('rect',{x,y:Y(vals[i]),width:bw*0.7,height:(H-B)-Y(vals[i]),rx:4,fill:'var(--acc)'}));const t=svgEl('text',{x:x+bw*0.35,y:H-14,'font-size':13,fill:'#888','text-anchor':'middle'});t.textContent=k;svg.append(t);const v=svgEl('text',{x:x+bw*0.35,y:Y(vals[i])-5,'font-size':13,fill:'var(--ink)','text-anchor':'middle'});v.textContent=Math.round(vals[i]);svg.append(v)});return svg}
+async function statsView(){const V=document.getElementById('v-stats');V.textContent='';if(!DATA){V.append(el('p','mut','wczytywanie...'));return}
+const real=DATA.rides.filter(r=>r.summary&&r.summary.distance_km>0.1);if(!real.length){V.append(el('div','card mut','Jeszcze nie ma jazd.'));return}
+const T=trips().filter(t=>t.rides.length>1);const km=real.reduce((a,r)=>a+r.summary.distance_km,0),mn=real.reduce((a,r)=>a+(r.summary.moving_min||0),0);
+let c=el('div','card');c.append(el('b',null,'Razem'));const g=el('div','tot');for(const [v,l] of [[real.length,'jazd'],[fmt(km)+' km','łącznie'],[dur(mn),'w drodze'],[T.length,'wyjazdów']]){const d=el('div');d.append(el('b',null,String(v)),el('span',null,l));g.append(d)}c.append(g);V.append(c);
+const M={};for(const r of real){if(!r.summary.start)continue;const k=r.summary.start.slice(0,7);M[k]=(M[k]||0)+r.summary.distance_km}const keys=Object.keys(M).sort().slice(-12);
+if(keys.length){c=el('div','card');c.append(el('b',null,'Kilometry w miesiącach'),bars(keys.map(k=>new Date(k+'-01T00:00:00').toLocaleDateString('pl-PL',{month:'short'})+(keys.length>1&&keys[0].slice(0,4)!==keys[keys.length-1].slice(0,4)?' '+k.slice(2,4):'')),keys.map(k=>M[k])));V.append(c)}
+c=el('div','card');c.append(el('b',null,'Rekordy'));V.append(c);const open=r=>{tab('rides');detail(r)};
+const rec=(title,r,val)=>{const row=el('div','st');row.append(el('i','dot'));const d=el('div');d.append(el('span','v',val),el('b',null,title),el('small','mut',rname(r)+' · '+when(r.summary)));row.append(d);row.style.cursor='pointer';row.onclick=()=>open(r);c.append(row)};
+const best=(f)=>real.reduce((a,r)=>f(r.summary)>f(a.summary)?r:a);let r=best(s=>s.distance_km);rec('Najdłuższa jazda',r,fmt(r.summary.distance_km,1)+' km');
+r=best(s=>s.moving_min||0);rec('Najdłużej w drodze',r,dur(r.summary.moving_min));r=best(s=>s.max_speed||0);rec('Prędkość maksymalna',r,fmt(r.summary.max_speed)+' km/h');
+r=best(s=>s.max_lean_left||0);rec('Przechył w lewo',r,fmt(r.summary.max_lean_left)+'°');r=best(s=>s.max_lean_right||0);rec('Przechył w prawo',r,fmt(r.summary.max_lean_right)+'°');
+r=best(s=>s.elevation_gain||0);rec('Największe przewyższenie',r,fmt(r.summary.elevation_gain)+' m');
+if(T.length){const t=T.reduce((a,x)=>x.km>a.km?x:a);const row=el('div','st');row.append(el('i','dot'));const d=el('div');d.append(el('span','v',fmt(t.km,1)+' km'),el('b',null,'Najdłuższy wyjazd'),el('small','mut',tripName(t)+' · '+t.rides.length+' jazd'));row.append(d);row.style.cursor='pointer';row.onclick=()=>{tab('rides');tripDetail(t)};c.append(row)}
+c=el('div','card');c.append(el('b',null,'Przechyły (udział w czasie jazdy)'));const info=el('p','mut','liczenie...');c.append(info);V.append(c);
+const cnt=[0,0,0,0,0];let tot=0;for(const r of real){if(r.files.thm===undefined)continue;let p;try{p=await thmOf(r)}catch(e){continue}for(const q of p){if(q[2]===null||!(q[3]>5))continue;const a=Math.abs(q[2]);let i=0;while(i<4&&a>=C[i][0])i++;cnt[i]++;tot++}}
+info.remove();if(!tot){c.append(el('p','mut','Brak danych o przechyle.'));return}
+C.forEach((b,i)=>{const row=el('div','hb');const bar=el('div');const f=el('i');f.style.background=b[1];f.style.width=(cnt[i]/tot*100)+'%';bar.append(f);row.append(el('span',null,b[2]),bar,el('span','mut',fmt(cnt[i]/tot*100,1)+'%'));c.append(row)});
+c.append(el('small','mut','Liczone z próbek co 20 s przy prędkości powyżej 5 km/h.'))}
+function legend(){const g=el('div','legend');for(const c of C){const s=el('span');const i=el('i');i.style.background=c[1];s.append(i,c[2]);g.append(s)}return g}
+function marks(pts){const m={};let ml=0,mr=0,ms=-1;for(let i=0;i<pts.length;i++){const l=pts[i][2],v=pts[i][3];if(l!==null&&l<-ml&&-l>20){ml=-l;m.L=i}if(l!==null&&l>mr&&l>20){mr=l;m.R=i}if(v!==null&&v>ms){ms=v;m.V=i}}
+m.maxAlt=pts.reduce((a,p)=>p[4]!==null&&p[4]>a?p[4]:a,-Infinity);if(!isFinite(m.maxAlt))m.maxAlt=NaN;m.minAlt=pts.reduce((a,p)=>p[4]!==null&&p[4]<a?p[4]:a,Infinity);if(!isFinite(m.minAlt))m.minAlt=NaN;
+let ref=null;m.gain=0;m.loss=0;for(const p of pts){const a=p[4];if(a===null)continue;if(ref===null)ref=a;if(a>ref+3){m.gain+=a-ref;ref=a}else if(a<ref-3){m.loss+=ref-a;ref=a}}return m}
+function track(pts,m){const W=700,H=460;const p=proj(pts,W,H,24);const svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H});let run=[],rc=null;
+const flush=()=>{if(run.length>1)svg.append(svgEl('polyline',{points:run.join(' '),fill:'none',stroke:rc,'stroke-width':4,'stroke-linecap':'round','stroke-linejoin':'round'}))};
+for(let i=0;i<pts.length;i++){const c=col(pts[i][2]);if(p.far(i)){flush();run=[]}if(c!==rc&&run.length){run.push(p.X(i)+','+p.Y(i));flush();run=[run[run.length-1]]}rc=c;run.push(p.X(i)+','+p.Y(i))}flush();
+const dot=(i,f)=>svg.append(svgEl('circle',{cx:p.X(i),cy:p.Y(i),r:7,fill:f,stroke:'#fff','stroke-width':2}));
+const lab=(i,t)=>{const x=+p.X(i),y=+p.Y(i);const g=svgEl('g');const tx=svgEl('text',{x:x+10,y:y-8,'font-size':18,'font-weight':600,fill:'#1d2129'});tx.textContent=t;
+g.append(svgEl('rect',{x:x+5,y:y-24,width:t.length*10+10,height:22,rx:5,fill:'#fff',stroke:'#999'}),tx);svg.append(g)};
+dot(0,'#2f9e44');dot(pts.length-1,'#1d2129');
+if(m.L!==undefined){dot(m.L,'#e03131');lab(m.L,'L '+fmt(-pts[m.L][2])+'°')}if(m.R!==undefined){dot(m.R,'#e03131');lab(m.R,'P '+fmt(pts[m.R][2])+'°')}
+if(m.V!==undefined){dot(m.V,'#1971c2');lab(m.V,fmt(pts[m.V][3])+' km/h')}svg._p=p;return svg}
+function leaflet(){if(LEAF)return LEAF;LEAF=new Promise(res=>{if(window.L)return res(true);let done=false,left=2;const cssOk=()=>{const d=document.createElement('div');d.className='leaflet-pane';document.body.append(d);const ok=getComputedStyle(d).position==='absolute';d.remove();return ok};const fin=v=>{if(!done){done=true;res(v&&!!window.L&&cssOk())}};const one=()=>{if(--left===0)fin(true)};
+const c=document.createElement('link');c.rel='stylesheet';c.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';c.onload=one;c.onerror=()=>fin(false);document.head.append(c);
+const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';s.onload=one;s.onerror=()=>fin(false);document.head.append(s);setTimeout(()=>fin(false),6000)});return LEAF}
+function mapView(div,pts,m){const map=L.map(div,{zoomControl:false,attributionControl:true});
+const tl=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
+tl.once('tileerror',()=>{div.parentNode.insertBefore(el('p','mut','Podkład mapy niedostępny (brak internetu); sama trasa jest z karty.'),div.nextSibling)});
+let run=[],rc=null;const flush=()=>{if(run.length>1)L.polyline(run,{color:rc,weight:4,opacity:.95}).addTo(map)};
+for(let i=0;i<pts.length;i++){const c=col(pts[i][2]);const far=i>0&&Math.hypot(pts[i][0]-pts[i-1][0],(pts[i][1]-pts[i-1][1])*Math.cos(pts[i][0]*Math.PI/180))*111>0.5;
+if(far){flush();run=[]}if(c!==rc&&run.length){run.push([pts[i][0],pts[i][1]]);flush();run=[run[run.length-1]]}rc=c;run.push([pts[i][0],pts[i][1]])}flush();
+const dot=(i,f,t)=>{const k=L.circleMarker([pts[i][0],pts[i][1]],{radius:7,color:'#fff',weight:2,fillColor:f,fillOpacity:1}).addTo(map);if(t)k.bindTooltip(t,{permanent:true,direction:'top',offset:[0,-6],className:'lab'});return k};
+dot(0,'#2f9e44');dot(pts.length-1,'#1d2129');
+if(m.L!==undefined)dot(m.L,'#e03131','L '+fmt(-pts[m.L][2])+'°');if(m.R!==undefined)dot(m.R,'#e03131','P '+fmt(pts[m.R][2])+'°');if(m.V!==undefined)dot(m.V,'#1971c2',fmt(pts[m.V][3])+' km/h');
+map.fitBounds(L.latLngBounds(pts.map(p=>[p[0],p[1]])),{padding:[24,24]});return map}
+async function place(lat,lon){const k='geo:'+lat.toFixed(3)+','+lon.toFixed(3);try{const c=localStorage.getItem(k);if(c)return c}catch(e){}
+const ac=new AbortController();setTimeout(()=>ac.abort(),4000);
+const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat='+lat+'&lon='+lon,{signal:ac.signal});const j=await r.json();const a=j.address||{};
+const p=a.city||a.town||a.village||a.municipality||a.hamlet||a.suburb||j.name||'';try{if(p)localStorage.setItem(k,p)}catch(e){}return p}
+function nice(v){const e=Math.pow(10,Math.floor(Math.log10(v)));const f=v/e;return(f<=1?1:f<=2?2:f<=5?5:10)*e}
+function chart(xs,ys,o){const W=700,H=240,L=58,R=o.right?58:12,T=14,B=30;const svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H});
+let lo=o.min!==undefined?o.min:Infinity,hi=o.max!==undefined?o.max:-Infinity;if(o.min===undefined||o.max===undefined)for(const y of ys)if(y!==null){if(o.min===undefined&&y<lo)lo=y;if(o.max===undefined&&y>hi)hi=y}
+if(!isFinite(lo)||!isFinite(hi)){svg.append(svgEl('rect',{width:W,height:H,fill:'none'}));svg._X=null;return svg}if(hi-lo<1){hi=lo+1}if(o.min===undefined&&!o.zero)lo=Math.floor(lo/nice((hi-lo)/4))*nice((hi-lo)/4);if(o.zero)lo=Math.min(lo,0);
+const step=o.step||nice((hi-lo)/4);if(o.max===undefined)hi=Math.ceil(hi/step)*step;const x1=xs[xs.length-1]||1;
+const X=x=>(L+(W-L-R)*x/x1).toFixed(1),Y=y=>(T+(H-T-B)*(1-(y-lo)/(hi-lo))).toFixed(1);
+for(let v=lo;v<=hi+1e-9;v+=step){svg.append(svgEl('line',{x1:L,x2:W-R,y1:Y(v),y2:Y(v),stroke:v===0?'#888':'#8885','stroke-width':1}));
+const t=svgEl('text',{x:L-6,y:+Y(v)+5,'font-size':14,fill:'#888','text-anchor':'end'});t.textContent=(o.lab?o.lab(v):Math.round(v))+(o.unit||'');svg.append(t)}
+if(o.dist){const sx=nice(x1/6);for(let x=0;x<=x1+1e-9;x+=sx){const t=svgEl('text',{x:X(x),y:H-10,'font-size':14,fill:'#888','text-anchor':'middle'});t.textContent=fmt(x,sx<1?1:0)+' km';svg.append(t)}}
+else{const xs2=nice(x1/60/6)*60;for(let x=0;x<=x1;x+=xs2){const t=svgEl('text',{x:X(x),y:H-10,'font-size':14,fill:'#888','text-anchor':'middle'});t.textContent=x>=3600?(x/3600).toFixed(x%3600?1:0)+' h':Math.round(x/60)+' min';svg.append(t)}}
+let d='';let pen=false;for(let i=0;i<xs.length;i++){const y=ys[i];if(y===null){pen=false;continue}d+=(pen?'L':'M')+X(xs[i])+' '+Y(Math.max(lo,Math.min(hi,y)));pen=true}
+if(o.fill){let f='';pen=false;for(let i=0;i<xs.length;i++){const y=ys[i];if(y===null){if(pen)f+='L'+X(xs[i-1])+' '+Y(lo)+'Z';pen=false;continue}if(!pen)f+='M'+X(xs[i])+' '+Y(lo)+'L';else f+='L';f+=X(xs[i])+' '+Y(Math.max(lo,Math.min(hi,y)));pen=true}if(pen)f+='L'+X(xs[xs.length-1])+' '+Y(lo)+'Z';svg.append(svgEl('path',{d:f,fill:o.color,opacity:.15}))}
+svg.append(svgEl('path',{d,fill:'none',stroke:o.color,'stroke-width':2.5,'stroke-linejoin':'round'}));
+if(o.avg!==undefined&&isFinite(o.avg)&&o.avg>=lo&&o.avg<=hi){svg.append(svgEl('line',{x1:L,x2:W-R,y1:Y(o.avg),y2:Y(o.avg),stroke:'var(--ink)','stroke-width':1.5,'stroke-dasharray':'6 5',opacity:.7}));const t=svgEl('text',{x:W-R-4,y:+Y(o.avg)-6,'font-size':13,fill:'var(--ink)','text-anchor':'end'});t.textContent='średnio '+fmt(o.avg)+(o.unit||'');svg.append(t)}
+const cl=svgEl('line',{y1:T,y2:H-B,stroke:'var(--acc)','stroke-width':2,visibility:'hidden'});svg.append(cl);svg._cur=x=>{cl.setAttribute('x1',X(x));cl.setAttribute('x2',X(x));cl.setAttribute('visibility','visible')};svg._x=px=>Math.max(0,Math.min(x1,(px-L)/(W-L-R)*x1));svg._X=X;svg._xs=xs;svg.style.cursor='pointer';return svg}
+function player(D,after,pts,xs,map,trk,CH){const n=pts.length;if(n<2)return;
+const km=kmArr(pts);
+const g=pts.map((p,i)=>{const j=Math.max(0,i-1),k=Math.min(n-1,i+1),dt=xs[k]-xs[j];return dt>0&&pts[k][3]!==null&&pts[j][3]!==null?(pts[k][3]-pts[j][3])/3.6/dt/9.81:0});
+const card=el('div','card');after.after(card);card.append(el('b',null,'Odtwarzanie jazdy'));
+const G=svgEl('svg',{viewBox:'0 0 380 214',class:'gauge'});card.append(G);
+const arc=(a0,a1,r)=>{const P=a=>[190+r*Math.sin(a*Math.PI/180),150-r*Math.cos(a*Math.PI/180)];const p=P(a0),q=P(a1);return 'M'+p[0].toFixed(1)+' '+p[1].toFixed(1)+'A'+r+' '+r+' 0 0 '+(a1>a0?1:0)+' '+q[0].toFixed(1)+' '+q[1].toFixed(1)};
+G.append(svgEl('path',{d:arc(-60,60,120),fill:'none',stroke:'var(--line)','stroke-width':14,'stroke-linecap':'round'}));
+const mL=svgEl('path',{fill:'none',stroke:'#e03131','stroke-width':14,opacity:.35});const mR=svgEl('path',{fill:'none',stroke:'#e03131','stroke-width':14,opacity:.35});G.append(mL,mR);
+const cur=svgEl('path',{fill:'none',stroke:'var(--acc)','stroke-width':14,'stroke-linecap':'round'});G.append(cur);
+const tx=(x,y,s,w,a)=>{const t=svgEl('text',{x,y,'font-size':s,'font-weight':w||400,'text-anchor':a||'middle',fill:'var(--ink)'});G.append(t);return t};
+for(const v of[-60,-30,0,30,60]){const a=v,r=96,x=190+r*Math.sin(a*Math.PI/180),y=150-r*Math.cos(a*Math.PI/180)+5;const t=tx(x.toFixed(0),y.toFixed(0),12);t.setAttribute('fill','var(--mut)');t.textContent=Math.abs(v)+'°'}
+const tLean=tx(190,96,22,600),tSpd=tx(190,140,40,700),tUnit=tx(190,162,13);tUnit.textContent='km/h';tUnit.setAttribute('fill','var(--mut)');
+const tL=tx(70,186,13,400,'start'),tR=tx(310,186,13,400,'end');tL.setAttribute('fill','var(--mut)');tR.setAttribute('fill','var(--mut)');
+const info=el('div','mut pinfo');card.append(info);
+const vbar=(x,c,max,lab,anc)=>{const y0=20,h=150;G.append(svgEl('rect',{x,y:y0,width:16,height:h,rx:4,fill:'var(--line)'}));const f=svgEl('rect',{x,y:y0+h,width:16,height:0,rx:4,fill:c});G.append(f);
+for(const v of[0,max/2,max]){const y=y0+h-h*v/max;const t=tx(anc==='start'?x+22:x-6,(y+4).toFixed(0),11,400,anc);t.setAttribute('fill','var(--mut)');t.textContent=v.toFixed(1)}
+const val=tx(anc==='start'?x:x+16,200,15,700,anc);const l=tx(anc==='start'?x:x+16,212,10,400,anc);l.setAttribute('fill','var(--mut)');l.textContent=lab;
+return g=>{const k=Math.min(1,Math.max(0,g)/max);f.setAttribute('y',(y0+h-h*k).toFixed(1));f.setAttribute('height',(h*k).toFixed(1));val.textContent=fmt(Math.max(0,g),2)+' g'}};
+const sB=vbar(8,'#e03131',0.8,'HAMOWANIE','start'),sA=vbar(356,'#2f9e44',0.6,'PRZYSPIESZENIE','end');
+const ctl=el('div','pc');card.append(ctl);const bs=(t,f)=>{const b=el('button',null,t);b.onclick=f;ctl.append(b);return b};
+const sl=el('input');sl.type='range';sl.min=0;sl.max=n-1;sl.value=0;sl.setAttribute('aria-label','Pozycja na trasie');
+let i0=0,run=false,mult=30,raf=0,last=0,tpos=xs[0];
+const set=i=>{i=Math.max(0,Math.min(n-1,Math.round(i)));i0=i;sl.value=i;const p=pts[i],l=p[2];
+let lo=0,hi=0;for(let k=0;k<=i;k++){const v=pts[k][2];if(v!==null){if(v<lo)lo=v;if(v>hi)hi=v}}
+const cl=x=>Math.max(-60,Math.min(60,x));cur.setAttribute('d',l===null||Math.abs(l)<0.5?'':arc(0,cl(l),120));mL.setAttribute('d',lo<-0.5?arc(0,cl(lo),120):'');mR.setAttribute('d',hi>0.5?arc(0,cl(hi),120):'');
+tLean.textContent=l===null?'–':(l<0?'L ':l>0?'P ':'')+fmt(Math.abs(l))+'°';tSpd.textContent=fmt(p[3]);tL.textContent='maks. L '+fmt(-lo)+'°';tR.textContent='maks. P '+fmt(hi)+'°';
+sA(g[i]);sB(-g[i]);
+const s=xs[i]-xs[0];info.textContent=Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0')+' · '+fmt(km[i],1)+' / '+fmt(km[n-1],1)+' km'+(p[4]!==null?' · '+fmt(p[4])+' m n.p.m.':'');
+if(mk)mk.setLatLng?mk.setLatLng([p[0],p[1]]):(mk.setAttribute('cx',trk._p.X(i)),mk.setAttribute('cy',trk._p.Y(i)));
+CH._i=i;for(const c of CH)c._cur(c._xs[i])};
+let mk=null;if(map)mk=L.circleMarker([pts[0][0],pts[0][1]],{radius:9,color:'#fff',weight:3,fillColor:'#e8590c',fillOpacity:1}).addTo(map);
+else if(trk&&trk._p){mk=svgEl('circle',{r:10,fill:'#e8590c',stroke:'#fff','stroke-width':3});trk.append(mk)}
+const idx=x=>{let a=0,b=n-1;while(a<b){const m=(a+b)>>1;if(xs[m]<x)a=m+1;else b=m}return a};
+const stop=()=>{run=false;cancelAnimationFrame(raf);pb.textContent='▶'};STOP=stop;
+const tick=ts=>{if(!run)return;const dt=last?(ts-last)/1000:0;last=ts;tpos+=dt*mult;const i=idx(tpos);set(i);if(i>=n-1){stop();return}raf=requestAnimationFrame(tick)};
+bs('⏮',()=>{stop();tpos=xs[0];set(0)});const pb=bs('▶',()=>{if(run){stop();return}if(i0>=n-1){i0=0}tpos=xs[i0];run=true;last=0;pb.textContent='⏸';raf=requestAnimationFrame(tick)});bs('⏭',()=>{stop();set(n-1)});
+const sp=el('select');sp.setAttribute('aria-label','Tempo');for(const v of[10,30,60,120]){const o=el('option',null,'×'+v);o.value=v;if(v===mult)o.selected=true;sp.append(o)}sp.onchange=()=>{mult=+sp.value};ctl.append(sp);
+card.append(sl);sl.oninput=()=>{stop();set(+sl.value);tpos=xs[i0]};
+const hook=c=>{if(c._hk)return;c._hk=1;c.addEventListener('click',e=>{const r=c.getBoundingClientRect();stop();set(idxIn(c._xs,c._x((e.clientX-r.left)/r.width*700)));tpos=xs[i0]})};CH._click=hook;for(const c of CH)hook(c);
+set(0)}
+
+function gpx(r,pts){const st=r.summary&&r.summary.start?new Date(r.summary.start).getTime():null;const nm=r.summary&&r.summary.ride?r.summary.ride:'jazda-'+pad(r.n);
+let g='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="NT1100 Telemetria" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>'+nm+'</name><trkseg>\n';
+for(const p of pts){g+='<trkpt lat="'+p[0]+'" lon="'+p[1]+'">';if(p[4]!==null)g+='<ele>'+p[4]+'</ele>';if(st!==null&&p[5]!==null)g+='<time>'+new Date(st+p[5]*1000).toISOString()+'</time>';g+='</trkpt>\n'}
+g+='</trkseg></trk></gpx>\n';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([g],{type:'application/gpx+xml'}));a.download=nm+'.gpx';a.click()}
+let SCANS=[];const pad3=n=>String(n).padStart(3,'0');
+function scanCard(L){if(!SCANS.length)return;const c=el('div','card');c.append(el('b',null,'Skany motocykla'));
+for(const s of SCANS){const r=el('div','row scan');r.style.padding='6px 0';r.append(el('span',null,'Skan nr '+s.n),el('a',null,'pokaż ›'));r.onclick=()=>scanView(s);c.append(r)}L.append(c)}
+function table(head,rows){const w=el('div','tw');const t=el('table');const h=el('tr');for(const x of head)h.append(el('th',null,x));t.append(h);for(const r of rows){const tr=el('tr');for(const x of r){const td=el('td');if(x instanceof Node)td.append(x);else td.textContent=x;tr.append(td)}t.append(tr)}w.append(t);return w}
+function bytes(last,chg){const s=el('span','mono');const b=last?last.split(' '):[];b.forEach((x,i)=>{if(i)s.append(' ');s.append(el('span',chg&&chg[i]==='X'?'chg':null,x))});return s}
+const dtcName={'03':'zapisane','07':'oczekujące','0A':'stałe'};
+async function scanView(s){const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);
+const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);const c=el('div','card');D.append(c);c.append(el('div','big','Skan motocykla nr '+s.n));
+let j;try{j=JSON.parse(await text('dl?view=1&f=/scan/skan-'+pad3(s.n)+'.json'))}catch(e){c.append(el('p','mut','Nie udało się wczytać wyniku skanu.'));return}
+c.append(el('div',null,(j.queries?'nasłuch + standardowe zapytania OBD2':'tylko nasłuch')+' · '+j.seconds+' s'));
+if(!j.kbps)c.append(el('p',null,'Nie wykryto magistrali CAN. Sprawdź przewody (CAN H, CAN L, masa) i czy zapłon był włączony.'+(j.queries?'':' W trybie „tylko nasłuch” cisza może też znaczyć, że motocykl sam nic nie nadaje: spróbuj trybu „Nasłuch + OBD2”.')));
+else{c.append(el('div',null,'Magistrala '+j.kbps+' kbit/s'+(j.probe?' (cicha, potwierdzona jednym zapytaniem)':'')+' · ramek: '+j.frames+' · różnych ID: '+j.ids.length));
+if(j.busSilent)c.append(el('p','mut','Motocykl sam z siebie nic nie nadaje na tym złączu, odpowiada tylko na zapytania.'))}
+const o=j.obd;const k=el('div','card');D.append(k);k.append(el('b',null,'OBD2'));
+if(!o)k.append(el('p','mut','Pominięte (wybrano tylko nasłuch).'));
+else if(!o.answered)k.append(el('p',null,'Brak odpowiedzi na standardowe zapytania OBD2 ('+o.sent+' zapytań).'));
+else{k.append(el('p',null,'Odpowiada: '+o.ecus.map(e=>'sterownik '+e.id).join(', ')+' · obsługiwanych PID-ów: '+o.pids.length));
+k.append(table(['Opis','Wartość','Min – maks','Surowe','PID'],o.pids.map(p=>[p.name,p.v===null?'–':p.v+(p.unit?' '+p.unit:''),p.n>1&&p.lo!==null?(p.lo===p.hi?'stała':p.lo+' – '+p.hi):'',el('span','mono',p.raw),p.p])));
+const d=el('div');d.style.marginTop='10px';for(const m of ['03','07','0A']){const list=o.dtc.filter(x=>x.m===m).map(x=>x.c);d.append(el('div',null,'Kody usterek '+dtcName[m]+': '+(list.length?list.join(', '):o.dtcAsked[m]?'brak':'brak odpowiedzi')))}k.append(d);
+for(const i of o.info)k.append(el('div',null,(i.p==='02'?'VIN':i.p==='04'?'Kalibracja':i.p==='0A'?'Nazwa sterownika':'Info '+i.p)+': '+i.t))}
+if(j.ids.length){const g=el('div','card');D.append(g);g.append(el('b',null,'Ramki nadawane przez motocykl'),el('p','mut','Pomarańczowe bajty zmieniały się w czasie skanu: tam mogą być obroty, gaz, bieg, przełączniki.'));
+g.append(table(['ID','Hz','Ostatnie dane','Ile'],j.ids.map(x=>[el('span','mono',x.id),x.hz,bytes(x.last,x.chg),x.n])))}
+const f=el('div','card files');f.append(el('b',null,'Pliki do odesłania'),el('br'));const nm={txt:'raport (tekst)',json:'wynik (JSON)',csv:'surowe ramki (CSV)'};
+for(const e in s.files){const a=el('a',null,(nm[e]||e)+' ('+Math.max(1,Math.round(s.files[e]/1024))+' kB)');a.href='dl?f=/scan/skan-'+pad3(s.n)+'.'+e;f.append(a)}D.append(f)}
+let TH='dark',ST=null,FID=0;try{TH=localStorage.getItem('nt-theme')||'dark'}catch(e){}if(!['dark','light','auto'].includes(TH))TH='dark';document.documentElement.dataset.theme=TH;
+const UPD=document.getElementById('upd');const isHA=()=>!!(DATA&&DATA.source==='ha');
+function tab(v){if(STOP)STOP();for(const k of['rides','stats','state','set']){document.getElementById('v-'+k).hidden=k!==v;document.getElementById('t-'+k).classList.toggle('on',k===v)}scrollTo(0,0);if(v==='rides'&&DATA)list();if(v==='stats')statsView();if(v==='state')stateView();if(v==='set')setView()}
+const lvGps=g=>!g?'':!g.found?'bad':(g.fix_pct<80||g.outages>3||!g.configured)?'warn':'ok';
+const lvImu=m=>!m?'':!m.ok?'bad':(m.read_errors||m.overruns||m.module_imu==='conflict')?'warn':'ok';
+const lvBat=b=>b===null||b===undefined?'':b>30?'ok':b>10?'warn':'bad';
+async function getState(){try{const r=await fetch('api/status');if(!r.ok)throw 0;ST=await r.json()}catch(e){ST=null}pills()}
+function pills(){const P=document.getElementById('pills');P.textContent='';const add=(lv,t)=>{const p=el('span','pill');p.append(el('i','dot '+lv),t);p.onclick=()=>tab('state');P.append(p)};
+if(isHA()){const h=ST&&ST.ha;if(h)add(h.last_ingest?'ok':'',h.last_ingest?'ostatnio odebrano: '+new Date(h.last_ingest).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'czekam na pierwszą jazdę');return}
+if(DATA)add(lvBat(DATA.battery),fmt(DATA.battery)+'%'+(DATA.vbus?' · zasilanie':''));
+if(ST){const L=ST.last||{};add(lvGps(L.gnss),'GPS');add(lvImu(L.imu),'czujniki');const u=ST.upload||{};add(!u.configured?'':u.last_error?'bad':u.pending?'warn':'ok',!u.configured?'wysyłka wył.':u.pending?'do wysłania: '+u.pending:'wysłane')}}
+function sRow(C,lv,title,val,note){const r=el('div','st');r.append(el('i','dot '+lv));const d=el('div');if(val)d.append(el('span','v',val));d.append(el('b',null,title));if(note)d.append(el('small','mut',note));r.append(d);C.append(r)}
+async function stateView(){const V=document.getElementById('v-state');V.textContent='';V.append(el('p','mut','wczytywanie...'));await getState();V.textContent='';if(isHA()){haState(V);return}
+const D=DATA||{},lv=ST&&ST.live||{};let c=el('div','card');c.append(el('b',null,'Skrzynka teraz'));V.append(c);
+sRow(c,lvBat(D.battery),'Akumulator skrzynki',fmt(D.battery)+'%',D.vbus?'zasilanie z motocykla jest, akumulator się ładuje':'bez zasilania z motocykla, działa z akumulatora');
+if(lv.sd)sRow(c,lv.sd.free_mb>500?'ok':lv.sd.free_mb>100?'warn':'bad','Karta SD',fmt(lv.sd.free_mb/1024,1)+' z '+fmt(lv.sd.total_mb/1024,1)+' GB wolne',lv.sd.rides+' jazd na karcie, wystarczy jeszcze na ok. '+fmt(lv.sd.free_mb/15)+' h jazdy');
+else sRow(c,'ok','Karta SD',fmt(D.free_mb)+' MB wolne');
+if(lv.wifi){const w=lv.wifi;sRow(c,w.mode==='ap'||w.rssi>-70?'ok':'warn','Wi-Fi',w.mode==='ap'?'sieć NT1100':w.ssid,(w.mode==='home'?'sieć domowa':w.mode==='hotspot'?'hotspot telefonu':'telefon połączony bezpośrednio ze skrzynką')+(w.rssi?' · sygnał '+w.rssi+' dBm':'')+' · adres '+w.ip)}
+
+sRow(c,'','Oprogramowanie',D.fw||'–');
+if(!ST){V.append(el('div','card mut','Ta wersja oprogramowania nie podaje jeszcze stanu czujników i wysyłki.'));return}
+const L=ST.last||{};c=el('div','card');c.append(el('b',null,'Ostatnia jazda'+(L.ride?' · przejazd '+pad(L.ride):'')));V.append(c);
+const g=L.gnss;if(g)sRow(c,lvGps(g),'GPS',g.found?fmt(g.fix_pct)+'% z pozycją':'nie znaleziony',g.found?'średnio '+fmt(g.sats_avg)+' satelitów · '+(g.outages?'przerwy: '+g.outages+' (razem '+fmt(g.outage_s)+' s)':'bez przerw')+(g.configured?'':' · nie przyjął konfiguracji'):'sprawdź moduł GPS');
+const m=L.imu;if(m)sRow(c,lvImu(m),'Czujnik ruchu',m.ok?'działa':'błąd',(m.read_errors||m.overruns?'błędy odczytu: '+m.read_errors+', przepełnienia: '+m.overruns+' · ':'')+(m.module_imu==='conflict'?'drugi czujnik koliduje':m.module_imu==='moved'?'drugi czujnik wykryty':'drugi czujnik nie wykryty'));
+if(L.calib)sRow(c,L.calib.ok?'ok':'warn','Kalibracja montażu',L.calib.ok?'gotowa':'w trakcie',L.calib.ok?'przechył liczony od początku jazdy':'potrzeba ok. minuty jazdy z prostymi i hamowaniem');
+const n=L.can;if(n)sRow(c,n.mode===0?'':n.obd==='online'?'ok':n.kbps?'warn':'bad','Motocykl (CAN / OBD2)',n.mode===0?'wyłączony':n.mode===1?'tylko nasłuch':n.obd==='online'?'odpowiada':'brak odpowiedzi',n.mode===0?'włączysz w Ustawieniach':(n.kbps?'magistrala '+n.kbps+' kbit/s · ':'nie wykryto magistrali · ')+'odpowiedzi OBD: '+fmt(n.responses));
+if(L.power)sRow(c,L.power.vbus_drops?'warn':'ok','Zasilanie w trakcie jazdy',L.power.vbus_drops?'zaniki: '+L.power.vbus_drops:'bez zaników');
+if(L.storage)sRow(c,L.storage.dropped?'warn':'ok','Zapis na kartę',L.storage.dropped?'zgubione próbki: '+L.storage.dropped:'kompletny');
+const u=ST.upload||{};c=el('div','card');c.append(el('b',null,'Wysyłka'));V.append(c);
+if(!u.configured){sRow(c,'','Wyłączona','','Jazdy są na karcie i na tej stronie. Wpisz adres i klucz dodatku Home Assistant w Ustawieniach, a skrzynka będzie wysyłać jazdy sama.');return}
+sRow(c,u.last_error?'bad':u.pending?'warn':'ok',u.pending?'Czeka na wysłanie: '+u.pending:'Wszystko wysłane',u.last_try?new Date(u.last_try).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'',(u.last_error?'ostatni błąd: '+u.last_error+' · ':'')+'skrzynka ponawia przy każdym połączeniu z Wi-Fi');
+const b=el('button','pri','Wyślij teraz');const msg=el('small');b.onclick=async()=>{b.disabled=true;msg.textContent=' wysyłanie...';try{const r=await fetch('api/upload',{method:'POST'});msg.textContent=r.ok?' wysłano':' nie udało się'}catch(e){msg.textContent=' nie udało się'}b.disabled=false};const a=el('div','acts');a.append(b,msg);c.append(a)}
+function field(P,label,type,opts,val,isSet){const w=el('div','f');const id='f'+(++FID);const l=el('label',null,label);l.htmlFor=id;let i;
+if(type==='select'){i=el('select');for(const [v,t] of opts){const o=el('option',null,t);o.value=v;i.append(o)}i.value=val}else{i=el('input');i.type=type;i.value=val||'';if(type==='password'){i.autocomplete='new-password';if(isSet)i.placeholder='•••••• (bez zmian)'}}
+i.id=id;w.append(l,i);P.append(w);return i}
+async function setView(){const V=document.getElementById('v-set');V.textContent='';let S=null;try{const r=await fetch('api/settings');if(r.ok)S=await r.json()}catch(e){}
+let k=el('div','card');k.append(el('b',null,'Wygląd'));V.append(k);const th=field(k,'Motyw','select',[['dark','ciemny'],['light','jasny'],['auto','jak w telefonie']],TH);th.onchange=()=>{TH=th.value;document.documentElement.dataset.theme=TH;try{localStorage.setItem('nt-theme',TH)}catch(e){}};
+if(isHA()){haSettings(V,S);return}
+if(!S){V.append(el('div','card mut','Ta wersja oprogramowania nie pozwala jeszcze zmieniać ustawień ze strony. Użyj „Ustawienia” na ekranie skrzynki.'));V.append(UPD);return}
+const form=el('form');V.append(form);const sec=t=>{const s=el('div','card');s.append(el('b',null,t));form.append(s);return s};
+k=sec('Wi-Fi domowe');const hs=field(k,'Nazwa sieci','text',null,S.home_ssid);const hp=field(k,'Hasło','password',null,'',S.home_pass_set);
+k=sec('Hotspot telefonu');const ps=field(k,'Nazwa hotspotu','text',null,S.hotspot_ssid);const pp=field(k,'Hasło','password',null,'',S.hotspot_pass_set);k.append(el('small',null,'iPhone: Ustawienia → Osobisty hotspot → „Pozwalaj innym na dostęp” i „Maksymalizuj zgodność”.'));
+k=sec('Sieć skrzynki „NT1100”');const ap=field(k,'Hasło (min. 8 znaków)','password',null,'',true);
+k=sec('Motocykl (CAN / OBD2)');const cm=field(k,'Tryb','select',[['0','wyłączony'],['1','tylko nasłuch (skrzynka nic nie nadaje)'],['2','OBD2: pyta o obroty, temperaturę i inne']],String(S.can_mode));
+k=sec('Ekran skrzynki');const sa=field(k,'Zmiana ekranów w czasie jazdy','select',[['0','dotknięciem ekranu'],['5','automatycznie co 5 s'],['10','automatycznie co 10 s'],['20','automatycznie co 20 s']],String(S.screen_auto||0));k.append(el('small',null,'Dotknięcie zawsze pokazuje następny ekran.'));
+k=sec('Wyjazdy');const tg=field(k,'Łącz jazdy w jeden wyjazd, gdy przerwa jest krótsza niż','select',[['0','nie łącz'],['1','1 godzina'],['2','2 godziny'],['3','3 godziny'],['4','4 godziny'],['6','6 godzin'],['12','12 godzin'],['24','24 godziny']],String(S.trip_gap_h??3));
+k=sec('Wysyłka do Home Assistant');k.append(el('small',null,'Adresy i klucz pokazuje dodatek „NT1100 Jazdy” w Home Assistant (zakładka Ustawienia). Jazda jest wysyłana po każdym połączeniu z Wi-Fi domowym albo z hotspotem.'));const hl=field(k,'Adres w domu (np. 192.168.1.10:8098)','text',null,S.ha_local||'');const hr=field(k,'Adres spoza domu, przez hotspot (np. https://nt1100.twojadomena.pl)','text',null,S.ha_remote||'');const hk=field(k,'Klucz','password',null,'',S.ha_key_set);
+const adv=el('details');adv.append(el('summary',null,'Zaawansowane: InfluxDB i MQTT'));form.append(adv);const sec2=t=>{const s=el('div','card');s.append(el('b',null,t));adv.append(s);return s};
+k=sec2('Wysyłka danych: InfluxDB');const ih=field(k,'Adres w domu (np. IP Home Assistant, puste = bez wysyłki)','text',null,S.influx_host);const ipt=field(k,'Port','number',null,String(S.influx_port??8086));const idb=field(k,'Baza','text',null,S.influx_db);const iu=field(k,'Użytkownik','text',null,S.influx_user);const ip=field(k,'Hasło','password',null,'',S.influx_pass_set);const ru=field(k,'Adres spoza domu, przez hotspot (np. https://influx.twojadomena.pl, puste = brak)','text',null,S.remote_url);
+k=sec2('Wysyłka danych: MQTT (Home Assistant)');const mh=field(k,'Adres (puste = bez MQTT)','text',null,S.mqtt_host);const mpt=field(k,'Port','number',null,String(S.mqtt_port??1883));const mu=field(k,'Użytkownik','text',null,S.mqtt_user);const mp=field(k,'Hasło','password',null,'',S.mqtt_pass_set);
+const a=el('div','acts');const sv=el('button','pri','Zapisz');sv.type='submit';const msg=el('small');a.append(sv,msg);form.append(a);
+form.onsubmit=async e=>{e.preventDefault();if(ap.value&&ap.value.length<8){msg.className='bad-msg';msg.textContent='Hasło sieci NT1100 musi mieć co najmniej 8 znaków.';return}
+const body={home_ssid:hs.value,hotspot_ssid:ps.value,can_mode:+cm.value,screen_auto:+sa.value,trip_gap_h:+tg.value};if(hp.value)body.home_pass=hp.value;if(pp.value)body.hotspot_pass=pp.value;if(ap.value)body.ap_pass=ap.value;if(S.ha_local!==undefined){body.ha_local=hl.value.trim();body.ha_remote=hr.value.trim();if(hk.value)body.ha_key=hk.value.trim()}if(S.influx_host!==undefined){Object.assign(body,{influx_host:ih.value.trim(),influx_port:+ipt.value||8086,influx_db:idb.value.trim(),influx_user:iu.value.trim(),mqtt_host:mh.value.trim(),mqtt_port:+mpt.value||1883,mqtt_user:mu.value.trim(),remote_url:ru.value.trim()});if(ip.value)body.influx_pass=ip.value;if(mp.value)body.mqtt_pass=mp.value}
+try{const r=await fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});msg.className=r.ok?'ok-msg':'bad-msg';msg.textContent=r.ok?'Zapisano. Działa od następnego uruchomienia skrzynki.':'Nie udało się zapisać.';if(r.ok&&typeof DATA!=='undefined'&&DATA){DATA.trip_gap_h=+tg.value;try{list()}catch(e){}}}catch(e){msg.className='bad-msg';msg.textContent='Nie udało się zapisać.'}};
+V.append(UPD)}
+
+function haState(V){const h=ST&&ST.ha||{};let c=el('div','card');c.append(el('b',null,'Dodatek Home Assistant'));V.append(c);
+const dt=t=>t?new Date(t).toLocaleString('pl-PL',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
+sRow(c,'ok','Jazdy w Home Assistant',String(h.rides??(DATA.rides||[]).length),'pliki w folderze share/nt1100 (kopia zapasowa HA obejmuje je razem z folderem share)');
+sRow(c,h.last_ingest?'ok':'warn','Ostatnio odebrano',h.last_ingest?dt(h.last_ingest):'jeszcze nic',h.last_ride?'przejazd '+pad(h.last_ride)+(h.last_from?' · '+h.last_from:''):'skrzynka wysyła jazdę po połączeniu z Wi-Fi domowym albo z hotspotem');
+if(h.last_error)sRow(c,'bad','Ostatni problem',dt(h.last_error_at),h.last_error);
+sRow(c,h.notify?'ok':'','Powiadomienie po jeździe',h.notify||'w Home Assistant (dzwonek)','zmienisz w konfiguracji dodatku: pole „powiadomienie”');
+sRow(c,'','Czujniki w Home Assistant','sensor.nt1100_*','km, czas, prędkość, przechył i data ostatniej jazdy');}
+function haSettings(V,S){S=S||{};const got=!!(ST&&ST.ha&&ST.ha.last_ingest);let k=el('div','card');const dz=el('details');dz.open=!got;dz.append(el('summary',null,got?'Połączenie ze skrzynką działa (pokaż klucz i adresy)':'Połączenie ze skrzynką (do jednorazowego wpisania w skrzynce)'));k.append(dz);V.append(k);const kk=k;k=dz;
+k.append(el('small',null,'Skopiuj te wartości na stronę skrzynki: Ustawienia → Wysyłka do Home Assistant. Wystarczy to zrobić raz.'));
+const row=(label,val)=>{const w=el('div','f');w.append(el('label',null,label));const i=el('input');i.readOnly=true;i.value=val||'';const b=el('button',null,'Kopiuj');b.type='button';b.onclick=async()=>{try{await navigator.clipboard.writeText(i.value);b.textContent='Skopiowano'}catch(e){i.select();document.execCommand('copy');b.textContent='Skopiowano'}};const a=el('div','acts');a.append(i,b);w.append(a);k.append(w)};
+row('Adres w domu (można zostawić puste, wtedy skrzynka wyśle przez internet)',S.local_url||'');if(!S.local_url)k.append(el('small','mut','Adresu IP nie udało się odczytać. Znajdziesz go w HA: Ustawienia → System → Sieć; wpisz w skrzynce http://ADRES-IP:8098.'));row('Adres spoza domu (przez Cloudflare)',S.remote_url||'https://nt1100.twojadomena.pl');row('Klucz',S.key||'');k=kk;
+k=el('div','card');k.append(el('b',null,'Aktualizacja dodatku'));V.append(k);const av=el('p','mut','Zainstalowana wersja '+(DATA.fw||'?'));k.append(av);const ua=el('div','acts');const cb=el('button',null,'Sprawdź aktualizacje');const um=el('small');ua.append(cb,um);k.append(ua);
+const ub=el('button','pri','Aktualizuj teraz');ub.hidden=true;ua.insertBefore(ub,um);
+cb.onclick=async()=>{cb.disabled=true;um.className='';um.textContent=' sprawdzanie...';try{const r=await fetch('api/addon/check',{method:'POST'});const j=await r.json();if(!r.ok)throw j.error;av.textContent='Zainstalowana wersja '+j.version+(j.update?' · dostępna '+j.latest:' · to najnowsza wersja');ub.hidden=!j.update;um.textContent=''}catch(e){um.className='bad-msg';um.textContent=' nie udało się: '+(e||'brak odpowiedzi')}cb.disabled=false};
+ub.onclick=async()=>{if(!confirm('Zaktualizować dodatek? Strona zniknie na kilka minut, potem odśwież ją.'))return;ub.disabled=cb.disabled=true;um.className='';um.textContent=' aktualizacja trwa kilka minut...';try{const r=await fetch('api/addon/update',{method:'POST'});const j=await r.json();if(!r.ok)throw j.error;um.className='ok-msg';um.textContent=' instaluję '+j.latest+'. Za kilka minut odśwież stronę.'}catch(e){um.className='bad-msg';um.textContent=' nie udało się: '+(e||'brak odpowiedzi')+'. Zaktualizuj w Ustawienia → Dodatki.';ub.disabled=cb.disabled=false}};
+k=el('div','card');k.append(el('b',null,'Wyjazdy'));V.append(k);const tg=field(k,'Łącz jazdy w jeden wyjazd, gdy przerwa jest krótsza niż','select',[['0','nie łącz'],['1','1 godzina'],['2','2 godziny'],['3','3 godziny'],['4','4 godziny'],['6','6 godzin'],['12','12 godzin'],['24','24 godziny']],String(S.trip_gap_h??3));const msg=el('small');k.append(msg);
+tg.onchange=async()=>{try{const r=await fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trip_gap_h:+tg.value})});msg.className=r.ok?'ok-msg':'bad-msg';msg.textContent=r.ok?'Zapisano.':'Nie udało się zapisać.';if(r.ok){DATA.trip_gap_h=+tg.value;try{list()}catch(e){}}}catch(e){msg.className='bad-msg';msg.textContent='Nie udało się zapisać.'}}}
+
+async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){SCANS=[]}DATA=await (await fetch('api/rides')).json();document.getElementById('info').textContent=(isHA()?'Home Assistant · dodatek ':'rejestrator jazd · ')+DATA.fw;list();getState()}
+async function remove(r){if(!confirm('Usunąć przejazd '+pad(r.n)+(isHA()?' z Home Assistant? Na karcie skrzynki zostaje.':' z karty? Tej operacji nie można cofnąć.')))return;
+const q=await fetch('api/delete?n='+r.n,{method:'POST'});if(!q.ok){alert('Nie udało się usunąć.');return}await reload()}
+async function detail(r){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);
+const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);const c=el('div','card');D.append(c);
+const nm=el('div','row');const ttl=el('span','big',rname(r));const star=el('button','star'+(r.fav?' on':''),r.fav?'★':'☆');star.title='Ulubiona';star.setAttribute('aria-label','Ulubiona');star.onclick=async()=>{try{await setName(r,{fav:!r.fav});star.textContent=r.fav?'★':'☆';star.classList.toggle('on',r.fav)}catch(e){}};nm.append(ttl,star);c.append(nm,el('small',null,when(r.summary)+' · przejazd '+pad(r.n)));const pl=el('div','pl');c.append(pl);const nt=el('p','note',r.note||'');nt.hidden=!r.note;c.append(nt);
+const t=el('div','card');D.append(t);const st=el('div');c.append(st);
+if(r.summary&&!r.summary.calibrated)c.append(el('p','mut','Przechył jeszcze nieznany: skrzynka uczy się, jak jest zamontowana (pierwsze minuty jazdy).'));
+let pts=[],m={maxAlt:NaN};
+if(r.files.trk===undefined){t.append(el('p','mut','Brak pliku trasy (jazda przeliczona starszą wersją).'))}else{
+t.append(el('p','mut','wczytywanie trasy...'));try{pts=parse(await text('dl?view=1&f=/rides/'+pad(r.n)+'.trk'));t.lastChild.remove();
+if(pts.length<2){t.append(el('p','mut','Za mało punktów GPS.'))}else{m=marks(pts);const mapDiv=el('div');mapDiv.id='map';t.append(mapDiv,legend());
+const online=await leaflet();let mapObj=null,trk=null;if(online){try{mapObj=mapView(mapDiv,pts,m)}catch(e){mapObj=null;trk=track(pts,m);mapDiv.replaceWith(trk)}}else{trk=track(pts,m);mapDiv.replaceWith(trk)}
+if(online){place(pts[0][0],pts[0][1]).then(a=>place(pts[pts.length-1][0],pts[pts.length-1][1]).then(b=>{if(a||b)pl.textContent=(a||'?')+' → '+(b||'?')})).catch(()=>{})}
+const xs=pts.map((p,i)=>p[5]!==null?p[5]:i),xd=kmArr(pts),CH=[],S=r.summary||{},nv=(a,b)=>a!==undefined&&a!==null?a:b;const cw=el('div');D.append(cw);
+const sw=el('div','seg');const bt=[['t','Czas'],['d','Dystans']].map(([k,l])=>{const b=el('button',null,l);b.onclick=()=>{AX=k;try{localStorage.setItem('nt-axis',k)}catch(e){}draw()};sw.append(b);return[k,b]});
+const draw=()=>{for(const [k,b] of bt)b.classList.toggle('on',k===AX);cw.textContent='';CH.length=0;cw.append(sw);const X=AX==='d'?xd:xs,dist=AX==='d';
+const card=(title,head,svg)=>{const k=el('div','card');k.append(el('b',null,title));if(head)k.append(head);k.append(svg);cw.append(k);if(svg._cur)CH.push(svg)};
+const sp=sstat(pts.map(p=>p[3]!==null&&p[3]>=3?p[3]:null)),avg=nv(S.avg_speed,sp&&sp.avg);
+card('Prędkość',mm([[fmt(avg),' km/h','średnia w ruchu'],[fmt(nv(S.max_speed,sp&&sp.hi)),' km/h','maksimum']]),chart(X,pts.map(p=>p[3]),{color:'#1971c2',unit:'',zero:true,fill:true,dist,avg}));
+if(isFinite(m.maxAlt))card('Wysokość n.p.m.',mm([[fmt(nv(S.min_alt,m.minAlt)),' m','najniżej'],[fmt(nv(S.max_alt,m.maxAlt)),' m','najwyżej'],[fmt(nv(S.elevation_gain,m.gain)),' m','↑ wznios'],[fmt(nv(S.elevation_loss,m.loss)),' m','↓ spadek']]),chart(X,pts.map(p=>p[4]),{color:'#2f9e44',unit:' m',fill:true,dist}));
+card('Przechył (L = lewo, P = prawo)',mm([[fmt(nv(S.max_lean_left,m.L!==undefined?-pts[m.L][2]:null)),'°','maks. w lewo'],[fmt(nv(S.max_lean_right,m.R!==undefined?pts[m.R][2]:null)),'°','maks. w prawo']]),chart(X,pts.map(p=>p[2]),{color:'#e8590c',min:-60,max:60,step:30,lab:v=>(v>0?'P ':v<0?'L ':'')+Math.abs(v),unit:'°',dist}));
+const z=zones(pts);if(z)cw.append(z);customChart(cw,pts,X,CH,dist);
+if(CH._click)for(const c of CH)CH._click(c);if(CH._i!==undefined)for(const c of CH)c._cur(c._xs[CH._i])};
+draw();player(D,t,pts,xs,mapObj,trk,CH)}}
+catch(e){t.lastChild.textContent='Błąd wczytywania trasy.'}}
+if(r.summary)st.replaceWith(stats(r.summary,m));
+const acts=el('div','acts');if(pts.length>1){const g=el('button',null,'Pobierz GPX');g.onclick=()=>gpx(r,pts);acts.append(g)}
+const ren=el('button',null,'Zmień nazwę');ren.onclick=()=>{if(c.querySelector('.nmf'))return;const w=el('div','acts nmf');const i=el('input');i.value=r.name||r.auto||'';i.placeholder='np. Beskidy z Markiem';i.maxLength=40;i.setAttribute('aria-label','Nazwa jazdy');const sv=el('button','pri','Zapisz');sv.onclick=async()=>{try{await setName(r,{name:i.value.trim()});ttl.textContent=rname(r);w.remove()}catch(e){sv.textContent='Nie udało się'}};w.append(i,sv);c.append(w);i.focus()};acts.append(ren);
+const nb=el('button',null,r.note?'Edytuj uwagi':'Dodaj uwagi');nb.onclick=()=>{if(c.querySelector('.ntf'))return;const w=el('div','ntf');const i=el('textarea');i.value=r.note||'';i.maxLength=300;i.placeholder='np. nowe opony, mokro, z Markiem';i.setAttribute('aria-label','Uwagi do jazdy');const a=el('div','acts');const sv=el('button','pri','Zapisz uwagi');sv.onclick=async()=>{try{await setName(r,{note:i.value.trim()});nt.textContent=r.note;nt.hidden=!r.note;nb.textContent=r.note?'Edytuj uwagi':'Dodaj uwagi';w.remove()}catch(e){sv.textContent='Nie udało się'}};const cn=el('button',null,'Anuluj');cn.onclick=()=>w.remove();a.append(sv,cn);w.append(i,a);c.append(w);i.focus()};acts.append(nb);
+const del=el('button','warn','Usuń jazdę');del.onclick=()=>remove(r);acts.append(del);D.append(acts);
+const f=el('div','card files');f.append(el('b',null,'Pliki'),el('br'));const names={mtl:'surowy zapis',csv:'dane CSV',json:'podsumowanie',trk:'trasa',lp:'do InfluxDB',lpbad:'odrzucone'};
+for(const e in r.files){if(!names[e])continue;const a=el('a',null,names[e]+' ('+Math.max(1,Math.round(r.files[e]/1024))+' kB)');a.href='dl?f=/rides/'+pad(r.n)+'.'+e;f.append(a)}D.append(f)}
+reload().catch(()=>{document.getElementById('info').textContent='błąd wczytywania listy jazd'});
+</script></body></html>

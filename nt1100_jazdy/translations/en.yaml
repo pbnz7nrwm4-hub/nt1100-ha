@@ -1,0 +1,12 @@
+configuration:
+  powiadomienie:
+    name: Powiadomienie po jezdzie
+    description: "Nazwa uslugi powiadomien telefonu, np. mobile_app_iphone_adriana (Narzedzia deweloperskie -> Akcje -> wpisz notify.). Puste = powiadomienie w Home Assistant (dzwonek)."
+  adres_spoza_domu:
+    name: Adres spoza domu
+    description: Adres dodatku przez Cloudflare (pokazywany na stronie do wpisania w skrzynce).
+  klucz:
+    name: Wlasny klucz
+    description: Zostaw puste - dodatek sam wygeneruje klucz i pokaze go w zakladce Ustawienia.
+network:
+  8098/tcp: Odbior jazd ze skrzynki (tylko z kluczem)

@@ -1,0 +1,32 @@
+name: NT1100 Jazdy
+version: "1.0.3"
+slug: nt1100_jazdy
+description: Jazdy ze skrzynki telemetrycznej Hondy NT1100 - ta sama strona co w skrzynce, czujniki i powiadomienie po jezdzie
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:motorbike
+panel_title: NT1100 Jazdy
+homeassistant_api: true
+hassio_api: true
+hassio_role: manager
+map:
+  - type: share
+    read_only: false
+ports:
+  8098/tcp: 8098
+ports_description:
+  8098/tcp: Odbior jazd ze skrzynki (tylko z kluczem)
+options:
+  powiadomienie: ""
+  adres_spoza_domu: "https://nt1100.twojadomena.pl"
+  klucz: ""
+schema:
+  powiadomienie: str?
+  adres_spoza_domu: str?
+  klucz: str?
