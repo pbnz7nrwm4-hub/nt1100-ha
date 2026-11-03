@@ -24,7 +24,7 @@ import urllib.request
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0.4"
+VERSION = "1.1.0"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 WWW = os.environ.get("NT_WWW", os.path.join(os.path.dirname(os.path.abspath(__file__)), "www"))
@@ -56,6 +56,16 @@ INDEX = os.path.join(SHARE, "index.json")
 STATE = os.path.join(DATA, "stan.json")
 KEYFILE = os.path.join(DATA, "klucz")
 EXTS = ("trk", "thm", "nam", "json")
+FIRMWARE = os.environ.get("NT_FIRMWARE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "firmware"))
+
+
+def firmware_offer():
+    """Newest box firmware shipped with this add-on (encrypted, signed)."""
+    j = read_json(os.path.join(FIRMWARE, "skrzynka.json"), {})
+    path = os.path.join(FIRMWARE, "skrzynka.bin")
+    if not j.get("version") or not os.path.exists(path):
+        return None
+    return {"version": j["version"], "size": os.path.getsize(path), "path": path}
 MAX_FILE = 40 * 1024 * 1024
 LOCK = threading.RLock()
 
@@ -442,13 +452,30 @@ class Ingest(Base):
     def source(self):
         return "przez internet" if self.headers.get("CF-Connecting-IP") else "sieć domowa"
 
+    def seen(self, version):
+        if version and re.fullmatch(r"[0-9.]{1,16}", version):
+            save_state(box_fw=version, box_seen=int(time.time() * 1000))
+
     def do_GET(self):
-        path, _ = self.query()
+        path, q = self.query()
+        if path in ("/api/ping", "/api/fw", "/api/fw/bin") and not self.authorized():
+            log("Odrzucono: zly klucz (", self.client_address[0], ")")
+            return self.send(401, {"ok": False, "error": "zly klucz"})
         if path == "/api/ping":
-            if not self.authorized():
-                log("Odrzucono: zly klucz (", self.client_address[0], ")")
-                return self.send(401, {"ok": False, "error": "zly klucz"})
+            self.seen(self.headers.get("X-Wersja") or "")
             return self.send(200, {"ok": True, "app": "NT1100 Jazdy", "version": VERSION})
+        if path == "/api/fw":
+            self.seen(q.get("v", ""))
+            o = firmware_offer()
+            return self.send(200, {"version": o["version"] if o else "", "size": o["size"] if o else 0})
+        if path == "/api/fw/bin":
+            o = firmware_offer()
+            if not o:
+                return self.send(404, {"ok": False, "error": "brak pliku"})
+            with open(o["path"], "rb") as fh:
+                data = fh.read()
+            log("Skrzynka pobiera oprogramowanie", o["version"])
+            return self.send(200, data, "application/octet-stream")
         self.send(404, {"ok": False, "error": "brak"})
 
     def do_POST(self):
@@ -547,7 +574,9 @@ class Page(Base):
             return self.send(200, {"ha": {
                 "rides": len(ride_numbers()), "last_ingest": s.get("last_ingest"), "last_ride": s.get("last_ride"),
                 "last_from": s.get("last_from"), "last_error": s.get("last_error") or None,
-                "last_error_at": s.get("last_error_at"), "notify": target or None}})
+                "last_error_at": s.get("last_error_at"), "notify": target or None,
+                "box_fw": s.get("box_fw"), "box_seen": s.get("box_seen"),
+                "fw_offer": (firmware_offer() or {}).get("version")}})
         if path == "/api/settings":
             remote = (options().get("adres_spoza_domu") or "").strip().rstrip("/")
             return self.send(200, {"trip_gap_h": state().get("trip_gap_h", 3), "key": key(),
