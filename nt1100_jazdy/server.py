@@ -30,7 +30,7 @@ import zlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1198,9 +1198,6 @@ def sensor_loop():
             break
         except Exception:
             time.sleep(10)
-    if TOKEN or options().get("mqtt_host"):
-        if not MQTT.start() and not MQTT.error:
-            MQTT.error = "MQTT nie wystartował"
     for _ in range(15):  # first values after the discovery, not before
         if MQTT.connected or MQTT.client is None:
             break
@@ -1209,6 +1206,20 @@ def sensor_loop():
         publish_sensors()
         clean_incoming()
         time.sleep(600)
+
+
+def mqtt_loop():
+    """Connects to the broker at once and tries again every 30 s until it
+    works (the broker add-on may start later than this one)."""
+    while True:
+        try:
+            if MQTT.client is None and (TOKEN or options().get("mqtt_host")):
+                if not MQTT.start() and not MQTT.error:
+                    MQTT.error = "MQTT nie wystartował"
+        except Exception as e:
+            MQTT.error = "MQTT: %s" % e
+            traceback.print_exc()
+        time.sleep(30)
 
 
 def clean_incoming(max_age_s=7 * 86400):
@@ -1769,6 +1780,7 @@ def main():
     serve(INGEST_PORT, Ingest)
     log("NT1100 Jazdy %s: %d jazd w %s; strona przez panel HA, odbior jazd na porcie %d" %
         (VERSION, len(ride_numbers()), RIDES, INGEST_PORT))
+    threading.Thread(target=mqtt_loop, daemon=True).start()
     threading.Thread(target=sensor_loop, daemon=True).start()
     threading.Thread(target=weather_loop, daemon=True).start()
     while True:
