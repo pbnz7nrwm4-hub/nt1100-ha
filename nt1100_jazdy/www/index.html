@@ -58,7 +58,7 @@ nav.tabs button.on{color:var(--acc);border-top-color:var(--acc)}nav.tabs svg{wid
 <section id="v-set" hidden><div class="card" id="upd"><b>Aktualizacja oprogramowania</b>
 <form method="POST" action="update" enctype="multipart/form-data" style="margin-top:8px">
 <input type="file" name="fw" accept=".bin"> <button type="submit">Wgraj</button></form>
-<small>Po wgraniu skrzynka uruchomi się ponownie.</small></div></section>
+<small>Po wgraniu skrzynka uruchomi się ponownie i wróci do tej strony (odśwież ją po ok. 30 s).</small></div></section>
 </main>
 <nav class="tabs">
 <button id="t-rides" class="on" onclick="tab('rides')"><svg viewBox="0 0 24 24"><path d="M2 20l6-10 4 6 3-4 7 8z"/><circle cx="17" cy="5" r="2"/></svg>Jazdy</button>
@@ -313,7 +313,7 @@ if(lv.sd)sRow(c,lv.sd.free_mb>500?'ok':lv.sd.free_mb>100?'warn':'bad','Karta SD'
 else sRow(c,'ok','Karta SD',fmt(D.free_mb)+' MB wolne');
 if(lv.wifi){const w=lv.wifi;sRow(c,w.mode==='ap'||w.rssi>-70?'ok':'warn','Wi-Fi',w.mode==='ap'?'sieć NT1100':w.ssid,(w.mode==='home'?'sieć domowa':w.mode==='hotspot'?'hotspot telefonu':'telefon połączony bezpośrednio ze skrzynką')+(w.rssi?' · sygnał '+w.rssi+' dBm':'')+' · adres '+w.ip)}
 
-sRow(c,'','Oprogramowanie',D.fw||'–');
+sRow(c,'','Oprogramowanie',D.fw||'–');{const fa=el('div','acts');const fb=el('button',null,'Sprawdź aktualizację w Home Assistant');const fm=el('small');fb.onclick=async()=>{fb.disabled=true;fm.className='';fm.textContent=' sprawdzanie...';try{const r=await fetch('api/fwcheck',{method:'POST'});fm.className=r.ok?'ok-msg':'bad-msg';fm.textContent=' '+await r.text()}catch(e){fm.className='bad-msg';fm.textContent=' brak odpowiedzi'}fb.disabled=false};fa.append(fb,fm);c.append(fa)}
 if(!ST){V.append(el('div','card mut','Ta wersja oprogramowania nie podaje jeszcze stanu czujników i wysyłki.'));return}
 const L=ST.last||{};c=el('div','card');c.append(el('b',null,'Ostatnia jazda'+(L.ride?' · przejazd '+pad(L.ride):'')));V.append(c);
 const g=L.gnss;if(g)sRow(c,lvGps(g),'GPS',g.found?fmt(g.fix_pct)+'% z pozycją':'nie znaleziony',g.found?'średnio '+fmt(g.sats_avg)+' satelitów · '+(g.outages?'przerwy: '+g.outages+' (razem '+fmt(g.outage_s)+' s)':'bez przerw')+(g.configured?'':' · nie przyjął konfiguracji'):'sprawdź moduł GPS');
@@ -356,6 +356,7 @@ sRow(c,'ok','Jazdy w Home Assistant',String(h.rides??(DATA.rides||[]).length),'p
 sRow(c,h.last_ingest?'ok':'warn','Ostatnio odebrano',h.last_ingest?dt(h.last_ingest):'jeszcze nic',h.last_ride?'przejazd '+pad(h.last_ride)+(h.last_from?' · '+h.last_from:''):'skrzynka wysyła jazdę po połączeniu z Wi-Fi domowym albo z hotspotem');
 if(h.last_error)sRow(c,'bad','Ostatni problem',dt(h.last_error_at),h.last_error);
 sRow(c,h.notify?'ok':'','Powiadomienie po jeździe',h.notify||'w Home Assistant (dzwonek)','zmienisz w konfiguracji dodatku: pole „powiadomienie”');
+if(h.box_fw||h.fw_offer){const nv=h.fw_offer&&h.box_fw&&h.fw_offer!==h.box_fw;sRow(c,nv?'warn':'ok','Oprogramowanie skrzynki',h.box_fw||'?',nv?'czeka wersja '+h.fw_offer+': skrzynka zainstaluje ją sama przy najbliższym połączeniu z domowym Wi-Fi (na zasilaniu albo z akumulatorem od 50%)':'aktualne'+(h.box_seen?' · skrzynka ostatnio połączona '+dt(h.box_seen):''))}
 sRow(c,'','Czujniki w Home Assistant','sensor.nt1100_*','km, czas, prędkość, przechył i data ostatniej jazdy');}
 function haSettings(V,S){S=S||{};const got=!!(ST&&ST.ha&&ST.ha.last_ingest);let k=el('div','card');const dz=el('details');dz.open=!got;dz.append(el('summary',null,got?'Połączenie ze skrzynką działa (pokaż klucz i adresy)':'Połączenie ze skrzynką (do jednorazowego wpisania w skrzynce)'));k.append(dz);V.append(k);const kk=k;k=dz;
 k.append(el('small',null,'Skopiuj te wartości na stronę skrzynki: Ustawienia → Wysyłka do Home Assistant. Wystarczy to zrobić raz.'));
