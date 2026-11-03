@@ -30,7 +30,7 @@ import zlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -809,6 +809,8 @@ class Mqtt:
         self.connected = False
         self.error = ""
         self.host = ""
+        self.started = 0.0
+        self.user = ""
         self.service_ids = set()
         self.lock = threading.Lock()
 
@@ -854,11 +856,14 @@ class Mqtt:
             cl.on_connect = self.on_connect
             cl.on_disconnect = self.on_disconnect
             cl.on_message = self.on_message
+            cl.on_connect_fail = self.on_connect_fail
             cl.reconnect_delay_set(5, 300)
             cl.connect_async(c["host"], c["port"], keepalive=60)
             cl.loop_start()
             self.client = cl
             self.host = "%s:%d" % (c["host"], c["port"])
+            self.user = c["username"]
+            self.started = time.time()
             log("MQTT: lacze z", self.host, "jako", c["username"] or "(bez loginu)")
             return True
         except Exception as e:
@@ -879,6 +884,22 @@ class Mqtt:
         client.subscribe(TOPIC + "/serwis/+/zrobione")
         client.subscribe(DISC + "/status")
         threading.Thread(target=self.announce, daemon=True).start()
+
+    def on_connect_fail(self, client, userdata):
+        self.error = "broker %s nie odpowiada (czy dodatek Mosquitto działa?)" % self.host
+        if time.time() - getattr(self, "_logged", 0) > 300:
+            self._logged = time.time()
+            log("MQTT:", self.error)
+
+    def status_error(self):
+        """What the page shows when MQTT is not connected."""
+        if self.connected:
+            return None
+        if self.error:
+            return self.error
+        if self.client is not None and time.time() - self.started > 30:
+            return "brak odpowiedzi brokera %s po %d s" % (self.host, time.time() - self.started)
+        return None
 
     def on_disconnect(self, client, userdata, *args):
         if self.connected:
@@ -1178,7 +1199,8 @@ def sensor_loop():
         except Exception:
             time.sleep(10)
     if TOKEN or options().get("mqtt_host"):
-        MQTT.start()
+        if not MQTT.start() and not MQTT.error:
+            MQTT.error = "MQTT nie wystartował"
     for _ in range(15):  # first values after the discovery, not before
         if MQTT.connected or MQTT.client is None:
             break
@@ -1599,7 +1621,8 @@ class Page(Base):
             "fw_offer": (firmware_offer() or {}).get("version"),
             "odo": odo, "odo_set": st["odo"], "service": service_status(odo),
             "parking": parking(newest_ride()),
-            "mqtt": {"connected": MQTT.connected, "host": MQTT.host, "error": MQTT.error or None},
+            "mqtt": {"connected": MQTT.connected, "host": MQTT.host, "user": MQTT.user or None,
+                     "started": MQTT.client is not None, "error": MQTT.status_error()},
             "weather": st["weather"]}}
 
     def do_GET(self):
