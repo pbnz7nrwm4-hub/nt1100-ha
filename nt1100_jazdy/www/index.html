@@ -326,6 +326,18 @@ const d=el('div');d.style.marginTop='10px';for(const m of ['03','07','0A']){cons
 for(const i of o.info)k.append(el('div',null,(i.p==='02'?'VIN':i.p==='04'?'Kalibracja':i.p==='0A'?'Nazwa sterownika':'Info '+i.p)+': '+i.t))}
 if(j.ids.length){const g=el('div','card');D.append(g);g.append(el('b',null,'Ramki nadawane przez motocykl'),el('p','mut','Pomarańczowe bajty zmieniały się w czasie skanu: tam mogą być obroty, gaz, bieg, przełączniki.'));
 g.append(table(['ID','Hz','Ostatnie dane','Ile'],j.ids.map(x=>[el('span','mono',x.id),x.hz,bytes(x.last,x.chg),x.n])))}
+if(j.uds){const u=j.uds;const g=el('div','card');D.append(g);g.append(el('b',null,'Skan rozszerzony (tylko odczyt)'));
+g.append(el('div','mut','Zapytano '+u.tried29+' adresów 29-bit i '+u.tried11+' adresów 11-bit · zapytań: '+u.sent+' · odpowiedzi: '+u.answers));
+const via={'01':'silnik (znany ze standardowego skanu)','3E':'odpowiedział na „jesteś tam?” (3E)','10':'odpowiedział na sesję diagnostyczną (10 01)'};
+g.append(table(['Sterownik','Adres','Jak znaleziony','Odpowiedź','Uwagi'],u.ecus.map(e=>[el('span','mono',e.id),e.addr,via[e.via]||('usługa '+e.via),el('span','mono',e.ok?e.resp:'odmowa '+e.resp),[e.no22?'bez usługi 22':'',e.no21?'bez usługi 21':''].filter(Boolean).join(', ')])));
+if(u.ecus.length<=1)g.append(el('p',null,'Poza silnikiem nikt nie odpowiada na tym złączu: ABS i sterownik nadwozia nie są na tej magistrali.'));
+else g.append(el('p',null,'Odpowiedział ktoś poza silnikiem! Prześlij ten skan do analizy.'));
+const fr=u.items.filter(x=>x.s==='02');if(fr.length){g.append(el('b',null,'Zamrożone dane kodu usterki (chwila zapisu kodu)'));
+g.append(table(['Opis','Wartość','Surowe','PID'],fr.map(x=>[x.name,x.v!==undefined?x.v+(x.unit?' '+x.unit:''):'–',el('span','mono',x.last),x.d])))}
+const it=u.items.filter(x=>x.s!=='02');g.append(el('b',null,'Ukryte parametry sterowników: '+it.length+(u.dropped?' (lista pełna, część pominięta)':'')+' · odczyt na żywo: '+u.rounds+' rund'));
+if(it.length){g.append(el('p','mut','Pomarańczowe bajty zmieniały się, gdy ruszałeś gazem, biegiem, hamulcem i przełącznikami: tam może być bieg, sprzęgło, stopka, ABS.'));
+const asc=h=>{const b=h.split(' ').map(x=>parseInt(x,16));return b.length&&b.every(v=>v>=0x20&&v<0x7f)?String.fromCharCode(...b):''};
+g.append(table(['Sterownik','Usł.','Ident.','Pierwszy odczyt','Ostatni odczyt','Min','Maks','Ile','Opis'],it.map(x=>[el('span','mono',x.e),x.s,el('span','mono',x.d),bytes(x.first,null),bytes(x.last,x.chg),el('span','mono',x.lo),el('span','mono',x.hi),x.cnt,x.name||asc(x.last)])))}}
 const f=el('div','card files');f.append(el('b',null,'Pliki do odesłania'),el('br'));const nm={txt:'raport (tekst)',json:'wynik (JSON)',csv:'surowe ramki (CSV)'};
 for(const e in s.files){const a=el('a',null,(nm[e]||e)+' ('+Math.max(1,Math.round(s.files[e]/1024))+' kB)');a.href='dl?f=/scan/skan-'+pad3(s.n)+'.'+e;f.append(a)}D.append(f)}
 let TH='dark',ST=null,FID=0;try{TH=localStorage.getItem('nt-theme')||'dark'}catch(e){}if(!['dark','light','auto'].includes(TH))TH='dark';document.documentElement.dataset.theme=TH;
