@@ -310,7 +310,7 @@ let SCANS=[];const pad3=n=>String(n).padStart(3,'0');
 let SCANRUN=false;
 function scanList(){const L=document.getElementById('slist');L.textContent='';document.getElementById('sdetail').hidden=true;L.hidden=false;scanCard(L)}
 function scanCard(L){const c=el('div','card');c.append(el('b',null,'Skany motocykla'));
-if(!isHA()){c.append(el('p','mut','Skan uruchamiasz stąd; skrzynka może zostać zamknięta w obudowie. Zapłon włączony, silnik na luzie (do skanu rozszerzonego najlepiej odpalony). Postęp i polecenia pojawią się tu.'));
+if(!isHA()){c.append(el('p','mut','Skan uruchamiasz stąd; skrzynka może zostać zamknięta w obudowie. Zapłon włączony, silnik odpalony na luzie. Skan rozszerzony prowadzi Cię krok po kroku (sprzęgło, bieg, hamulce, kierunkowskazy, światła, trakcja, stopka); polecenia pojawią się tu.'));
 const a=el('div','acts');const b1=el('button','pri','Skan OBD2 (1,5 min)');const b2=el('button',null,'Skan rozszerzony (ok. 7 min)');const m=el('small');a.append(b1,b2,m);c.append(a);
 const pr=el('div','note');pr.hidden=true;c.append(pr);
 const start=async mode=>{b1.disabled=b2.disabled=true;m.className='';m.textContent=' uruchamianie...';try{const r=await api('api/scan?mode='+mode,{method:'POST'});if(!r.ok)throw await r.text();m.textContent='';follow(pr,b1,b2)}catch(e){m.className='bad-msg';m.textContent=' '+(typeof e==='string'&&e?e:'nie udało się');b1.disabled=b2.disabled=false}};
