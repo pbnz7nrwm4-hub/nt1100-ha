@@ -828,6 +828,9 @@ class NavServerTest(unittest.TestCase):
             code, body, hd = self.req(sent[0][2])
             self.assertEqual(code, 200)
             self.assertIn(b"<trkpt", body)
+            self.assertIn(b'creator="OsmAndRouter"', body)
+            import xml.etree.ElementTree as ET
+            ET.fromstring(body)
             code, _, _ = self.req(sent[0][2][:-3] + "abc")
             self.assertEqual(code, 404)
             # ten sam korek nie wraca co kilka minut
@@ -843,6 +846,24 @@ class NavServerTest(unittest.TestCase):
         finally:
             api.phone_position, api.NAV.traffic, srv.send_notification, srv.options = orig
             self.jpost(self.pu + "/api/nav/settings", {"vehicle": "moto"})
+
+    def test_16_gpx_for_osmand_has_turns(self):
+        pts = [(50.0 + i * 0.001, 19.9) for i in range(10)]
+        route = {"name": "A & B", "pts": pts, "times": list(range(0, 100, 10)), "waypoints": [],
+                 "turns": [{"idx": 3, "type": nav.T_RIGHT, "exit": 0, "text": "Wschodnia"},
+                           {"idx": 6, "type": nav.T_ROUNDABOUT, "exit": 2, "text": ""},
+                           {"idx": 9, "type": nav.T_FINISH, "exit": 0, "text": ""}]}
+        import xml.etree.ElementTree as ET
+        g = ET.fromstring(nav.to_gpx(route, osmand=True))
+        ns = {"g": "http://www.topografix.com/GPX/1/1", "o": "https://osmand.net"}
+        self.assertEqual(g.get("creator"), "OsmAndRouter")
+        rp = g.findall("g:rte/g:rtept", ns)
+        self.assertEqual([x.findtext("g:extensions/o:offset", namespaces=ns) for x in rp], ["0", "3", "6", "9"])
+        self.assertEqual([x.findtext("g:extensions/o:turn", namespaces=ns) for x in rp], [None, "TR", "RNDB2", None])
+        self.assertEqual(rp[1].findtext("g:desc", namespaces=ns), "Skręć w prawo – Wschodnia")
+        self.assertEqual(rp[1].findtext("g:extensions/o:time", namespaces=ns), "30")
+        self.assertEqual(len(g.findall("g:trk/g:trkseg/g:trkpt", ns)), 10)
+        self.assertNotIn("rte", nav.to_gpx(route))
 
 
 if __name__ == "__main__":
