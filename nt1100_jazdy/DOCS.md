@@ -62,7 +62,9 @@ wczytywanie plików GPX (np. z Kurvigera).
   trasę „Mój plan”; objazd z ekranu zachowuje wariant pozostałych odcinków.
 - **Mapa po policzeniu jest zablokowana**: na telefonie jeden palec przewija stronę, dwoma
   palcami powiększasz; kliknięcie nie dodaje punktów. 🔒 w rogu odblokowuje edycję,
-  ⤢ wraca do widoku całej trasy.
+  ⤢ wraca do widoku całej trasy, ⛶ otwiera mapę na pełnym ekranie (przesuwanie jednym palcem,
+  strona pod spodem stoi; ✕ albo gest „wstecz” zamyka). Gest „wstecz” w aplikacji HA nie
+  wyrzuca z zakładki Nawigacja.
 - **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
   Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
 - **GPX dla kolegi**: przycisk „GPX” przy policzonym wariancie (zapisuje trasę bez wysyłania

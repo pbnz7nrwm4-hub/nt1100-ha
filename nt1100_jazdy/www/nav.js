@@ -27,6 +27,11 @@ css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)
 '.nsl{display:grid;grid-template-columns:110px 1fr 38px;gap:4px 10px;align-items:center;font-size:13px;margin:4px 0}.nsl input[type=range]{width:100%}.nsl b{grid-column:1/-1;margin-top:8px;font-size:14px;display:flex;align-items:center;gap:6px}.nsl b i{width:10px;height:10px;border-radius:50%;display:inline-block}.nsl output{text-align:right;color:var(--mut)}'+
 '.nlv{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}.nlv input{width:70px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card2)}'+
 '.nlock{background:var(--card);border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}.nlock button{border:0;border-radius:0;background:var(--card);color:inherit;width:38px;height:38px;font-size:18px;padding:0;cursor:pointer}.nlock button+button{border-top:1px solid var(--line)}'+
+'.nrt{flex-wrap:wrap}.nrt .tx{flex:1 1 220px}.nrt .acts{flex:0 1 auto}'+
+'details.ngrp{border-top:1px solid var(--line);margin-top:8px}details.ngrp>summary{cursor:pointer;font-weight:600;padding:12px 0;list-style:none;display:flex;justify-content:space-between}details.ngrp>summary::-webkit-details-marker{display:none}details.ngrp>summary::after{content:"▸";color:var(--mut)}details.ngrp[open]>summary::after{content:"▾"}'+
+'.nsl input[type=range]{padding:0;margin:0;height:26px;border:0;background:none}.nsl{row-gap:2px}'+
+'html,body{overscroll-behavior:none}#navmap.nfull{position:fixed!important;left:0;top:0;width:100vw;height:100vh;height:100dvh;z-index:10000;border-radius:0;touch-action:none}body.nfull-on{overflow:hidden;touch-action:none}'+
+'.ntoast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(20,24,36,.92);color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;z-index:10001;pointer-events:none;max-width:90vw;text-align:center}'+
 '@media(max-width:600px){.nlg{padding-left:8px}}#navmap.locked{touch-action:pan-y}#navmap.locked.add{cursor:grab}'+
 '.nmsg{margin:6px 0;font-size:14px}.nmsg.bad{color:var(--bad)}.nmsg.ok{color:var(--ok)}.ndev{font-size:13px;color:var(--mut)}';
 document.head.append(css);
@@ -43,7 +48,7 @@ function inject(){
   const b=el('button');b.id='t-nav';b.hidden=true;b.onclick=()=>tab('nav');
   b.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 2l7 19-7-4-7 4z"/></svg>Nawigacja';ref.after(b);
   const sec=el('section');sec.id='v-nav';sec.hidden=true;document.getElementById('v-stats').after(sec);
-  const t0=window.tab;window.tab=function(v){if(v==='nav'){if(STOP)STOP();for(const k of['rides','stats','scan','state','set','nav']){const s=document.getElementById('v-'+k),t=document.getElementById('t-'+k);if(s)s.hidden=k!==v;if(t)t.classList.toggle('on',k===v)}scrollTo(0,0);navView();return}
+  const t0=window.tab;window.tab=function(v){if(v==='nav'){if(STOP)STOP();for(const k of['rides','stats','scan','state','set','nav']){const s=document.getElementById('v-'+k),t=document.getElementById('t-'+k);if(s)s.hidden=k!==v;if(t)t.classList.toggle('on',k===v)}scrollTo(0,0);navGuard();navView();return}
     const s=document.getElementById('v-nav'),t=document.getElementById('t-nav');if(s)s.hidden=true;if(t)t.classList.remove('on');return t0(v)};
   const d0=window.detail;window.detail=async function(r){await d0(r);try{await planCard(r)}catch(e){}};
 }
@@ -52,7 +57,7 @@ async function probe(){for(let i=0;i<40&&!DATA;i++)await new Promise(r=>setTimeo
 /* ---- widok */
 async function navView(){const V=document.getElementById('v-nav');V.textContent='';V.append(el('p','mut','wczytywanie...'));
   try{NV.data=await J('api/nav/routes')}catch(e){V.textContent='';V.append(el('p','bad-msg','Nie udało się wczytać nawigacji: '+e.message));return}
-  V.textContent='';tripCard(V);statusCard(V);plannerCard(V);routesCard(V);settingsCard(V);
+  V.textContent='';tripCard(V);plannerCard(V);routesCard(V);statusCard(V);settingsCard(V);
   const S=NV.data.settings;if(!NV.pts.length){const st=NV.data.screen,fresh=st&&st.t&&Date.now()/1000-st.t<3*3600;if(fresh)setPts([{lat:st.lat,lon:st.lon,name:'pozycja motocykla'}]);else if(S.home)setPts([{lat:S.home.lat,lon:S.home.lon,name:S.home.name||'Dom'}])}
   await initMap();}
 
@@ -73,7 +78,7 @@ function plannerCard(V){const k=el('div','card');k.append(el('b',null,'Zaplanuj 
   const quick=el('div','acts');const b1=el('button',null,'Start: pozycja motocykla');b1.onclick=()=>{const s=NV.data.screen;if(!(s&&s.t)){alert('Ekran jeszcze nie przysłał pozycji.');return}setStart({lat:s.lat,lon:s.lon,name:'pozycja motocykla'})};
   const b2=el('button',null,'Start: dom');b2.onclick=()=>{const h=NV.data.settings.home;if(!h){alert('Ustaw dom w ustawieniach nawigacji niżej.');return}setStart({lat:h.lat,lon:h.lon,name:h.name||'Dom'})};
   const b3=el('button',null,'Wyczyść');b3.onclick=()=>{setPts([]);clearPlan()};quick.append(b1,b2,b3);k.append(quick);
-  k.append(el('p','mut','Kliknięcie na mapie dodaje punkt na koniec; punkty można przeciągać. Pierwszy punkt to start, ostatni to cel, pozostałe to punkty po drodze. Po policzeniu trasy mapa się blokuje (🔒 w rogu odblokowuje). Między punktami wybierzesz wariant odcinka: powstanie dodatkowa trasa „Mój plan”.'));
+  k.append(el('p','mut','Kliknij na mapie, żeby dodać punkt (pierwszy = start, ostatni = cel). Po policzeniu mapa się blokuje: 🔒 odblokowuje, ⛶ otwiera pełny ekran.'));
   const mapDiv=el('div');mapDiv.id='navmap';k.append(mapDiv);
   const mo=el('div','acts');P.poiBtn=el('button',null,'Pokaż POI z mapy (fotoradary, stacje, widoki)');P.poiBtn.onclick=togglePoi;mo.append(P.poiBtn);k.append(mo);P.leg=el('div','nleg');P.leg.hidden=true;for(const [kd,t] of LEG){const sp=el('span');const i=el('i');i.style.background=KIND[kd][1];sp.append(i,t);P.leg.append(sp)}P.legHint=el('small','mut','');P.leg.append(P.legHint);k.append(P.leg);
   const S=NV.data.settings;
@@ -126,8 +131,25 @@ function lockMap(on){NV.locked=!!on;const m=NV.map;if(!m)return;const touch=L.Br
   if(NV.lockBtn){NV.lockBtn.textContent=NV.locked?'🔒':'🔓';NV.lockBtn.title=NV.locked?'Mapa zablokowana – dotknij, by edytować punkty':'Mapa do edycji – dotknij, by zablokować'}}
 function lockControl(){const C=L.Control.extend({options:{position:'topright'},onAdd(){const d=L.DomUtil.create('div','nlock');L.DomEvent.disableClickPropagation(d);
     const b=L.DomUtil.create('button','',d);b.type='button';b.onclick=()=>lockMap(!NV.locked);NV.lockBtn=b;
-    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)NV.map.fitBounds(NV.fit,{padding:[30,30]});else fitAll()};return d}});
+    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)NV.map.fitBounds(NV.fit,{padding:[30,30]});else fitAll()};
+    const fs=L.DomUtil.create('button','',d);fs.type='button';fs.textContent='⛶';fs.title='Pełny ekran mapy';fs.onclick=()=>fullMap(!NV.full);NV.fullBtn=fs;return d}});
   new C().addTo(NV.map);lockMap(NV.locked)}
+// Pełny ekran mapy: mapa na cały ekran, przesuwanie jednym palcem, strona
+// pod spodem stoi (aplikacja HA nie łapie gestów przewijania ani „wstecz”).
+function fullMap(on){const m=NV.map;if(!m)return;on=!!on;if(on===!!NV.full)return;NV.full=on;const c=m.getContainer();
+  if(on){NV.lockBefore=NV.locked;c.classList.add('nfull');document.body.classList.add('nfull-on');lockMap(false)}
+  else{c.classList.remove('nfull');document.body.classList.remove('nfull-on');lockMap(NV.lockBefore);c.scrollIntoView({block:'center'})}
+  if(NV.fullBtn){NV.fullBtn.textContent=on?'✕':'⛶';NV.fullBtn.title=on?'Zamknij pełny ekran':'Pełny ekran mapy'}
+  setTimeout(()=>m.invalidateSize(),60)}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&NV.full)fullMap(false)});
+function toast(t){const d=el('div','ntoast',t);document.body.append(d);setTimeout(()=>d.remove(),2600)}
+// Gest „wstecz” (przesunięcie od krawędzi w aplikacji HA) w Nawigacji nie wychodzi
+// z dodatku: zamyka pełny ekran albo zostaje na miejscu.
+let GUARD=false;
+function navGuard(){if(GUARD)return;GUARD=true;try{history.pushState({nt1100:'nav'},'')}catch(e){return}
+  addEventListener('popstate',()=>{const v=document.getElementById('v-nav');if(!v||v.hidden)return;
+    if(NV.full)fullMap(false);else toast('Zostajesz w Nawigacji – do Home Assistanta wrócisz menu z boku.');
+    try{history.pushState({nt1100:'nav'},'')}catch(e){}})}
 function fitRoute(b){NV.fit=b;NV.map.fitBounds(b,{padding:[30,30]});lockMap(true)}
 function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}NV.map.fitBounds(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])),{padding:[30,30]})}
 function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent=''}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
@@ -307,25 +329,28 @@ async function simulate(r0){simStop();let r;try{r=await J('api/nav/route?id='+r0
 /* ---- ustawienia */
 async function setHome(h){try{const j=await post('api/nav/home',{home:h});NV.data.settings.home=j.home;if(SF.home)SF.home.textContent=j.home?(j.home.name+' · '+j.home.lat.toFixed(4)+', '+j.home.lon.toFixed(4)):'nie ustawiony';if(NV.map&&j.home){if(NV.homeMk)NV.homeMk.remove();NV.homeMk=L.circleMarker([j.home.lat,j.home.lon],{radius:7,color:'#fff',fillColor:'#7950f2',fillOpacity:1}).bindTooltip('dom').addTo(NV.map)}}catch(e){alert(e.message)}}
 let SF={};
-function settingsCard(V){const S=NV.data.settings;const k=el('div','card');k.append(el('b',null,'Ustawienia nawigacji'));V.append(k);
+function settingsCard(V){const S=NV.data.settings;const k0=el('div','card');k0.append(el('b',null,'Ustawienia nawigacji'));V.append(k0);
+  const grp=(t,open)=>{const d=el('details','ngrp');if(open)d.open=true;d.append(el('summary',null,t));k0.append(d);return d};
+  let k=grp('Połączenie (silnik tras, mapa, korki)',!S.engine_url);
   const eu=field(k,'Silnik tras (kontener Proxmox, np. http://192.168.1.50:8989)','url',null,S.engine_url);
   const mu=field(k,'Mapa na kartę (ten sam kontener, np. http://192.168.1.50:8988)','url',null,S.map_url);
   const tk=field(k,'Klucz TomTom (korki; puste = wyłączone)','password',null,'',S.tomtom_key);
-  const dv=field(k,'Domyślny wariant (skrót „jedź do…” z iPhone’a)','select',NV.data.variants,S.default_variant);
+  const kp=grp('Planowanie i dom');const ke=grp('Ekran w trasie');k=ke;
+  const dv=field(kp,'Domyślny wariant (skrót „jedź do…” z iPhone’a)','select',NV.data.variants,S.default_variant);
   const ld=field(k,'Wynik zakrętu na ekranie od pochyłu (°)','number',null,S.lean_popup_deg);
   const tm=field(k,'Sprawdzanie korków co (min)','number',null,S.traffic_min);
   const om=field(k,'Zjazd z trasy od (m)','number',null,S.offroute_m);
   const fk=field(k,'„Jadę po swojemu” po (km) poza trasą','number',null,S.free_km);
-  const cs=curvySliders(k,S);
+  const cs=curvySliders(kp,S);
   const hd=el('div','f');hd.append(el('label',null,'Dom (start, gdy ekran nie podał pozycji)'));SF.home=el('div',null,S.home?(S.home.name+' · '+S.home.lat.toFixed(4)+', '+S.home.lon.toFixed(4)):'nie ustawiony');const ha=el('div','acts');const hb=el('button',null,'Wskaż dom na mapie');hb.onclick=()=>{NV.mode='home';lockMap(false);alert('Kliknij na mapie miejsce domu.');document.getElementById('navmap').scrollIntoView({behavior:'smooth',block:'center'})};
-  const hs=el('button',null,'Dom = start z listy punktów');hs.onclick=()=>{if(!NV.pts.length){alert('Najpierw dodaj punkt startu.');return}setHome({lat:NV.pts[0].lat,lon:NV.pts[0].lon,name:NV.pts[0].name||'Dom'})};ha.append(hb,hs);hd.append(SF.home,ha);k.append(hd);
+  const hs=el('button',null,'Dom = start z listy punktów');hs.onclick=()=>{if(!NV.pts.length){alert('Najpierw dodaj punkt startu.');return}setHome({lat:NV.pts[0].lat,lon:NV.pts[0].lon,name:NV.pts[0].name||'Dom'})};ha.append(hb,hs);hd.append(SF.home,ha);kp.insertBefore(hd,kp.children[2]||null);k=k0;
   const a=el('div','acts');const sb=el('button','pri','Zapisz ustawienia');const m=el('span','nmsg');sb.onclick=async()=>{sb.disabled=true;const body={engine_url:eu.value,map_url:mu.value,default_variant:dv.value,lean_popup_deg:ld.value,traffic_min:tm.value,offroute_m:om.value,free_km:fk.value,avoid:Object.keys(P.av).filter(v=>P.av[v]),curvy:cs.curvy(),curvy_levels:cs.levels()};if(tk.value)body.tomtom_key=tk.value;
     try{const s=await post('api/nav/settings',body);NV.data.settings=s;NV.data.engine=!!s.engine_url;msg(m,'zapisano','ok');tk.value='';tk.placeholder=s.tomtom_key?'•••••• (bez zmian)':''}catch(e){msg(m,e.message,'bad')}sb.disabled=false};a.append(sb,m);k.append(a);
   k.append(el('p','mut','Omijanie zaznaczone wyżej („omijaj: …”) zapisuje się razem z ustawieniami jako domyślne. Skrót iPhone’a „Wyślij na motocykl”: adres z zakładki Ustawienia → Połączenie, ścieżka /api/nav/goto?klucz=KLUCZ&text=LINK.'));
   const SH=NV.data.settings.home;if(SH&&NV.map&&!NV.homeMk)NV.homeMk=L.circleMarker([SH.lat,SH.lon],{radius:7,color:'#fff',fillColor:'#7950f2',fillOpacity:1}).bindTooltip('dom').addTo(NV.map)}
 
 // Suwaki krętości wariantów i progi opisu; zwraca odczyt do zapisu.
-function curvySliders(k,S){const box=el('div','f');box.append(el('label',null,'Krętość wariantów (0–100)'));
+function curvySliders(k,S){const box=el('details','ngrp');box.append(el('summary',null,'Krętość wariantów (suwaki i opis)'));
   box.append(el('p','mut','Unikaj głównych: jak bardzo omijać autostrady i drogi krajowe. Szukaj zakrętów: jak mocno karać proste drogi. Dłuższa trasa: na ile wolno nadłożyć drogi dla lepszych zakrętów. Działa przy następnym liczeniu.'));
   const D=NV.data.curvy_default||{},C=JSON.parse(JSON.stringify(S.curvy||D)),inputs={};
   const names=[['glowne','Unikaj głównych'],['zakrety','Szukaj zakrętów'],['dluzej','Dłuższa trasa']];
