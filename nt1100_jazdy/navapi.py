@@ -18,6 +18,8 @@ import re
 import secrets
 import threading
 import time
+import unicodedata
+import urllib.parse
 
 import nav
 import ntt
@@ -28,6 +30,13 @@ PLANS = {}  # token -> (czas, lista tras) z ostatnich planowań
 NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000)}
 RECENT_MAX = 12
 
+
+def gpx_disposition(name):
+    """Nagłówek pobrania GPX. Nagłówki HTTP są w latin-1: polskie litery idą
+    w filename* (RFC 5987), a filename dostaje wersję bez ogonków."""
+    fn = re.sub(r"[^\w.-]+", "_", name or "trasa", flags=re.UNICODE).strip("_")[:40] or "trasa"
+    ascii_fn = unicodedata.normalize("NFKD", fn.replace("ł", "l").replace("Ł", "L")).encode("ascii", "ignore").decode() or "trasa"
+    return 'attachment; filename="%s.gpx"; filename*=UTF-8\'\'%s.gpx' % (ascii_fn, urllib.parse.quote(fn))
 
 def init(server):
     global SRV, NAV
@@ -209,9 +218,8 @@ def page_get(h, path, q):
             r = NAV.route(int(q.get("id", "0")))
             if not r:
                 return h.send(404, "brak trasy", "text/plain") or True
-            fn = re.sub(r"[^\w.-]+", "_", r.get("name") or "trasa")[:40] + ".gpx"
             return h.send(200, nav.to_gpx(r).encode(), "application/gpx+xml",
-                          {"Content-Disposition": 'attachment; filename="%s"' % fn}) or True
+                          {"Content-Disposition": gpx_disposition(r.get("name"))}) or True
         if path == "/api/nav/search":
             qq = (q.get("q") or "").strip()[:100]
             if not qq:

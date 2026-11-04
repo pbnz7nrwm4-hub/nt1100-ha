@@ -49,6 +49,9 @@ wczytywanie plików GPX (np. z Kurvigera).
   autostrad i promów; trasa okrężna o zadanej długości.
 - **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
   Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
+- **GPX dla kolegi**: przycisk „GPX” przy policzonym wariancie (zapisuje trasę bez wysyłania
+  na ekran) albo przy zapisanej trasie. Na telefonie otwiera się arkusz udostępniania
+  (Wiadomości, WhatsApp, Pliki), na komputerze plik się pobiera.
 - **Skrót iPhone’a „Wyślij na motocykl”**: udostępnij miejsce z Map do skrótu, który
   otwiera adres `ADRES-SPOZA-DOMU/api/nav/goto?klucz=KLUCZ&text=LINK` (klucz i adres
   w zakładce Ustawienia). Trasa liczy się z pozycji motocykla domyślnym wariantem.

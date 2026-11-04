@@ -170,8 +170,17 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
     const rain=r.weather&&r.weather.length?Math.max(...r.weather.map(w=>w.rain_prob||0)):null;const temps=r.weather&&r.weather.length?r.weather.map(w=>w.temp).filter(x=>x!==null&&x!==undefined):[];
     tx.append(el('small','mut',(r.curvy?r.curvy.level+' ('+r.curvy.deg_km+'°/km)':'')+' · fotoradary: '+(r.cameras||[]).length+' · manewry: '+(r.turns||[]).length+(rain!==null?' · deszcz do '+rain+'%':'')+(temps.length?' · '+Math.min(...temps).toFixed(0)+'–'+Math.max(...temps).toFixed(0)+'°C':'')));
     const b=el('button','pri','Wyślij na ekran');b.onclick=async ev=>{ev.stopPropagation();b.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:true});msg(P.msg,'trasa „'+s.route.name+'” zapisana; ekran pobierze ją przy najbliższym połączeniu','ok');NV.data=await J('api/nav/routes');routesCard(null)}catch(e){msg(P.msg,e.message,'bad');b.disabled=false}};
-    d.append(sw,tx,b);d.onclick=()=>{NV.sel=i;document.querySelectorAll('.nres').forEach((x,k)=>x.classList.toggle('on',k===i));NV.lines.forEach((x,k)=>x.setStyle({opacity:k===i?1:.35,weight:k===i?6:3}));NV.lines[i].bringToFront();alongFor('token='+j.token+'&variant='+r.variant,vn,ll)};P.out.append(d)});
+    const g=el('button',null,'GPX');g.title='zapisz bez wysyłania na ekran i udostępnij plik GPX';g.onclick=async ev=>{ev.stopPropagation();g.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});NV.data=await J('api/nav/routes');routesCard(null);await shareGpx(s.id,s.route.name);msg(P.msg,'trasa „'+s.route.name+'” zapisana (bez wysyłania na ekran)','ok')}catch(e){msg(P.msg,e.message,'bad')}g.disabled=false};
+    d.append(sw,tx,g,b);d.onclick=()=>{NV.sel=i;document.querySelectorAll('.nres').forEach((x,k)=>x.classList.toggle('on',k===i));NV.lines.forEach((x,k)=>x.setStyle({opacity:k===i?1:.35,weight:k===i?6:3}));NV.lines[i].bringToFront();alongFor('token='+j.token+'&variant='+r.variant,vn,ll)};P.out.append(d)});
   if(bnds.length)NV.map.fitBounds(L.latLngBounds(bnds),{padding:[30,30]})}
+
+/* ---- GPX: arkusz udostępniania na telefonie (Wiadomości, WhatsApp, Pliki), na komputerze pobranie */
+async function shareGpx(id,name){const r=await fetch('api/nav/gpx?id='+id);if(!r.ok)throw new Error('nie udało się pobrać GPX');const blob=await r.blob();
+  const PL={ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z',Ą:'A',Ć:'C',Ę:'E',Ł:'L',Ń:'N',Ó:'O',Ś:'S',Ź:'Z',Ż:'Z'};
+  const fn=((name||'trasa').replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g,c=>PL[c]).replace(/[^\w.\-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'trasa')+'.gpx';
+  const file=new File([blob],fn,{type:'application/gpx+xml'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:name||'Trasa'});return}catch(e){if(e&&e.name==='AbortError')return}}
+  const u=URL.createObjectURL(file);const a=document.createElement('a');a.href=u;a.download=fn;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000)}
 
 /* ---- zapisane trasy */
 let RC=null;
@@ -183,7 +192,7 @@ function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='
     tx.append(el('small','mut',r.km+' km · '+dur(r.min)+(r.variant?' · '+((d.variants.find(x=>x[0]===r.variant)||[0,r.variant])[1]).toLowerCase():'')+(r.source?' · '+r.source:'')+' · '+when(r.created)));
     const a=el('div','acts');a.style.margin='0';const sh=el('button',null,'Pokaż');sh.onclick=async()=>{try{const full=await J('api/nav/route?id='+r.id);showRoute(full);document.getElementById('navmap').scrollIntoView({behavior:'smooth',block:'center'})}catch(e){alert(e.message)}};
     const cu=el('button',null,r.id===d.current?'Zdejmij z ekranu':'Na ekran');cu.onclick=async()=>{try{await post('api/nav/current',{id:r.id===d.current?0:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
-    const gx=el('a');gx.href='api/nav/gpx?id='+r.id;gx.textContent='GPX';gx.className='chip';gx.download='';
+    const gx=el('button',null,'GPX');gx.title='pobierz albo udostępnij plik GPX';gx.onclick=()=>shareGpx(r.id,r.name).catch(e=>alert(e.message));
     const rm=el('button','warn','Usuń');rm.onclick=async()=>{if(!confirm('Usunąć trasę „'+(r.name||r.id)+'”?'))return;try{await post('api/nav/delete',{id:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
     const sm=el('button',null,'Symulacja');sm.title='Przejazd trasy na niby: mapa i podgląd ekranu z kierownicy';sm.onclick=()=>simulate(r);
     a.append(sh,sm,cu,gx,rm);row.append(tx,a);RC.append(row)}}

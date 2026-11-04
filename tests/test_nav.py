@@ -329,13 +329,13 @@ class NavServerTest(unittest.TestCase):
     def test_03_gpx_import_to_screen(self):
         pts = l_shape()
         seg = "".join('<trkpt lat="%.6f" lon="%.6f"></trkpt>' % p for p in pts)
-        code, body, _ = self.req(self.pu + "/api/nav/gpx?name=Z+Kurvigera", (GPX % seg).encode(),
+        code, body, _ = self.req(self.pu + "/api/nav/gpx?name=Z+Kurvigera+%C5%81%C3%B3d%C5%BA", (GPX % seg).encode(),
                                  {"Content-Type": "application/gpx+xml"}, "POST")
         self.assertEqual(code, 200, body)
         j = json.loads(body)
         rid = j["id"]
         r = j["route"]
-        self.assertEqual(r["name"], "Z Kurvigera")
+        self.assertEqual(r["name"], "Z Kurvigera Łódź")
         self.assertAlmostEqual(r["km"], 2.0, places=1)
         self.assertEqual(r["source"], "gpx")
         self.assertEqual([w["name"] for w in r["waypoints"]], ["Przełęcz", "cel"])
@@ -352,6 +352,10 @@ class NavServerTest(unittest.TestCase):
         code, body, h = self.req(self.pu + "/api/nav/gpx?id=%d" % rid)
         self.assertEqual(code, 200)
         self.assertIn(b"<trkpt", body)
+        # Polish letters in the name: plain filename without them, the real one in filename*
+        cd = h.get("Content-Disposition")
+        self.assertIn('filename="Z_Kurvigera_Lodz.gpx"', cd)
+        self.assertIn("filename*=UTF-8''Z_Kurvigera_%C5%81%C3%B3d%C5%BA.gpx", cd)
         # take it off the screen
         code, j = self.jpost(self.pu + "/api/nav/current", {"id": 0})
         self.assertEqual(code, 200)
