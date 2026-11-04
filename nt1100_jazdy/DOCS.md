@@ -136,6 +136,8 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 
 **Szybsze Wi-Fi (ekran 1.0.10).** Ekran pamięta ostatnią sieć, do której się połączył, i łączy się z nią od razu, bez skanowania. Gdy jej nie ma, robi jedno krótkie skanowanie i wybiera najsilniejszą znaną sieć w zasięgu, zamiast czekać na każdą po kolei. Hotspot iPhone’a (czasem niewidoczny w skanie) próbuje „na ślepo” tylko w jeździe.
 
+**Bateria ekranu (ekran 1.0.11).** W zakładce Stan jest wiersz „bateria ekranu”: procent, napięcie i „ładuje się”, a bez podłączonego akumulatora „brak akumulatora”.
+
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
