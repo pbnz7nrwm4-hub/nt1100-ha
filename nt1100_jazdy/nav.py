@@ -328,7 +328,7 @@ def to_gpx(route, osmand=False):
     return "\n".join(out)
 
 
-def to_gpx_osmand(route):
+def to_gpx_osmand(route, start=None):
     pts = route["pts"]
     times = route.get("times") or []
     name = esc(route.get("name") or "Trasa")
@@ -340,8 +340,12 @@ def to_gpx_osmand(route):
         p = pts[w["idx"]]
         out.append('<wpt lat="%.6f" lon="%.6f"><name>%s</name></wpt>' % (p[0], p[1], esc(w.get("name") or "")))
     out.append("<trk><name>%s</name><trkseg>" % name)
-    for p in pts:
-        out.append('<trkpt lat="%.6f" lon="%.6f"/>' % (p[0], p[1]))
+    # czas przy każdym punkcie (od teraz): bez niego OsmAnd po „Dołącz do dróg” liczy przyjazd z zera
+    t0 = int(time.time() if start is None else start)
+    tt = times if len(times) == len(pts) else [0] * len(pts)
+    for p, ts in zip(pts, tt):
+        out.append('<trkpt lat="%.6f" lon="%.6f"><time>%s</time></trkpt>'
+                   % (p[0], p[1], time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0 + int(ts)))))
     out.append("</trkseg></trk>")
     # punkty trasy: start, każdy manewr, cel; time = sekundy do następnego punktu
     turns = [(0, "C", 0, "Start")] + [t for t in osmand_turns(route) if 0 < t[0] < len(pts) - 1]
