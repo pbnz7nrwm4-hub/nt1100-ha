@@ -47,14 +47,23 @@ fi
 pobierz natural_earth_vector.sqlite.zip https://dev.maptiler.download/geodata/omt/natural_earth_vector.sqlite.zip
 pobierz lake_centerline.shp.zip https://dev.maptiler.download/geodata/omt/lake_centerline.shp.zip
 rm -f "$KAT/www/kafelki.nowe.pmtiles"
+rm -rf "$D/tmp"
+# Miejsce na dysku: pliki tymczasowe Planetilera to kilka razy rozmiar danych OSM.
+POTRZEBA=$(( $(stat -c %s "$WE") * 4 / 1048576 + 3072 ))
+WOLNE=$(df -Pm "$D" | awk 'NR==2{print $4}')
+if [ "$WOLNE" -lt "$POTRZEBA" ]; then
+  echo "$(date '+%F %T') za mało miejsca na dysku: wolne $((WOLNE/1024)) GB, potrzeba ok. $((POTRZEBA/1024 + 1)) GB"
+  echo "  powiększ dysk kontenera na Proxmoxie: pct resize <numer kontenera> rootfs +10G"
+  exit 3
+fi
 "$JAVA21" -Djava.net.preferIPv4Stack=true -Xmx"${PAMIEC_MAPY:-3g}" -jar "$KAT/planetiler.jar" \
   --osm-path="$WE" \
   --water-polygons-path="$WODA" \
   --natural-earth-path="$D/natural_earth_vector.sqlite.zip" \
   --lake-centerlines-path="$D/lake_centerline.shp.zip" \
-  --tmpdir="$D/tmp" --storage=mmap --nodemap-type=array \
+  --tmpdir="$D/tmp" --storage=mmap --nodemap-type=sparsearray \
   --only-layers="$WARSTWY" --maxzoom=14 \
-  --output="$KAT/www/kafelki.nowe.pmtiles" --force
+  --output="$KAT/www/kafelki.nowe.pmtiles" --force || { rm -rf "$D/tmp" "$KAT/www/kafelki.nowe.pmtiles"; exit 1; }
 mv "$KAT/www/kafelki.nowe.pmtiles" "$KAT/www/kafelki.pmtiles"
 rm -rf "$D/tmp"
 [ "$WE" != "$PBF" ] && rm -f "$WE"

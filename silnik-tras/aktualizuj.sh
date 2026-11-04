@@ -19,6 +19,26 @@ koniec() {  # koniec true|false "opis"
   printf '{"etap":"%s","od":%d,"t":%d,"pracuje":false,"ok":%s}\n' "$2" "$OD" "$(date +%s)" "$1" > "$STAN.tmp"
   mv "$STAN.tmp" "$STAN"
 }
+BLAD=""
+podsumuj() {  # na końcu: gotowe albo lista tego, co się nie udało (też w stan.json dla dodatku)
+  if [ -n "$BLAD" ]; then
+    koniec false "trasy działają, ale: $BLAD (dziennik: /var/log/nt1100-trasy.log)"
+    echo "$(date '+%F %T') UWAGA: $BLAD – szczegóły wyżej"
+  else
+    koniec true "$1"
+    echo "$(date '+%F %T') gotowe"
+  fi
+  sprawdz
+}
+sprawdz() {  # co jest w kontenerze
+  echo "Stan kontenera:"
+  [ -d "$KAT/dane/graf" ] && echo "  [OK] graf tras" || echo "  [BRAK] graf tras"
+  [ -s "$KAT/www/mapa/manifest.json" ] && echo "  [OK] mapa na ekran ($(du -sh "$KAT/www/mapa" | cut -f1))" || echo "  [BRAK] mapa na ekran"
+  [ -s "$KAT/www/kafelki.pmtiles" ] && echo "  [OK] mapa do przeglądarki ($(du -h "$KAT/www/kafelki.pmtiles" | cut -f1))" || echo "  [BRAK] mapa do przeglądarki"
+  [ -d "$KAT/www/dem" ] && echo "  [OK] dane gór ($(du -sh "$KAT/www/dem" | cut -f1))" || echo "  [BRAK] dane gór"
+  echo "  wolne miejsce: $(df -Ph "$KAT" | awk 'NR==2{print $4}')"
+}
+[ "${1:-}" = "--stan" ] && { sprawdz; exit 0; }
 trap 'koniec false "przerwane z błędem (dziennik: /var/log/nt1100-trasy.log)"; systemctl start nt1100-trasy.service nt1100-mapa.service || true' ERR
 mkdir -p "$KAT/www"
 
@@ -34,13 +54,12 @@ if [ ! -s "$PBF.nowy" ]; then
     if [ ! -s "$KAT/www/kafelki.pmtiles" ]; then
       etap "mapa do przeglądarki (trasy nie liczą się)" 3
       systemctl stop nt1100-trasy.service || true
-      "$KAT/bin/kafelki.sh" "$PBF" || echo "$(date '+%F %T') kafelki nieudane"
+      "$KAT/bin/kafelki.sh" "$PBF" || { echo "$(date '+%F %T') kafelki nieudane"; BLAD="mapa do przeglądarki nieudana"; }
     fi
     systemctl start nt1100-trasy.service
     etap "dane wysokości gór" 4
-    python3 "$KAT/bin/dem.py" "$KAT/www" || echo "$(date '+%F %T') dane wysokości niepełne"
-    koniec true "gotowe (dane bez zmian)"
-    echo "$(date '+%F %T') gotowe"
+    python3 "$KAT/bin/dem.py" "$KAT/www" || { echo "$(date '+%F %T') dane wysokości niepełne"; BLAD="${BLAD:+$BLAD, }dane gór niepełne"; }
+    podsumuj "gotowe (dane bez zmian)"
     exit 0
   fi
 else
@@ -59,14 +78,14 @@ systemctl start nt1100-mapa.service
 # Planetiler i import GraphHoppera potrzebują dużo pamięci: silnik tras stoi na czas budowy.
 etap "mapa do przeglądarki (trasy nie liczą się)" 3
 systemctl stop nt1100-trasy.service || true
-"$KAT/bin/kafelki.sh" "$PBF" || echo "$(date '+%F %T') kafelki nieudane, zostaje poprzednia mapa"
+"$KAT/bin/kafelki.sh" "$PBF" || { echo "$(date '+%F %T') kafelki nieudane, zostaje poprzednia mapa"; BLAD="mapa do przeglądarki nieudana"; }
 etap "dane wysokości gór (pobiera tylko brakujące)" 4
-python3 "$KAT/bin/dem.py" "$KAT/www" || echo "$(date '+%F %T') dane wysokości niepełne"
+python3 "$KAT/bin/dem.py" "$KAT/www" || { echo "$(date '+%F %T') dane wysokości niepełne"; BLAD="${BLAD:+$BLAD, }dane gór niepełne"; }
 
 etap "graf tras (trasy nie liczą się)" 5
 rm -rf "$KAT/dane/graf"
 cd "$KAT"
 java -Xmx"${PAMIEC}" -Xms1g -jar "$KAT/graphhopper-web.jar" import "$KAT/config.yml"
 systemctl start nt1100-trasy.service
-koniec true "gotowe"
+podsumuj "gotowe"
 echo "$(date '+%F %T') gotowe"
