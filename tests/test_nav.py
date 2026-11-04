@@ -746,6 +746,37 @@ class NavServerTest(unittest.TestCase):
         code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts[:1], "round_trip_min": 60, "round_trip_km": 50})
         self.assertEqual(code, 400)
 
+    def test_13_avoid_gravel_and_favourites(self):
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu})
+        pts = [{"lat": 50.0, "lon": 19.9, "name": "A"}, {"lat": 50.02, "lon": 19.95, "name": "B"}]
+        rules = {}
+        for av in (["gruntowe"], ["szutrowe"], ["gruntowe", "szutrowe"]):
+            FakeGraphHopper.calls = []
+            code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["szybko"], "avoid": av,
+                                                             "weather": False})
+            self.assertEqual(code, 200, j)
+            rules[tuple(av)] = json.dumps(FakeGraphHopper.calls[0]["custom_model"]["priority"])
+        self.assertIn("TRACK", rules[("gruntowe",)])
+        self.assertNotIn("GRAVEL", rules[("gruntowe",)])
+        self.assertIn("FINE_GRAVEL", rules[("szutrowe",)])
+        self.assertNotIn("TRACK", rules[("szutrowe",)])
+        self.assertTrue("TRACK" in rules[("gruntowe", "szutrowe")] and "GRAVEL" in rules[("gruntowe", "szutrowe")])
+        # ulubione: zapis, walidacja, cel skrótu po samej nazwie
+        code, j = self.jpost(self.pu + "/api/nav/fav", {"fav": [{"lat": 50.009, "lon": 19.914, "name": "Praca"},
+                                                                {"lat": 50.005, "lon": 19.9, "name": "Szkoła"}]})
+        self.assertEqual(code, 200, j)
+        self.assertEqual([f["name"] for f in j["fav"]], ["Praca", "Szkoła"])
+        code, j = self.jpost(self.pu + "/api/nav/fav", {"fav": [{"lat": 1, "lon": 2, "name": "a"}, {"lat": 3, "lon": 4, "name": "A"}]})
+        self.assertEqual(code, 400)
+        code, j = self.jpost(self.pu + "/api/nav/fav", {"fav": [{"lat": "x", "lon": 2, "name": "a"}]})
+        self.assertEqual(code, 400)
+        code, body, _ = self.req(self.pu + "/api/nav/settings")
+        self.assertEqual(len(json.loads(body)["fav"]), 2)
+        self.jpost(self.pu + "/api/nav/home", {"home": {"lat": 50.0, "lon": 19.9}})
+        code, j = self.jpost(self.pu + "/api/nav/goto", {"text": "praca"})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(j["place"]["name"], "Praca")
+
 
 if __name__ == "__main__":
     unittest.main()
