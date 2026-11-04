@@ -2,14 +2,15 @@
 
 Strona (Ingress, bez klucza):
   GET  /nav.js, /api/nav/routes, /api/nav/route?id, /api/nav/gpx?id, /api/nav/search?q,
-       /api/nav/poi?bbox, /api/nav/resolve?text, /api/nav/settings, /api/nav/map, /api/nav/plan?n (zgodność jazdy),
-       /api/nav/screen, /api/nav/recent
+       /api/nav/poi?bbox, /api/nav/along?id|token&variant&kinds&max (POI wzdłuż trasy),
+       /api/nav/nearby?kinds&lat&lon (miejsca przed motocyklem), /api/nav/resolve?text, /api/nav/settings,
+       /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
-       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home
+       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
   GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik>,
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
-  POST /api/nav/reroute, /api/nav/log
+  POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę)
 """
 import json
 import os
@@ -19,6 +20,7 @@ import threading
 import time
 
 import nav
+import ntt
 
 SRV = None
 NAV = None
@@ -113,6 +115,16 @@ def start_point():
     return None
 
 
+def bike_position(q_lat=None, q_lon=None):
+    """Pozycja do decyzji w trasie: ekran (do 30 min), inaczej podana z telefonu."""
+    sc = NAV.screen_position()
+    if sc and time.time() - sc.get("t", 0) < 1800:
+        return {"lat": sc["lat"], "lon": sc["lon"], "src": "ekran", "age_s": int(time.time() - sc.get("t", 0))}
+    if q_lat is not None and q_lon is not None:
+        return {"lat": q_lat, "lon": q_lon, "src": "telefon", "age_s": 0}
+    return None
+
+
 def route_summary(r, with_pts=True):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
                                  "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km")}
@@ -195,6 +207,33 @@ def page_get(h, path, q):
             pts = NAV.map.points_in_bbox(s, w, n, e, kinds, 400)
             return h.send(200, {"points": [{"lat": p.lat, "lon": p.lon, "kind": p.kind, "name": p.name, "limit": p.limit}
                                            for p in pts]}) or True
+        if path == "/api/nav/nearby":
+            kinds = {int(k) for k in q.get("kinds", "").split(",") if k.strip().isdigit()} or {ntt.P_FUEL}
+            pos = bike_position(SRV.num(q.get("lat")), SRV.num(q.get("lon")))
+            if not pos:
+                return h.send(200, {"pos": None, "points": []}) or True
+            if not NAV.map.available():
+                return h.send(200, {"pos": pos, "points": [], "no_map": True}) or True
+            out = NAV.nearby(pos["lat"], pos["lon"], kinds)
+            out["pos"] = pos
+            return h.send(200, out) or True
+        if path == "/api/nav/along":
+            # POI wzdłuż trasy: zapisanej (id) albo świeżo policzonej (token + wariant)
+            route = None
+            if q.get("token"):
+                plan = PLANS.get(q.get("token"))
+                if not plan:
+                    return h.send(410, {"error": "planowanie wygasło, policz jeszcze raz"}) or True
+                route = next((r for r in plan[1] if r.get("variant") == q.get("variant")), None)
+            elif q.get("id", "").isdigit():
+                route = NAV.route(int(q["id"]))
+            if not route:
+                return h.send(404, {"error": "brak trasy"}) or True
+            kinds = {int(k) for k in q.get("kinds", "").split(",") if k.strip().isdigit()} or {ntt.P_FUEL}
+            max_m = min(5000.0, max(200.0, SRV.num(q.get("max")) or 2000.0))
+            if not NAV.map.available():
+                return h.send(200, {"points": [], "no_map": True}) or True
+            return h.send(200, {"points": NAV.along_route(route, kinds, max_m)}) or True
         if path == "/api/nav/resolve":
             place = NAV.resolve_place((q.get("text") or "")[:500])
             if not place:
@@ -308,6 +347,17 @@ def page_post(h, path, q, body):
         if path == "/api/nav/goto":
             r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"))
             return h.send(200, {"route": r, "place": place}) or True
+        if path == "/api/nav/via":
+            place = {"lat": SRV.num(j.get("lat")), "lon": SRV.num(j.get("lon")), "name": str(j.get("name") or "")[:30]}
+            if place["lat"] is None or place["lon"] is None:
+                return h.send(400, {"error": "zly punkt"}) or True
+            fr = j.get("from") or {}
+            pos = bike_position(SRV.num(fr.get("lat")), SRV.num(fr.get("lon")))
+            if not pos:
+                return h.send(400, {"error": "nie znam pozycji motocykla – włącz hotspot albo użyj pozycji telefonu"}) or True
+            r = NAV.via_place(pos["lat"], pos["lon"], place)
+            NAV.note_current(r["id"])
+            return h.send(200, {"route": route_summary(r, False), "pos": pos}) or True
         if path == "/api/nav/home":
             err = nav_settings_apply({"home": j.get("home")})
             if err:
@@ -446,6 +496,16 @@ def screen_post(h, path, q, body):
             if lat is None or lon is None:
                 return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
             r = NAV.reroute(rid, lat, lon, SRV.num(j.get("heading")), bool(j.get("skip")), SRV.num(j.get("avoid_km")))
+            return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
+                                "min": int(r["time_s"] / 60)}) or True
+        if path == "/api/nav/via":
+            # ekran: zjazd do wybranego miejsca (stacja, jedzenie) i powrót na trasę
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            place = {"lat": SRV.num(j.get("plat")), "lon": SRV.num(j.get("plon")), "name": str(j.get("name") or "")[:30]}
+            if None in (lat, lon, place["lat"], place["lon"]):
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            r = NAV.via_place(lat, lon, place, SRV.num(j.get("heading")))
+            NAV.note_current(r["id"])
             return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
                                 "min": int(r["time_s"] / 60)}) or True
         if path == "/api/nav/log":
