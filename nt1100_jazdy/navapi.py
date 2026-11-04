@@ -8,7 +8,7 @@ Strona (Ingress, bez klucza):
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
        /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
-  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik>,
+  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
   POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę)
 """
@@ -292,6 +292,15 @@ def page_get(h, path, q):
         else:
             h.send(404, "brak", "text/plain")
         return True
+    if path == "/api/nav/mapa.zip":
+        st = NAV.zip_status()
+        if not st["ready"]:
+            if not st["working"]:
+                threading.Thread(target=NAV.map_zip, daemon=True).start()
+            return h.send(202, {"ok": False, "working": True,
+                                "error": "paczka mapy się przygotowuje, spróbuj za kilka minut"}) or True
+        return h.send_path(NAV.zip_path(), "application/zip",
+                           {"Content-Disposition": 'attachment; filename="mapa-ekranu.zip"'}) or True
     if path == "/api/nav/kafelki/info":
         return h.send(200, tiles_info()) or True
     m = DEM_RE.match(path)
@@ -314,7 +323,7 @@ def page_get(h, path, q):
     try:
         if path == "/api/nav/routes":
             lst = NAV.list_routes()
-            lst.update(map=NAV.map_status(), engine=NAV.engine_ok(), screen=NAV.screen_position(),
+            lst.update(map=NAV.map_status(), zip=NAV.zip_status(), build=NAV.build_status(), engine=NAV.engine_ok(), screen=NAV.screen_position(),
                        settings=NAV.settings(), recent=recent(), variants=nav.VARIANTS, mix=nav.MIX,
                        avoid_all=nav.AVOID, curvy_default=nav.CURVY_DEFAULT,
                        curvy_levels_default=nav.CURVY_LEVELS_DEFAULT)
@@ -599,6 +608,16 @@ def screen_get(h, path, q):
             if rid <= 0 or not os.path.exists(p):
                 return h.send(404, {"ok": False, "error": "brak trasy"}) or True
             return h.send_path(p, "application/octet-stream" if p.endswith(".ntr") else "application/json") or True
+        if path == "/api/nav/mapa/manifest.json":
+            m = NAV.screen_manifest()
+            if not m:
+                return h.send(404, {"ok": False, "error": "brak mapy"}) or True
+            return h.send(200, m) or True
+        if path.startswith("/api/nav/mapa/") and path.endswith(".ntt.gz"):
+            p = NAV.map_gz(path.rsplit("/", 1)[1][:-3])
+            if not p:
+                return h.send(404, {"ok": False, "error": "brak pliku"}) or True
+            return h.send_path(p, "application/gzip") or True
         if path.startswith("/api/nav/mapa/"):
             p = NAV.map_file(path.rsplit("/", 1)[1])
             if not p:
