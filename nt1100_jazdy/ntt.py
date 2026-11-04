@@ -144,6 +144,24 @@ def read_cell(path):
     return ways, points
 
 
+GRID = 0.005  # oczko siatki odcinków (ok. 550 × 350 m) do szybkiego dopasowania drogi
+
+
+def segment_grid(ways):
+    """Siatka: oczko -> lista (Way, indeks odcinka) przechodzących przez oczko."""
+    grid = {}
+    for w in ways:
+        p = w.pts
+        for i in range(len(p) - 1):
+            a, b = p[i], p[i + 1]
+            g0, g1 = int(math.floor(min(a[0], b[0]) / GRID)), int(math.floor(max(a[0], b[0]) / GRID))
+            h0, h1 = int(math.floor(min(a[1], b[1]) / GRID)), int(math.floor(max(a[1], b[1]) / GRID))
+            for gi in range(g0, g1 + 1):
+                for hj in range(h0, h1 + 1):
+                    grid.setdefault((gi, hj), []).append((w, i))
+    return grid
+
+
 class Map:
     """Mapa z katalogu kwadratów; kwadraty wczytywane na żądanie i trzymane
     w pamięci (do kilkudziesięciu naraz)."""
@@ -166,6 +184,7 @@ class Map:
         return os.path.exists(os.path.join(self.dir, "manifest.json"))
 
     def cell(self, key):
+        """(lista Way, lista Point, siatka odcinków) jednego kwadratu."""
         with self.lock:
             c = self.cells.get(key)
             if c is not None:
@@ -173,11 +192,12 @@ class Map:
             path = os.path.join(self.dir, cell_name(key))
             if os.path.exists(path):
                 try:
-                    c = read_cell(path)
+                    ways, points = read_cell(path)
                 except (OSError, ValueError, struct.error, IndexError):
-                    c = ([], [])
+                    ways, points = [], []
             else:
-                c = ([], [])
+                ways, points = [], []
+            c = (ways, points, segment_grid(ways))
             self.cells[key] = c
             self.order.append(key)
             while len(self.order) > self.max_cells:
@@ -202,26 +222,43 @@ class Map:
         return out
 
     def match_road(self, lat, lon, heading=None, radius_m=30.0):
-        """Najbliższa droga (Way, odległość, kierunek_zgodny, indeks odcinka)."""
+        """Najbliższa droga (Way, odległość, kierunek_zgodny, indeks odcinka).
+        Sprawdza tylko odcinki z oczek siatki wokół punktu."""
         best = None
-        for w in self.ways_near(lat, lon, radius_m):
-            for i in range(len(w.pts) - 1):
-                d, t = point_segment((lat, lon), w.pts[i], w.pts[i + 1])
-                if d > radius_m:
-                    continue
-                score = d
-                fwd = True
-                if heading is not None:
-                    b = bearing(w.pts[i], w.pts[i + 1])
-                    diff = abs(angle_diff(heading, b))
-                    if diff > 90:
-                        fwd = False
-                        diff = 180 - diff
-                        if w.flags & F_ONEWAY:
-                            score += 40
-                    score += diff * 0.15
-                if best is None or score < best[0]:
-                    best = (score, w, d, fwd, i)
+        dlat = radius_m / 111320.0
+        dlon = radius_m / (111320.0 * max(0.2, math.cos(math.radians(lat))))
+        g0, g1 = int(math.floor((lat - dlat) / GRID)), int(math.floor((lat + dlat) / GRID))
+        h0, h1 = int(math.floor((lon - dlon) / GRID)), int(math.floor((lon + dlon) / GRID))
+        seen = set()
+        for key in self.cells_around(lat, lon, radius_m):
+            grid = self.cell(key)[2]
+            for gi in range(g0, g1 + 1):
+                for hj in range(h0, h1 + 1):
+                    for w, i in grid.get((gi, hj), ()):
+                        k = (w.id, i)
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                        a, b = w.pts[i], w.pts[i + 1]
+                        if (min(a[0], b[0]) > lat + dlat or max(a[0], b[0]) < lat - dlat or
+                                min(a[1], b[1]) > lon + dlon or max(a[1], b[1]) < lon - dlon):
+                            continue
+                        d, t = point_segment((lat, lon), a, b)
+                        if d > radius_m:
+                            continue
+                        score = d
+                        fwd = True
+                        if heading is not None:
+                            bb = bearing(a, b)
+                            diff = abs(angle_diff(heading, bb))
+                            if diff > 90:
+                                fwd = False
+                                diff = 180 - diff
+                                if w.flags & F_ONEWAY:
+                                    score += 40
+                            score += diff * 0.15
+                        if best is None or score < best[0]:
+                            best = (score, w, d, fwd, i)
         if best is None:
             return None
         return best[1], best[2], best[3], best[4]
@@ -239,6 +276,8 @@ class Map:
         return out
 
     def points_in_bbox(self, s, w, n, e, kinds=None, limit=500):
+        """Punkty w prostokącie; gdy jest ich więcej niż limit, równomierna
+        próbka z całego obszaru (fotoradary zawsze), a nie pierwsze kwadraty."""
         out = []
         c0, c1 = cell_of(s, w), cell_of(n, e)
         for a in range(c0[0], c1[0] + 1):
@@ -248,6 +287,13 @@ class Map:
                         continue
                     if s <= p.lat <= n and w <= p.lon <= e:
                         out.append(p)
-                        if len(out) >= limit:
-                            return out
+        if len(out) <= limit:
+            return out
+        keep = [p for p in out if p.kind in (P_CAMERA, P_SECTION_START, P_SECTION_END)][:limit]
+        rest = [p for p in out if p.kind not in (P_CAMERA, P_SECTION_START, P_SECTION_END)]
+        room = limit - len(keep)
+        if room > 0 and rest:
+            step = len(rest) / float(room)
+            keep += [rest[int(i * step)] for i in range(min(room, len(rest)))]
+        return keep
         return out
