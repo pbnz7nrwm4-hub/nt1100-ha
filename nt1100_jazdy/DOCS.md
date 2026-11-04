@@ -149,6 +149,8 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 
 **Bateria ekranu (ekran 1.0.11).** W zakładce Stan jest wiersz „bateria ekranu”: procent, napięcie i „ładuje się”, a bez podłączonego akumulatora „brak akumulatora”.
 
+**Menu ekranu (ekran 1.1.2).** „Sprawdź wersję” pokazuje na przycisku „Sprawdzam...”, potem „Masz najnowszą”, „Brak Wi-Fi” albo „Brak odpowiedzi”; gdy jest nowsza wersja, przycisk zmienia się na podświetlone „Aktualizuj X”. „Ustawienia Wi-Fi” uruchamiają ekran ponownie prosto w stronę ustawień.
+
 **Mapa z tłem (ekran 1.1.0).** Ekran rysuje pod drogami wody (jeziora, zbiorniki, z wyspami), rzeki i kanały, a na mapie nazwy miejscowości (przy oddaleniu tylko większe). Aktualizując mapę, pobiera tylko kwadraty, które się zmieniły (porównuje rozmiar i sumę kontrolną), w wersji skompresowanej, a kwadraty spoza mapy usuwa. Mapa skopiowana na kartę z ZIP-a jest przyjmowana bez ponownego pobierania.
 
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
