@@ -16,7 +16,9 @@ Co tu jest:
 Pliki w /share/nt1100/nawigacja/: trasy/<id>.json, trasy/<id>.ntr,
 trasy.json (lista), mapa/ (kwadraty), ekran/ (dziennik), cele.json.
 """
+import binascii
 import concurrent.futures
+import gzip
 import json
 import math
 import os
@@ -295,6 +297,17 @@ def to_gpx(route):
 
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def file_crc(path):
+    crc = 0
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(1 << 16)
+            if not b:
+                break
+            crc = binascii.crc32(b, crc)
+    return crc
 
 
 # ---------------------------------------------------------------- paczka trasy
@@ -1221,19 +1234,38 @@ class Nav:
             self.save_state(map_sync={"t": int(time.time()), "built": remote.get("built"), "changed": False})
             return {"ok": True, "changed": False, "built": remote.get("built")}
         tmp = self.map_dir + ".nowa"
+        if os.path.exists(tmp):
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
         os.makedirs(tmp, exist_ok=True)
-        n = 0
-        for name, size in remote.get("files", []):
+        have = {}  # nazwa -> (bajty, crc) kwadratów, które już mamy
+        for f in (local or {}).get("files", []):
+            if len(f) >= 3:
+                have[f[0]] = (f[1], f[2])
+        n = kept = 0
+        files = []
+        for f in remote.get("files", []):
+            name, size = f[0], f[1]
+            crc = f[2] if len(f) >= 3 else None
             if not re.fullmatch(r"c_-?\d+_-?\d+\.ntt", name):
                 continue
-            req = urllib.request.Request(s["map_url"] + "/mapa/" + name, headers={"User-Agent": "NT1100-Jazdy"})
-            with urllib.request.urlopen(req, timeout=60) as r, open(os.path.join(tmp, name), "wb") as f:
-                while True:
-                    chunk = r.read(1 << 16)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            n += 1
+            dst = os.path.join(tmp, name)
+            if crc is not None and have.get(name) == (size, crc) and os.path.exists(os.path.join(self.map_dir, name)):
+                os.link(os.path.join(self.map_dir, name), dst)  # bez zmian: nie pobieramy drugi raz
+                kept += 1
+            else:
+                req = urllib.request.Request(s["map_url"] + "/mapa/" + name, headers={"User-Agent": "NT1100-Jazdy"})
+                with urllib.request.urlopen(req, timeout=60) as r, open(dst, "wb") as out:
+                    while True:
+                        chunk = r.read(1 << 16)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                n += 1
+            if crc is None:
+                crc = file_crc(dst)
+            files.append([name, size, crc])
+        remote = dict(remote, files=files)
         self._write(os.path.join(tmp, "manifest.json"), remote)
         with self.map.lock:
             old = self.map_dir + ".stara"
@@ -1247,9 +1279,134 @@ class Nav:
             self.map.order.clear()
             import shutil
             shutil.rmtree(old, ignore_errors=True)
-        self.save_state(map_sync={"t": int(time.time()), "built": remote.get("built"), "changed": True, "files": n})
-        log("mapa pobrana: %d kwadratów, %s" % (n, remote.get("built")))
-        return {"ok": True, "changed": True, "built": remote.get("built"), "files": n}
+        self.save_state(map_sync={"t": int(time.time()), "built": remote.get("built"), "changed": True, "files": n,
+                                  "kept": kept})
+        log("mapa pobrana: %d kwadratów nowych, %d bez zmian, %s" % (n, kept, remote.get("built")))
+        threading.Thread(target=self.map_zip, daemon=True).start()
+        return {"ok": True, "changed": True, "built": remote.get("built"), "files": n, "kept": kept}
+
+    def map_manifest(self):
+        """Manifest z sumami crc32 (dopisywanymi do starszych map)."""
+        with self.map.lock:
+            m = self.map.manifest()
+            if not m:
+                return None
+            if any(not isinstance(f, list) or len(f) < 3 for f in m.get("files", [])):
+                files = []
+                for f in m["files"]:
+                    if isinstance(f, dict):
+                        f = [f.get("name"), f.get("size"), f.get("crc")]
+                    f = list(f) + [None] * (3 - len(f))
+                    p = os.path.join(self.map_dir, str(f[0]))
+                    if not os.path.exists(p):
+                        continue
+                    files.append([f[0], os.path.getsize(p), f[2] if f[2] is not None else file_crc(p)])
+                m = dict(m, files=files)
+                self._write(os.path.join(self.map_dir, "manifest.json"), m)
+            return m
+
+    def screen_manifest(self):
+        """Manifest dla ekranu: kwadraty w kolejności pobierania (dom, bieżąca trasa, reszta od domu)."""
+        m = self.map_manifest()
+        if not m:
+            return None
+        home = self.settings().get("home")
+        route = None
+        cur = self.index().get("current")
+        if cur:
+            r = self.route(cur)
+            route = r.get("pts") if r else None
+        first = {}
+        if home:
+            hk = ntt.cell_of(home["lat"], home["lon"])
+            for dl in range(-2, 3):          # ok. 20 × 30 km wokół domu
+                for do in range(-2, 3):
+                    first.setdefault(ntt.cell_name((hk[0] + dl, hk[1] + do)), 0)
+        if route:
+            step = max(1, len(route) // 2000)
+            for p in route[::step] + route[-1:]:
+                first.setdefault(ntt.cell_name(ntt.cell_of(p[0], p[1])), 1)
+        cen = (home["lat"], home["lon"]) if home else None
+
+        def key(f):
+            if f[0] in first:
+                return (first[f[0]], 0)
+            if not cen:
+                return (2, 0)
+            a = f[0][2:-4].split("_")
+            la, lo = (int(a[0]) + 0.5) / 10, (int(a[1]) + 0.5) / 10
+            return (2, (la - cen[0]) ** 2 + ((lo - cen[1]) * math.cos(math.radians(cen[0]))) ** 2)
+        return dict(m, files=sorted(m.get("files", []), key=key), gz=True)
+
+    def map_gz(self, name):
+        """Kwadrat spakowany gzip (do szybszej wysyłki na ekran); pamiętany obok mapy."""
+        p = self.map_file(name)
+        if not p or name == "manifest.json":
+            return None
+        gdir = os.path.join(self.dir, "mapa-gz")
+        os.makedirs(gdir, exist_ok=True)
+        g = os.path.join(gdir, name + ".gz")
+        if not os.path.exists(g) or os.path.getmtime(g) < os.path.getmtime(p):
+            with open(p, "rb") as f:
+                data = gzip.compress(f.read(), 6, mtime=0)
+            with open(g + ".tmp", "wb") as f:
+                f.write(data)
+            os.replace(g + ".tmp", g)
+        return g
+
+    def zip_path(self):
+        return os.path.join(self.dir, "mapa-ekranu.zip")
+
+    def zip_status(self):
+        m = self.map.manifest()
+        z = self.zip_path()
+        st = self.state.get("map_zip") or {}
+        ready = bool(m) and os.path.exists(z) and st.get("built") == m.get("built") and st.get("bytes") == m.get("bytes")
+        return {"ready": ready, "mb": round(os.path.getsize(z) / 1e6, 1) if ready else 0,
+                "working": bool(getattr(self, "_zipping", False))}
+
+    def map_zip(self):
+        """Paczka ZIP całej mapy do rozpakowania na kartę ekranu (folder mapa/)."""
+        import zipfile
+        if getattr(self, "_zipping", False):
+            return False
+        m = self.map_manifest()
+        if not m:
+            return False
+        self._zipping = True
+        try:
+            tmp = self.zip_path() + ".tmp"
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+                for f in m.get("files", []):
+                    p = os.path.join(self.map_dir, f[0])
+                    if os.path.exists(p):
+                        z.write(p, "mapa/" + f[0])
+                z.writestr("mapa/manifest.json", json.dumps(m))
+            os.replace(tmp, self.zip_path())
+            self.save_state(map_zip={"built": m.get("built"), "bytes": m.get("bytes"), "t": int(time.time())})
+            log("paczka mapy na kartę gotowa: %.0f MB" % (os.path.getsize(self.zip_path()) / 1e6))
+            return True
+        except Exception as e:
+            log("paczka mapy nieudana: %s" % e)
+            return False
+        finally:
+            self._zipping = False
+
+    def build_status(self):
+        """Co robi kontener (stan.json z aktualizuj.sh), pamiętane 30 s."""
+        c = getattr(self, "_build", None)
+        now = time.time()
+        if c and now - c[0] < 30:
+            return c[1]
+        st = None
+        url = self.settings()["map_url"]
+        if url:
+            try:
+                st = http_json(url + "/stan.json", timeout=4)
+            except Exception:
+                st = None
+        self._build = (now, st)
+        return st
 
     def map_file(self, name):
         if name == "manifest.json" or re.fullmatch(r"c_-?\d+_-?\d+\.ntt", name):

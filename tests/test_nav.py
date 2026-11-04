@@ -2,7 +2,9 @@
 
 Run: python3 -m unittest discover -s tests
 """
+import binascii
 import functools
+import io
 import importlib.util
 import json
 import math
@@ -651,6 +653,63 @@ class NavServerTest(unittest.TestCase):
             ms.shutdown()
             self.jpost(self.pu + "/api/nav/settings", {"map_url": ""})
             srv.navapi._TILES.update(t=0, info=None)
+
+
+    def test_11_screen_map_crc_order_gz_zip(self):
+        """Mapa na ekran: tylko zmienione kwadraty, kolejność od domu, gzip i paczka ZIP."""
+        import gzip
+        import zipfile
+        nv = srv.navapi.NAV
+        root = tempfile.mkdtemp(dir=TMP)
+        os.makedirs(os.path.join(root, "mapa"))
+
+        def publish(built, cells):
+            files = []
+            for key, name in cells:
+                c = build_map.Cell(key)
+                c.add_point(1, key[0] / 10 + 0.05, key[1] / 10 + 0.05, ntt.P_FUEL, 0, name, 0)
+                n, crc = c.write(os.path.join(root, "mapa", ntt.cell_name(key)))
+                files.append([ntt.cell_name(key), n, crc])
+            with open(os.path.join(root, "mapa", "manifest.json"), "w") as f:
+                json.dump({"format": 1, "built": built, "bytes": sum(f[1] for f in files), "files": files}, f)
+        publish("2026-10-02", [((500, 199), "A"), ((520, 210), "B")])
+        ms = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(MS.H, directory=root))
+        threading.Thread(target=ms.serve_forever, daemon=True).start()
+        try:
+            self.jpost(self.pu + "/api/nav/settings", {"map_url": "http://127.0.0.1:%d" % ms.server_address[1]})
+            code, j = self.jpost(self.pu + "/api/nav/map/sync", {"force": True})
+            self.assertTrue(j["ok"], j)
+            publish("2026-11-02", [((500, 199), "A"), ((520, 210), "B2")])
+            code, j = self.jpost(self.pu + "/api/nav/map/sync", {})
+            self.assertEqual((j["files"], j["kept"]), (1, 1))         # only the changed square is fetched
+            # screen manifest: crc for each file, home square first
+            self.jpost(self.pu + "/api/nav/settings", {"home": {"lat": 52.05, "lon": 21.05, "name": "Dom"}})
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/manifest.json?klucz=" + KEY)
+            m = json.loads(body)
+            self.assertTrue(m["gz"])
+            self.assertEqual([f[0] for f in m["files"]], ["c_520_210.ntt", "c_500_199.ntt"])
+            raw = open(os.path.join(nv.map_dir, "c_520_210.ntt"), "rb").read()
+            self.assertEqual(m["files"][0][1:], [len(raw), binascii.crc32(raw)])
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/c_520_210.ntt.gz?klucz=" + KEY)
+            self.assertEqual((code, gzip.decompress(body)), (200, raw))
+            code, _, _ = self.req(self.iu + "/api/nav/mapa/manifest.json.gz?klucz=" + KEY)
+            self.assertEqual(code, 404)
+            # ZIP for the SD card: prepared in the background, then downloadable
+            for _ in range(100):
+                code, body, h = self.req(self.pu + "/api/nav/mapa.zip")
+                if code == 200:
+                    break
+                self.assertEqual(code, 202)
+                time.sleep(0.1)
+            self.assertEqual(code, 200)
+            z = zipfile.ZipFile(io.BytesIO(body))
+            self.assertEqual(sorted(z.namelist()), ["mapa/c_500_199.ntt", "mapa/c_520_210.ntt", "mapa/manifest.json"])
+            self.assertEqual(z.read("mapa/c_520_210.ntt"), raw)
+            code, body, _ = self.req(self.pu + "/api/nav/routes")
+            self.assertTrue(json.loads(body)["zip"]["ready"])
+        finally:
+            ms.shutdown()
+            self.jpost(self.pu + "/api/nav/settings", {"map_url": "", "home": None})
 
 
 if __name__ == "__main__":
