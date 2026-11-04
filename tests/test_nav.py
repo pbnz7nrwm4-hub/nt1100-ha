@@ -777,6 +777,25 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(code, 200, j)
         self.assertEqual(j["place"]["name"], "Praca")
 
+    def test_14_car_mode(self):
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "default_variant": "kreto"})
+        self.jpost(self.pu + "/api/nav/home", {"home": {"lat": 50.0, "lon": 19.9}})
+        code, j = self.jpost(self.pu + "/api/nav/settings", {"vehicle": "rower"})
+        self.assertEqual(code, 400)
+        code, s = self.jpost(self.pu + "/api/nav/settings", {"vehicle": "auto"})
+        self.assertEqual((s["vehicle"], s["go_variant"], s["default_variant"]), ("auto", "szybko", "kreto"))
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.pu + "/api/nav/goto", {"text": "50.009, 19.914"})
+        self.assertEqual(code, 200, j)
+        self.assertFalse(any("curvature" in json.dumps(c["custom_model"]) for c in FakeGraphHopper.calls))
+        code, body, _ = self.req(self.iu + "/api/nav/ping?klucz=" + KEY)
+        st = json.loads(body)["settings"]
+        self.assertEqual((st["vehicle"], st["lean_popup_deg"]), ("auto", 90))
+        code, s = self.jpost(self.pu + "/api/nav/settings", {"vehicle": "moto"})
+        self.assertEqual(s["go_variant"], "kreto")
+        code, body, _ = self.req(self.iu + "/api/nav/ping?klucz=" + KEY)
+        self.assertNotEqual(json.loads(body)["settings"]["lean_popup_deg"], 90)
+
 
 if __name__ == "__main__":
     unittest.main()

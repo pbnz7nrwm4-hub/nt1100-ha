@@ -72,6 +72,9 @@ wczytywanie plików GPX (np. z Kurvigera).
   (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych (polnych,
   leśnych), szutrowych (publicznych z nawierzchnią szutrową – osobna opcja), płatnych,
   autostrad i promów; trasa okrężna o zadanej długości.
+- **Motocykl / samochód**: przełącznik na górze „Nowa trasa”. W samochodzie liczona jest
+  najszybsza trasa (inne warianty można włączyć ręcznie), skrót „jedź do”, objazdy i powroty
+  na trasę też liczą się najszybciej, a ekran nie pokazuje wyniku zakrętu.
 - **Ulubione miejsca** (szkoła, praca...): gwiazdka ☆ przy wyniku wyszukiwania albo przy punkcie
   trasy zapisuje miejsce. Nad punktami trasy są przyciski ulubionych (i domu) – dotknięcie dodaje je
   do trasy; na mapie żółte kropki. Zmiana nazwy, kolejność i usuwanie: Ustawienia nawigacji →

@@ -81,6 +81,10 @@ def nav_settings_apply(j):
             if not lo <= v <= hi:
                 return "poza zakresem: " + k
             cur[k] = v
+    if "vehicle" in j:
+        if j["vehicle"] not in ("moto", "auto"):
+            return "zly pojazd"
+        cur["vehicle"] = j["vehicle"]
     if "free_km" in j:
         v = SRV.num(j["free_km"])
         if v is None or not 0.5 <= v <= 20:
@@ -226,7 +230,7 @@ def goto(text, variant=None, name=None):
     if not start:
         raise ValueError("nie znam pozycji motocykla ani domu (ustaw dom w zakładce Nawigacja)")
     s = NAV.settings()
-    v = variant or s["default_variant"]
+    v = variant or s["go_variant"]
     routes, errors = NAV.plan([start, {"lat": place["lat"], "lon": place["lon"], "name": place["name"]}], [v],
                               s["avoid"], name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True)
     if not routes:
@@ -639,7 +643,9 @@ def screen_get(h, path, q):
             s = NAV.settings()
             out = {"ok": True, "time": int(time.time()), "route": route,
                    "map": {"built": m.get("built"), "files": len(m.get("files", [])), "bytes": m.get("bytes", 0)} if m else None,
-                   "settings": {k: s[k] for k in ("lean_popup_deg", "traffic_min", "offroute_m", "free_km")},
+                   "settings": dict({k: s[k] for k in ("lean_popup_deg", "traffic_min", "offroute_m", "free_km")},
+                                    # w samochodzie bez „wyniku zakrętu” (pochył auta nic nie znaczy)
+                                    vehicle=s["vehicle"], **({"lean_popup_deg": 90} if s["vehicle"] == "auto" else {})),
                    "traffic": bool(s["tomtom_key"]), "fw": (screen_firmware_offer() or {}).get("version") or ""}
             lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
             if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
