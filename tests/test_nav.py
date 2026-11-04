@@ -120,6 +120,22 @@ class GeometryTest(unittest.TestCase):
         c = nav.curviness(wind, nav.cum_dist(wind))
         self.assertEqual(c["level"], "bardzo kręta")
 
+    def test_search_without_language(self):
+        # Photon odrzuca lang=pl; zapytanie ma iść bez parametru języka.
+        seen = []
+        orig = nav.http_json
+        nav.http_json = lambda url, timeout=0: seen.append(url) or {"features": [{
+            "properties": {"name": "Rynek", "city": "Wrocław"},
+            "geometry": {"coordinates": [17.03, 51.11]}}]}
+        try:
+            out = nav.Nav.search(None, "Wrocław Rynek", 50.1, 19.1)
+            name = nav.Nav.reverse(None, 51.11, 17.03)
+        finally:
+            nav.http_json = orig
+        self.assertEqual(out[0]["lat"], 51.11)
+        self.assertEqual(name, "Rynek")
+        self.assertTrue(seen and all("lang=" not in u for u in seen))
+
     def test_place_links(self):
         p = nav.Nav.parse_place_link("https://www.google.com/maps/place/Zakopane/@49.2992,19.9496,14z/data=xyz")
         self.assertAlmostEqual(p["lat"], 49.2992)
