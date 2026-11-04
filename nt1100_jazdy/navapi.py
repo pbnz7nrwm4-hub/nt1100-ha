@@ -85,6 +85,24 @@ def nav_settings_apply(j):
         if v is None or not 0.5 <= v <= 20:
             return "poza zakresem: free_km"
         cur["free_km"] = v
+    if "curvy" in j:
+        c = j["curvy"]
+        if not isinstance(c, dict) or any(v not in nav.CURVY_DEFAULT or not isinstance(x, dict) for v, x in c.items()):
+            return "zle suwaki krętości"
+        for x in c.values():
+            for k, val in x.items():
+                if k not in nav.CURVY_KEYS or not isinstance(val, (int, float)) or not 0 <= val <= 100:
+                    return "zle suwaki krętości"
+        cur["curvy"] = nav.curvy_sliders(c)
+    if "curvy_levels" in j:
+        lv = j["curvy_levels"]
+        if lv is None:
+            cur.pop("curvy_levels", None)
+        else:
+            ok = isinstance(lv, list) and all(isinstance(x, (int, float)) for x in lv)
+            if not ok or nav.curvy_levels(lv) != [int(x) for x in lv]:
+                return "progi krętości: trzy rosnące liczby, np. 30, 80, 150"
+            cur["curvy_levels"] = [int(x) for x in lv]
     if "avoid" in j:
         a = j["avoid"]
         if not isinstance(a, list) or any(x not in nav.AVOID for x in a):
@@ -153,7 +171,8 @@ def demo_route():
 
 def route_summary(r, with_pts=True, full=False):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
-                                 "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km")}
+                                 "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km",
+                                 "legs")}
     out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
     out["min"] = int((r.get("time_s") or 0) / 60)
     if with_pts and full:
@@ -206,7 +225,9 @@ def page_get(h, path, q):
         if path == "/api/nav/routes":
             lst = NAV.list_routes()
             lst.update(map=NAV.map_status(), engine=NAV.engine_ok(), screen=NAV.screen_position(),
-                       settings=NAV.settings(), recent=recent(), variants=nav.VARIANTS, avoid_all=nav.AVOID)
+                       settings=NAV.settings(), recent=recent(), variants=nav.VARIANTS, mix=nav.MIX,
+                       avoid_all=nav.AVOID, curvy_default=nav.CURVY_DEFAULT,
+                       curvy_levels_default=nav.CURVY_LEVELS_DEFAULT)
             lst["settings"]["tomtom_key"] = bool(lst["settings"]["tomtom_key"])
             return h.send(200, lst) or True
         if path == "/api/nav/route":
@@ -326,8 +347,15 @@ def page_post(h, path, q, body):
                 return h.send(400, {"error": "podaj cel"}) or True
             variants = [v for v in (j.get("variants") or []) if v in [x for x, _ in nav.VARIANTS]] or None
             avoid = j.get("avoid") if isinstance(j.get("avoid"), list) else None
+            legs = j.get("legs")
+            if legs is not None:
+                names = [x for x, _ in nav.VARIANTS]
+                if not isinstance(legs, list) or len(legs) != len(points) - 1 or any(v not in names for v in legs):
+                    return h.send(400, {"error": "zły wariant odcinka"}) or True
+                if len(set(legs)) < 2:
+                    legs = None  # wszystkie odcinki tak samo = zwykły wariant
             routes, errors = NAV.plan(points, variants, avoid, str(j.get("name") or "")[:40], rt, SRV.num(j.get("heading")),
-                                      with_weather=bool(j.get("weather", True)))
+                                      with_weather=bool(j.get("weather", True)), legs=legs)
             token = secrets.token_hex(8)
             PLANS[token] = (time.time(), routes)
             for k in [k for k, v in PLANS.items() if time.time() - v[0] > 3600]:
