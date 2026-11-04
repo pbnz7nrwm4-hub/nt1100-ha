@@ -60,7 +60,7 @@ grep -q '^MAPA_DODATKOWE=' "$KAT/obszar.env" || cat >> "$KAT/obszar.env" <<'ENV'
 MAPA_DODATKOWE=""
 # 1 = z budynkami (większy plik, dłuższa budowa)
 MAPA_BUDYNKI=0
-PAMIEC_MAPY=3g
+PAMIEC_MAPY=5g
 ENV
 
 echo "== GraphHopper $GH_WERSJA"
