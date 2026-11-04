@@ -282,7 +282,39 @@ def tag_parent(root, el):
     return ""
 
 
-def to_gpx(route):
+# Skręty w zapisie OsmAnd (TurnType): z nimi OsmAnd prowadzi głosowo po naszej trasie
+# bez „Przyciągnij do dróg”. Plik z creator="OsmAndRouter" OsmAnd czyta jak własną trasę:
+# ślad = droga, punkty <rte> = manewry (offset = numer punktu śladu).
+OSMAND_TURN = {T_STRAIGHT: "C", T_SLIGHT_L: "TSLL", T_LEFT: "TL", T_SHARP_L: "TSHL", T_SLIGHT_R: "TSLR",
+               T_RIGHT: "TR", T_SHARP_R: "TSHR", T_UTURN: "TU", T_KEEP_L: "KL", T_KEEP_R: "KR"}
+OSMAND_ANGLE = {"TSLL": -30, "TL": -90, "TSHL": -135, "TSLR": 30, "TR": 90, "TSHR": 135, "TU": 180}
+PL_TURN = {"C": "Prosto", "TSLL": "Lekko w lewo", "TL": "Skręć w lewo", "TSHL": "Ostro w lewo",
+           "TSLR": "Lekko w prawo", "TR": "Skręć w prawo", "TSHR": "Ostro w prawo", "TU": "Zawróć",
+           "KL": "Trzymaj się lewej", "KR": "Trzymaj się prawej"}
+
+
+def osmand_turns(route):
+    """Manewry trasy jako [(offset, turn, kąt, opis)] dla OsmAnd."""
+    pts = route["pts"]
+    out = []
+    for t in sorted(route.get("turns") or [], key=lambda x: x["idx"]):
+        if t["type"] == T_ROUNDABOUT:
+            n = max(1, int(t.get("exit") or 1))
+            tt, desc = "RNDB%d" % n, "Na rondzie %d. zjazd" % n
+        elif t["type"] in OSMAND_TURN:
+            tt = OSMAND_TURN[t["type"]]
+            desc = PL_TURN[tt]
+        else:
+            continue
+        if t.get("text"):
+            desc += " – " + t["text"]
+        out.append((min(max(0, int(t["idx"])), len(pts) - 1), tt, OSMAND_ANGLE.get(tt, 0), desc))
+    return out
+
+
+def to_gpx(route, osmand=False):
+    if osmand:
+        return to_gpx_osmand(route)
     out = ['<?xml version="1.0" encoding="UTF-8"?>',
            '<gpx version="1.1" creator="NT1100 Jazdy" xmlns="http://www.topografix.com/GPX/1/1">']
     name = route.get("name") or "Trasa"
@@ -293,6 +325,40 @@ def to_gpx(route):
     for p in route["pts"]:
         out.append('<trkpt lat="%.6f" lon="%.6f"/>' % (p[0], p[1]))
     out.append("</trkseg></trk></gpx>")
+    return "\n".join(out)
+
+
+def to_gpx_osmand(route):
+    pts = route["pts"]
+    times = route.get("times") or []
+    name = esc(route.get("name") or "Trasa")
+    out = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<gpx version="1.1" creator="OsmAndRouter" xmlns="http://www.topografix.com/GPX/1/1" '
+           'xmlns:osmand="https://osmand.net">',
+           "<metadata><name>%s</name></metadata>" % name]
+    for w in route.get("waypoints") or []:
+        p = pts[w["idx"]]
+        out.append('<wpt lat="%.6f" lon="%.6f"><name>%s</name></wpt>' % (p[0], p[1], esc(w.get("name") or "")))
+    out.append("<trk><name>%s</name><trkseg>" % name)
+    for p in pts:
+        out.append('<trkpt lat="%.6f" lon="%.6f"/>' % (p[0], p[1]))
+    out.append("</trkseg></trk>")
+    # punkty trasy: start, każdy manewr, cel; time = sekundy do następnego punktu
+    turns = [(0, "C", 0, "Start")] + [t for t in osmand_turns(route) if 0 < t[0] < len(pts) - 1]
+    out.append("<rte><name>%s</name>" % name)
+    for k, (off, tt, ang, desc) in enumerate(turns):
+        nxt = turns[k + 1][0] if k + 1 < len(turns) else len(pts) - 1
+        dt = int(times[nxt] - times[off]) if len(times) == len(pts) else 0
+        p = pts[off]
+        ext = "<osmand:time>%d</osmand:time><osmand:offset>%d</osmand:offset>" % (max(0, dt), off)
+        if k > 0:
+            ext += "<osmand:turn>%s</osmand:turn><osmand:turn-angle>%d</osmand:turn-angle>" % (tt, ang)
+        out.append('<rtept lat="%.6f" lon="%.6f"><desc>%s</desc><extensions>%s</extensions></rtept>'
+                   % (p[0], p[1], esc(desc), ext))
+    p = pts[-1]
+    out.append('<rtept lat="%.6f" lon="%.6f"><desc>Cel</desc><extensions><osmand:time>0</osmand:time>'
+               '<osmand:offset>%d</osmand:offset></extensions></rtept>' % (p[0], p[1], len(pts) - 1))
+    out.append("</rte></gpx>")
     return "\n".join(out)
 
 
