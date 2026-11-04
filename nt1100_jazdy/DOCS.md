@@ -35,6 +35,44 @@ Bez MQTT najważniejsze czujniki `sensor.nt1100_*` są ustawiane bezpośrednio (
 - **Pogoda na trasie**: Open-Meteo (historia, bez konta) dla startu, co ok. 30 min i końca.
 - **Przebieg i serwis**: stan licznika wpisany raz, dalej liczony z jazd; pozycje serwisowe.
 
+## Nawigacja (zakładka „Nawigacja”)
+
+Planowanie tras dla ekranu nawigacji na kierownicy. Trasy liczy silnik tras w kontenerze
+Proxmox (katalog `silnik-tras/` w repozytorium, instrukcja w jego README); bez niego działa
+wczytywanie plików GPX (np. z Kurvigera).
+
+- **Punkty**: start (pozycja motocykla z ekranu albo dom), dowolna liczba punktów po drodze
+  i cel; wyszukiwanie miejsc, wklejenie linku z Map Google/Apple albo współrzędnych,
+  kliknięcie na mapie, przeciąganie punktów.
+- **Warianty**: najszybciej / lekko kręto / kręto / bardzo kręto liczone obok siebie
+  (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych, płatnych,
+  autostrad i promów; trasa okrężna o zadanej długości.
+- **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
+  Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
+- **Skrót iPhone’a „Wyślij na motocykl”**: udostępnij miejsce z Map do skrótu, który
+  otwiera adres `ADRES-SPOZA-DOMU/api/nav/goto?klucz=KLUCZ&text=LINK` (klucz i adres
+  w zakładce Ustawienia). Trasa liczy się z pozycji motocykla domyślnym wariantem.
+- **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą),
+  ekran dociąga ją sam w domu po Wi-Fi.
+- **Korki**: opcjonalny klucz TomTom (darmowy limit dzienny wystarcza); ekran sprawdza
+  zdarzenia na trasie co kilka minut przez hotspot.
+- **Zgodność jazdy z planem**: w szczegółach jazdy pojawia się trasa planowana, procent
+  zgodności, odstępstwa i zdarzenia z ekranu (objazdy, pominięte punkty).
+- **Ustawienia nawigacji**: adresy silnika i mapy, klucz TomTom, domyślny wariant,
+  próg pochyłu dla wyniku zakrętu, częstość korków, próg zjazdu z trasy, dom.
+
+### Ekran nawigacji
+
+Ekran na kierownicy dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
+mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze uruchomienie:
+ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło `nt1100ekran`); na stronie
+`http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu
+(`http://IP-HA:8098`), adres spoza domu i klucz. Dodatek pokazuje ekran w zakładce
+Nawigacja (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
+(`ekran.bin`, w domu, przy ładowaniu). Na postoju ekran ma strony Stan / Pogoda / Jazda / Menu
+(jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); w jeździe przytrzymanie
+1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km”.
+
 ## Konfiguracja dodatku
 
 - **powiadomienie**: (starsze) usługa powiadomień bez `notify.`; wybór w panelu ma pierwszeństwo.

@@ -21,6 +21,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -30,7 +31,10 @@ import zlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.3"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import navapi  # noqa: E402
+
+VERSION = "1.4.0"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -549,6 +553,7 @@ def settings():
         "weather": bool(s.get("weather", True)),
         "odo": s.get("odo") if isinstance(s.get("odo"), dict) else None,
         "service": svc,
+        "nav": s.get("nav") if isinstance(s.get("nav"), dict) else {},
     }
 
 
@@ -1429,6 +1434,8 @@ class Ingest(Base):
 
     def do_GET(self):
         path, q = self.query()
+        if navapi.screen_get(self, path, q):
+            return
         if path in ("/api/ping", "/api/fw", "/api/fw/bin") and not self.authorized():
             log("Odrzucono: zly klucz (", self.client_address[0], ")")
             return self.send(401, {"ok": False, "error": "zly klucz"})
@@ -1452,6 +1459,10 @@ class Ingest(Base):
 
     def do_POST(self):
         path, q = self.query()
+        if path.startswith("/api/nav/"):
+            body = self.read_body(1024 * 1024)
+            navapi.screen_post(self, path, q, body)
+            return
         if path != "/api/ingest":
             return self.send(404, {"ok": False, "error": "brak"})
         if not self.authorized():
@@ -1654,6 +1665,8 @@ class Page(Base):
                     return self.send(200, f.read(), "text/html")
             except FileNotFoundError:
                 return self.send(500, "brak strony", "text/plain")
+        if navapi.page_get(self, path, q):
+            return
         if path == "/api/rides":
             return self.send(200, self.rides_json())
         if path == "/api/scans":
@@ -1686,7 +1699,9 @@ class Page(Base):
         if not self.allowed():
             return
         path, q = self.query()
-        body = self.read_body(65536)
+        body = self.read_body(8 * 1024 * 1024 if path == "/api/nav/gpx" else 65536)
+        if navapi.page_post(self, path, q, body):
+            return
         if path == "/api/settings":
             try:
                 j = json.loads(body or b"{}")
@@ -1784,6 +1799,7 @@ def main():
     for d in (RIDES, INCOMING, CACHE, DATA):
         os.makedirs(d, exist_ok=True)
     key()
+    navapi.init(sys.modules[__name__])
     serve(INGRESS_PORT, Page)
     serve(INGEST_PORT, Ingest)
     log("NT1100 Jazdy %s: %d jazd w %s; strona przez panel HA, odbior jazd na porcie %d" %

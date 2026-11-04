@@ -1,0 +1,14 @@
+{
+  "distance_influence": 70,
+  "priority": [
+    { "if": "!car_access", "multiply_by": "0" },
+    { "if": "road_access == PRIVATE || road_access == NO", "multiply_by": "0" },
+    { "if": "road_class == RESIDENTIAL || road_class == LIVING_STREET", "multiply_by": "0.6" },
+    { "if": "track_type == GRADE3 || track_type == GRADE4 || track_type == GRADE5", "multiply_by": "0.1" }
+  ],
+  "speed": [
+    { "if": "true", "limit_to": "car_average_speed" },
+    { "if": "road_class == MOTORWAY", "limit_to": "130" },
+    { "if": "surface == UNPAVED || surface == GRAVEL || surface == DIRT || surface == GROUND", "limit_to": "40" }
+  ]
+}
