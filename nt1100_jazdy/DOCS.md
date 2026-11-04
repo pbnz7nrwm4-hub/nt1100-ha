@@ -143,6 +143,8 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 
 **Bateria ekranu (ekran 1.0.11).** W zakładce Stan jest wiersz „bateria ekranu”: procent, napięcie i „ładuje się”, a bez podłączonego akumulatora „brak akumulatora”.
 
+**Mapa z tłem (ekran 1.1.0).** Ekran rysuje pod drogami wody (jeziora, zbiorniki, z wyspami), rzeki i kanały, a na mapie nazwy miejscowości (przy oddaleniu tylko większe). Aktualizując mapę, pobiera tylko kwadraty, które się zmieniły (porównuje rozmiar i sumę kontrolną), w wersji skompresowanej, a kwadraty spoza mapy usuwa. Mapa skopiowana na kartę z ZIP-a jest przyjmowana bez ponownego pobierania.
+
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
