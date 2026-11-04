@@ -27,14 +27,28 @@ WARSTWY="aeroway,aerodrome_label,boundary,landcover,landuse,park,place,transport
 [ "${MAPA_BUDYNKI:-0}" = "1" ] && WARSTWY="$WARSTWY,building"
 
 echo "$(date '+%F %T') kafelki mapy (Planetiler)"
-mkdir -p "$KAT/dane/planetiler"
+D="$KAT/dane/planetiler"
+mkdir -p "$D"
+# Dane pomocnicze (morze, generalizacja, jeziora) pobiera curl, a nie Java: Java w kontenerze
+# potrafi wybrać adres IPv6 bez trasy („No route to host”). Pobierane raz, potem gdy są nowsze.
+pobierz() {  # pobierz NAZWA URL
+  echo "$(date '+%F %T') pobieranie $1"
+  curl -L --fail -sS --retry 3 -z "$D/$1" -o "$D/$1.nowy" "$2" || { rm -f "$D/$1.nowy"; [ -s "$D/$1" ]; return; }
+  if [ -s "$D/$1.nowy" ]; then mv "$D/$1.nowy" "$D/$1"; else rm -f "$D/$1.nowy"; fi
+}
+pobierz water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+pobierz natural_earth_vector.sqlite.zip https://dev.maptiler.download/geodata/omt/natural_earth_vector.sqlite.zip
+pobierz lake_centerline.shp.zip https://dev.maptiler.download/geodata/omt/lake_centerline.shp.zip
 rm -f "$KAT/www/kafelki.nowe.pmtiles"
-"$JAVA21" -Xmx"${PAMIEC_MAPY:-3g}" -jar "$KAT/planetiler.jar" \
-  --osm-path="$WE" --download --download-dir="$KAT/dane/planetiler" \
-  --tmpdir="$KAT/dane/planetiler/tmp" --storage=mmap --nodemap-type=array \
+"$JAVA21" -Djava.net.preferIPv4Stack=true -Xmx"${PAMIEC_MAPY:-3g}" -jar "$KAT/planetiler.jar" \
+  --osm-path="$WE" \
+  --water-polygons-path="$D/water-polygons-split-3857.zip" \
+  --natural-earth-path="$D/natural_earth_vector.sqlite.zip" \
+  --lake-centerlines-path="$D/lake_centerline.shp.zip" \
+  --tmpdir="$D/tmp" --storage=mmap --nodemap-type=array \
   --only-layers="$WARSTWY" --maxzoom=14 \
   --output="$KAT/www/kafelki.nowe.pmtiles" --force
 mv "$KAT/www/kafelki.nowe.pmtiles" "$KAT/www/kafelki.pmtiles"
-rm -rf "$KAT/dane/planetiler/tmp"
+rm -rf "$D/tmp"
 [ "$WE" != "$PBF" ] && rm -f "$WE"
 echo "$(date '+%F %T') kafelki gotowe: $(du -h "$KAT/www/kafelki.pmtiles" | cut -f1)"
