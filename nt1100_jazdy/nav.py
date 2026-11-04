@@ -377,6 +377,9 @@ class Nav:
             "offroute_m": int(s.get("offroute_m") or 150),
             "free_km": float(s.get("free_km") or 2),
             "default_variant": s.get("default_variant") or "kreto",
+            # tryb pojazdu: w samochodzie trasy „jedź do”, objazdy i powroty liczą się najszybciej
+            "vehicle": "auto" if s.get("vehicle") == "auto" else "moto",
+            "go_variant": "szybko" if s.get("vehicle") == "auto" else (s.get("default_variant") or "kreto"),
             "curvy": curvy_sliders(s.get("curvy")),
             "curvy_levels": curvy_levels(s.get("curvy_levels") or CURVY_LEVELS_DEFAULT),
             "avoid": s.get("avoid") if isinstance(s.get("avoid"), list) else ["gruntowe", "platne"],
@@ -936,7 +939,7 @@ class Nav:
         for w in remaining:
             p = pts[w["idx"]]
             points.append({"lat": p[0], "lon": p[1], "name": w.get("name") or ""})
-        variant = route.get("variant") or self.settings()["default_variant"]
+        variant = route.get("variant") or self.settings()["go_variant"]
         legs = None
         if variant == MIX[0]:
             # odcinki do pozostałych punktów zachowują swoje warianty
@@ -945,7 +948,7 @@ class Nav:
             tail = old[len(old) - len(remaining):] if remaining and len(old) >= len(remaining) else []
             if avoid_km and tail:
                 tail = [tail[0]] + tail
-            legs = tail if len(tail) == n else [self.settings()["default_variant"]] * n
+            legs = tail if len(tail) == n else [self.settings()["go_variant"]] * n
         routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs,
                                    skip=route.get("skip"))
         self._avoid_segment = []
@@ -1030,9 +1033,9 @@ class Nav:
         s = self.settings()
         routes, errors = self.plan([{"lat": lat, "lon": lon, "name": "pozycja"},
                                     {"lat": target[0], "lon": target[1], "name": name}],
-                                   [s["default_variant"]], s["avoid"], "→ " + name, heading=heading, with_weather=True)
+                                   [s["go_variant"]], s["avoid"], "→ " + name, heading=heading, with_weather=True)
         if not routes:
-            raise RuntimeError(errors.get(s["default_variant"]) or "silnik tras nie odpowiedział")
+            raise RuntimeError(errors.get(s["go_variant"]) or "silnik tras nie odpowiedział")
         rid = self.store_route(routes[0], True)
         return self.route(rid)
 
