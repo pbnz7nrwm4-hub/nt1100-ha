@@ -62,6 +62,42 @@ def clean(s, name):
     return s
 
 
+DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+
+
+def extras(s, dark):
+    """Cieniowanie gór (wysokości z kontenera albo AWS) oraz szczyty i przełęcze."""
+    s["sources"]["dem"] = {"type": "raster-dem", "tiles": [DEM_URL], "encoding": "terrarium",
+                           "tileSize": 256, "minzoom": 5, "maxzoom": 12}
+    shade = {"id": "hillshade", "type": "hillshade", "source": "dem", "minzoom": 5,
+             "paint": {"hillshade-exaggeration": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 12, 0.3],
+                       "hillshade-shadow-color": "#050a14" if dark else "#5a6577",
+                       "hillshade-highlight-color": "#2a3a58" if dark else "#ffffff",
+                       "hillshade-accent-color": "#0b1220" if dark else "#8a94a6"}}
+    ids = [l["id"] for l in s["layers"]]
+    at = ids.index("waterway") if "waterway" in ids else 1
+    s["layers"].insert(at, shade)
+    txt, halo = ("#c9b98f", "#0b1220") if dark else ("#6b5a35", "#ffffff")
+    font = ["Noto Sans Italic"]
+    peak = {"id": "mountain_peak", "type": "symbol", "source": "openmaptiles", "source-layer": "mountain_peak",
+            "minzoom": 9, "filter": ["in", ["get", "class"], ["literal", ["peak", "volcano"]]],
+            "layout": {"text-field": ["case", ["has", "ele"],
+                                      ["concat", ["get", "name"], "\n", ["to-string", ["get", "ele"]], " m"],
+                                      ["concat", ["get", "name"]]],
+                       "text-font": font, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 10, 14, 12],
+                       "text-anchor": "top", "text-max-width": 8, "symbol-sort-key": ["-", 0, ["coalesce", ["get", "ele"], 0]]},
+            "paint": {"text-color": txt, "text-halo-color": halo, "text-halo-width": 1.3}}
+    saddle = {"id": "mountain_pass", "type": "symbol", "source": "openmaptiles", "source-layer": "mountain_peak",
+              "minzoom": 11, "filter": ["==", ["get", "class"], "saddle"],
+              "layout": {"text-field": ["concat", "przeł. ", ["get", "name"]], "text-font": font, "text-size": 11,
+                         "text-max-width": 8},
+              "paint": {"text-color": txt, "text-halo-color": halo, "text-halo-width": 1.3}}
+    ids = [l["id"] for l in s["layers"]]
+    at = next((i for i, x in enumerate(ids) if x.startswith("place_") or x.startswith("label_")), len(ids))
+    s["layers"][at:at] = [peak, saddle]
+    return s
+
+
 def save(s, fn):
     with open(os.path.join(WWW, fn), "w") as f:
         json.dump(s, f, ensure_ascii=False, separators=(",", ":"))
@@ -76,6 +112,6 @@ for l in d["layers"]:
         big = l["id"] in ("place_city", "place_city_large", "place_town")
         l["paint"].update({"text-color": "#d5deeb" if big else "#9aa7bd", "text-halo-color": "#0b1220",
                            "text-halo-width": 1.4, "text-halo-blur": 0})
-save(clean(d, "NT1100 ciemna"), "mapa-ciemna.json")
-save(clean(get("positron"), "NT1100 jasna"), "mapa-jasna.json")
+save(extras(clean(d, "NT1100 ciemna"), True), "mapa-ciemna.json")
+save(extras(clean(get("positron"), "NT1100 jasna"), False), "mapa-jasna.json")
 print("zapisano")

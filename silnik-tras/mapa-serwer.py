@@ -3,6 +3,7 @@
 - /mapa/...                 pliki mapy na kartę ekranu (katalog www/mapa)
 - /kafelki/info.json        czy jest mapa do przeglądarki (www/kafelki.pmtiles)
 - /kafelki/Z/X/Y.pbf        kafelek wektorowy z kafelki.pmtiles (skompresowany gzip)
+- /dem/Z/X/Y.png            wysokości do cieniowania gór (dem.py)
 
 Użycie: mapa-serwer.py KATALOG PORT"""
 import gzip
@@ -178,7 +179,9 @@ class H(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/kafelki/info.json":
             pm = pmtiles(self.directory)
-            body = json.dumps(pm.info() if pm else {"ok": False}).encode()
+            info = pm.info() if pm else {"ok": False}
+            info["dem"] = os.path.isdir(os.path.join(self.directory, "dem", "12"))
+            body = json.dumps(info).encode()
             return self._send(200, body, "application/json")
         m = TILE.match(path)
         if m:

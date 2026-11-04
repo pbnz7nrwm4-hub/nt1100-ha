@@ -46,6 +46,7 @@ cp "$TU/build_map.py" "$KAT/bin/build_map.py"
 cp "$TU/mapa-serwer.py" "$KAT/bin/mapa-serwer.py"
 cp "$TU/aktualizuj.sh" "$KAT/bin/aktualizuj.sh"
 cp "$TU/kafelki.sh" "$KAT/bin/kafelki.sh"
+cp "$TU/dem.py" "$KAT/bin/dem.py"
 chmod +x "$KAT/bin/aktualizuj.sh" "$KAT/bin/kafelki.sh"
 # Ustawienia budowy; zmieniasz w $KAT/obszar.env (np. MAPA_DODATKOWE, MAPA_BUDYNKI).
 if [ ! -s "$KAT/obszar.env" ]; then
@@ -112,13 +113,14 @@ CRON
 
 systemctl daemon-reload
 systemctl enable nt1100-mapa.service nt1100-trasy.service
+systemctl restart nt1100-mapa.service 2>/dev/null || true
 
 echo "== dane OSM i pierwsza budowa (od pół godziny do godziny)"
 "$KAT/bin/aktualizuj.sh"
 
 IP=$(hostname -I | awk '{print $1}')
 echo
-echo "Gotowe. W dodatku NT1100 Jazdy → Nawigacja → Ustawienia nawigacji wpisz:"
+echo "Gotowe. W dodatku NT1100 Jazdy → Ustawienia → Ustawienia nawigacji wpisz:"
 echo "  silnik tras:  http://$IP:8989"
 echo "  mapa:         http://$IP:8988"
 echo "Stan: systemctl status nt1100-trasy nt1100-mapa ; dziennik: journalctl -u nt1100-trasy -f"
