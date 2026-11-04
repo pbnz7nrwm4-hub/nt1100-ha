@@ -329,13 +329,13 @@ class NavServerTest(unittest.TestCase):
     def test_03_gpx_import_to_screen(self):
         pts = l_shape()
         seg = "".join('<trkpt lat="%.6f" lon="%.6f"></trkpt>' % p for p in pts)
-        code, body, _ = self.req(self.pu + "/api/nav/gpx?name=Z+Kurvigera", (GPX % seg).encode(),
+        code, body, _ = self.req(self.pu + "/api/nav/gpx?name=Z+Kurvigera+%C5%81%C3%B3d%C5%BA", (GPX % seg).encode(),
                                  {"Content-Type": "application/gpx+xml"}, "POST")
         self.assertEqual(code, 200, body)
         j = json.loads(body)
         rid = j["id"]
         r = j["route"]
-        self.assertEqual(r["name"], "Z Kurvigera")
+        self.assertEqual(r["name"], "Z Kurvigera Łódź")
         self.assertAlmostEqual(r["km"], 2.0, places=1)
         self.assertEqual(r["source"], "gpx")
         self.assertEqual([w["name"] for w in r["waypoints"]], ["Przełęcz", "cel"])
@@ -352,6 +352,10 @@ class NavServerTest(unittest.TestCase):
         code, body, h = self.req(self.pu + "/api/nav/gpx?id=%d" % rid)
         self.assertEqual(code, 200)
         self.assertIn(b"<trkpt", body)
+        # Polish letters in the name: plain filename without them, the real one in filename*
+        cd = h.get("Content-Disposition")
+        self.assertIn('filename="Z_Kurvigera_Lodz.gpx"', cd)
+        self.assertIn("filename*=UTF-8''Z_Kurvigera_%C5%81%C3%B3d%C5%BA.gpx", cd)
         # take it off the screen
         code, j = self.jpost(self.pu + "/api/nav/current", {"id": 0})
         self.assertEqual(code, 200)
@@ -420,6 +424,55 @@ class NavServerTest(unittest.TestCase):
         # expired token
         code, s = self.jpost(self.pu + "/api/nav/send", {"token": "nie-ma", "variant": "kreto"})
         self.assertEqual(code, 410)
+
+    def test_05b_sliders_levels_and_my_plan(self):
+        # sliders change the engine request; bad values are refused
+        code, j = self.jpost(self.pu + "/api/nav/settings", {"curvy": {"kreto": {"glowne": 150}}})
+        self.assertEqual(code, 400)
+        code, j = self.jpost(self.pu + "/api/nav/settings", {"curvy_levels": [80, 30, 150]})
+        self.assertEqual(code, 400)
+        code, j = self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu,
+                                                             "curvy": {"kreto": {"glowne": 0, "zakrety": 100, "dluzej": 100}},
+                                                             "curvy_levels": [5, 10, 20]})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(j["curvy"]["kreto"], {"glowne": 0, "zakrety": 100, "dluzej": 100})
+        self.assertEqual(j["curvy"]["lekko"], nav.CURVY_DEFAULT["lekko"])
+        FakeGraphHopper.calls = []
+        pts = [{"lat": 50.0, "lon": 19.9, "name": "A"}, {"lat": 50.005, "lon": 19.9, "name": "B"},
+               {"lat": 50.009, "lon": 19.914, "name": "C"}]
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["kreto"], "weather": False})
+        self.assertEqual(code, 200, j)
+        cm = FakeGraphHopper.calls[0]["custom_model"]
+        pri = {json.dumps(p.get("if") or p.get("else_if")): p["multiply_by"] for p in cm["priority"]}
+        self.assertEqual(pri['"road_class == MOTORWAY"'], "1.0")      # glowne 0: motorways not avoided
+        self.assertEqual(pri['"curvature > 0.97"'], "0.35")           # zakrety 100: straight roads penalised
+        self.assertEqual(cm["distance_influence"], 5)                 # dluzej 100
+        # the description follows the thresholds (L-shaped test route: 90° turn over 2 km)
+        self.assertEqual(j["routes"][0]["curvy"]["level"], "bardzo kręta")
+        # legs: each section with its own variant -> extra "mix" route glued from two engine requests
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["szybko"], "legs": ["szybko", "bardzo"],
+                                                         "weather": False})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(sorted(r["variant"] for r in j["routes"]), ["mix", "szybko"])
+        self.assertEqual(len(FakeGraphHopper.calls), 3)
+        mix = [r for r in j["routes"] if r["variant"] == "mix"][0]
+        self.assertEqual(mix["legs"], ["szybko", "bardzo"])
+        self.assertGreaterEqual(mix["km"], 4.0)  # two 2 km sections (the fake engine returns the same L)
+        self.assertEqual([w["name"] for w in mix["waypoints"]][:2], ["B", "C"])
+        legs_req = [len(b["points"]) for b in FakeGraphHopper.calls]
+        self.assertEqual(sorted(legs_req), [2, 2, 3])
+        code, j2 = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "legs": ["szybko"], "weather": False})
+        self.assertEqual(code, 400)
+        # rerouting a "mix" route keeps the variant of the remaining section
+        code, s = self.jpost(self.pu + "/api/nav/send", {"token": j["token"], "variant": "mix", "current": False})
+        self.assertEqual(code, 200, s)
+        FakeGraphHopper.calls = []
+        nav_route = srv.navapi.NAV.route(s["id"])
+        mid = nav_route["pts"][len(nav_route["pts"]) * 3 // 4]
+        srv.navapi.NAV.reroute(s["id"], mid[0], mid[1])
+        self.assertEqual(srv.navapi.NAV.route(s["id"])["variant"], "mix")
+        self.jpost(self.pu + "/api/nav/settings", {"curvy": nav.CURVY_DEFAULT, "curvy_levels": None})
 
     def test_06_goto_from_coordinates(self):
         self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "home": {"lat": 50.0, "lon": 19.9, "name": "Dom"}})

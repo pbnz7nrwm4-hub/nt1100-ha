@@ -45,6 +45,53 @@ WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
 VARIANTS = (("szybko", "Najszybciej"), ("lekko", "Lekko kręto"), ("kreto", "Kręto"), ("bardzo", "Bardzo kręto"))
+# trasa z odcinków o różnych wariantach (wybór przy każdym odcinku w planerze)
+MIX = ("mix", "Mój plan")
+# Suwaki wariantów 0–100: glowne = unikanie autostrad i dróg krajowych,
+# zakrety = szukanie dróg krętych, dluzej = zgoda na dłuższą trasę.
+CURVY_DEFAULT = {
+    "lekko": {"glowne": 45, "zakrety": 25, "dluzej": 60},
+    "kreto": {"glowne": 90, "zakrety": 60, "dluzej": 60},
+    "bardzo": {"glowne": 100, "zakrety": 100, "dluzej": 60},
+}
+CURVY_KEYS = ("glowne", "zakrety", "dluzej")
+# progi opisu krętości (°/km): poniżej 1. prosta, 2. lekko kręta, 3. kręta, wyżej bardzo kręta
+CURVY_LEVELS_DEFAULT = [30, 80, 150]
+CURVY_NAMES = ("prosta", "lekko kręta", "kręta", "bardzo kręta")
+
+
+def curvy_sliders(raw):
+    """Suwaki z ustawień, uzupełnione domyślnymi i przycięte do 0–100."""
+    out = {}
+    raw = raw if isinstance(raw, dict) else {}
+    for v, d in CURVY_DEFAULT.items():
+        r = raw.get(v) if isinstance(raw.get(v), dict) else {}
+        out[v] = {}
+        for k in CURVY_KEYS:
+            try:
+                x = int(r.get(k, d[k]))
+            except (TypeError, ValueError):
+                x = d[k]
+            out[v][k] = max(0, min(100, x))
+    return out
+
+
+def curvy_levels(raw):
+    try:
+        lv = [int(x) for x in raw]
+        if len(lv) == 3 and 0 < lv[0] < lv[1] < lv[2] <= 1000:
+            return lv
+    except (TypeError, ValueError):
+        pass
+    return list(CURVY_LEVELS_DEFAULT)
+
+
+def curvy_name(deg_km, levels=None):
+    lv = curvy_levels(levels) if levels is not None else CURVY_LEVELS_DEFAULT
+    for lim, name in zip(lv, CURVY_NAMES):
+        if deg_km < lim:
+            return name
+    return CURVY_NAMES[-1]
 AVOID = ("gruntowe", "platne", "autostrady", "promy")
 MAX_ROUTE_PTS = 20000
 LOG = print
@@ -303,6 +350,8 @@ class Nav:
             "offroute_m": int(s.get("offroute_m") or 150),
             "free_km": float(s.get("free_km") or 2),
             "default_variant": s.get("default_variant") or "kreto",
+            "curvy": curvy_sliders(s.get("curvy")),
+            "curvy_levels": curvy_levels(s.get("curvy_levels") or CURVY_LEVELS_DEFAULT),
             "avoid": s.get("avoid") if isinstance(s.get("avoid"), list) else ["gruntowe", "platne"],
             "home": s.get("home") if isinstance(s.get("home"), dict) else None,
         }
@@ -436,7 +485,7 @@ class Nav:
         # fotoradary i odcinki
         route["cameras"] = self.cameras_along(pts, cum)
         # krętość (jak dla jazd): suma zmian kierunku co 50 m na km
-        route["curvy"] = curviness(pts, cum)
+        route["curvy"] = curviness(pts, cum, self.settings()["curvy_levels"])
         # pogoda dla punktów trasy
         route["weather"] = []
         if with_weather:
@@ -611,12 +660,14 @@ class Nav:
         if variant == "szybko":
             pass
         else:
-            k = {"lekko": (0.6, 0.8, 0.9, 0.85), "kreto": (0.2, 0.4, 0.7, 0.6), "bardzo": (0.1, 0.2, 0.5, 0.35)}[variant]
-            pr += [{"if": "road_class == MOTORWAY", "multiply_by": str(k[0])},
-                   {"else_if": "road_class == TRUNK", "multiply_by": str(k[1])},
-                   {"else_if": "road_class == PRIMARY", "multiply_by": str(k[2])},
-                   {"if": "curvature > 0.97", "multiply_by": str(k[3])},
-                   {"else_if": "curvature > 0.9", "multiply_by": str(min(1.0, k[3] + 0.2))}]
+            sl = self.settings()["curvy"][variant]
+            g, z = sl["glowne"] / 100.0, sl["zakrety"] / 100.0
+            straight = round(1 - 0.65 * z, 3)
+            pr += [{"if": "road_class == MOTORWAY", "multiply_by": str(round(max(0.05, 1 - 0.9 * g), 3))},
+                   {"else_if": "road_class == TRUNK", "multiply_by": str(round(max(0.05, 1 - 0.8 * g), 3))},
+                   {"else_if": "road_class == PRIMARY", "multiply_by": str(round(1 - 0.5 * g, 3))},
+                   {"if": "curvature > 0.97", "multiply_by": str(straight)},
+                   {"else_if": "curvature > 0.9", "multiply_by": str(min(1.0, round(straight + 0.2, 3)))}]
             if variant == "bardzo":
                 pr.append({"if": "road_class == SECONDARY", "multiply_by": "0.8"})
                 pr.append({"if": "road_environment == TUNNEL", "multiply_by": "0.5"})
@@ -630,7 +681,12 @@ class Nav:
             pr.append({"if": "road_class == MOTORWAY", "multiply_by": "0"})
         if "promy" in avoid:
             pr.append({"if": "road_environment == FERRY", "multiply_by": "0"})
-        return {"priority": pr, "distance_influence": 70 if variant == "szybko" else 30}
+        if variant == "szybko":
+            di = 70
+        else:
+            # dluzej 0 = jak najkrócej (70), 100 = długość prawie bez znaczenia (5)
+            di = int(round(70 - 0.65 * self.settings()["curvy"][variant]["dluzej"]))
+        return {"priority": pr, "distance_influence": di}
 
     def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None):
         s = self.settings()
@@ -696,16 +752,52 @@ class Nav:
         return {"pts": pts, "times": [int(t) for t in times], "instr": instr, "dist_m": path.get("distance", 0),
                 "time_s": path.get("time", 0) / 1000.0, "snapped": path.get("snapped_waypoints"), "limits": limits}
 
-    def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False):
+    def gh_mix(self, points, legs, avoid, heading=None):
+        """Trasa z odcinków liczonych osobno, każdy swoim wariantem
+        (legs[i] = wariant odcinka points[i] → points[i+1]), sklejona w jedną."""
+        if len(legs) != len(points) - 1:
+            raise RuntimeError("zła liczba odcinków")
+        pairs = [((points[i]["lat"], points[i]["lon"]), (points[i + 1]["lat"], points[i + 1]["lon"])) for i in range(len(legs))]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(legs)))) as ex:
+            futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None)
+                    for i, (pr, lv) in enumerate(zip(pairs, legs))]
+            parts = [f.result() for f in futs]
+        pts, times, instr, limits = [], [], [], []
+        dist = tsec = 0.0
+        for part in parts:
+            off = len(pts) - 1 if pts else 0
+            t0 = times[-1] if times else 0
+            if pts:
+                # pierwszy punkt odcinka = ostatni poprzedniego
+                pts += part["pts"][1:]
+                times += [t0 + t for t in part["times"][1:]]
+            else:
+                pts += part["pts"]
+                times += part["times"]
+            instr += [dict(i, idx=i["idx"] + off) for i in part["instr"] if not (off and i["idx"] == 0)]
+            limits += part["limits"]
+            dist += part["dist_m"]
+            tsec += part["time_s"]
+        return {"pts": pts, "times": times, "instr": instr, "dist_m": dist, "time_s": tsec, "snapped": None,
+                "limits": limits}
+
+    def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
+             legs=None):
         """Warianty tras przez punkty [{lat, lon, name}]; zwraca listę tras
-        (bez zapisu). Pierwszy punkt = start."""
+        (bez zapisu). Pierwszy punkt = start. legs = wariant każdego odcinka
+        (dodaje wariant „mix”, czyli „Mój plan”)."""
         s = self.settings()
         avoid = avoid if avoid is not None else s["avoid"]
-        variants = variants or [v for v, _ in VARIANTS]
+        variants = list(variants or [v for v, _ in VARIANTS])
+        if legs and not round_trip_km and len(legs) == len(points) - 1 and MIX[0] not in variants:
+            variants.append(MIX[0])
         errors = {}
 
         def one(v):
-            r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading)
+            if v == MIX[0]:
+                r = self.gh_mix(points, legs, avoid, heading)
+            else:
+                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading)
             wps = []
             for k, p in enumerate(points[1:] if not round_trip_km else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
@@ -719,6 +811,8 @@ class Nav:
             route["avoid"] = avoid
             route["points"] = points
             route["round_trip_km"] = round_trip_km
+            if v == MIX[0]:
+                route["legs"] = list(legs)
             return route
 
         # warianty liczą się naraz (silnik ma kilka rdzeni, pogoda i sieć czekają równolegle)
@@ -779,7 +873,16 @@ class Nav:
             p = pts[w["idx"]]
             points.append({"lat": p[0], "lon": p[1], "name": w.get("name") or ""})
         variant = route.get("variant") or self.settings()["default_variant"]
-        routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading)
+        legs = None
+        if variant == MIX[0]:
+            # odcinki do pozostałych punktów zachowują swoje warianty
+            old = route.get("legs") or []
+            n = len(points) - 1
+            tail = old[len(old) - len(remaining):] if remaining and len(old) >= len(remaining) else []
+            if avoid_km and tail:
+                tail = [tail[0]] + tail
+            legs = tail if len(tail) == n else [self.settings()["default_variant"]] * n
+        routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs)
         self._avoid_segment = []
         if not routes:
             raise RuntimeError(errors.get(variant) or "silnik nie policzył objazdu")
@@ -1154,7 +1257,7 @@ class Nav:
         return None
 
 
-def curviness(pts, cum):
+def curviness(pts, cum, levels=None):
     """Krętość jak dla jazd: suma zmian kierunku (próbki co 50 m) na km."""
     if cum[-1] < 500:
         return None
@@ -1170,8 +1273,7 @@ def curviness(pts, cum):
         if d >= 4:
             total += d
     per_km = total / (cum[-1] / 1000.0)
-    level = "prosta" if per_km < 30 else "lekko kręta" if per_km < 80 else "kręta" if per_km < 150 else "bardzo kręta"
-    return {"deg_km": int(per_km), "level": level}
+    return {"deg_km": int(per_km), "level": curvy_name(per_km, levels)}
 
 
 def pack_ntr(route):
