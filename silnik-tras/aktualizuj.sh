@@ -40,6 +40,8 @@ sprawdz() {  # co jest w kontenerze
 }
 [ "${1:-}" = "--stan" ] && { sprawdz; exit 0; }
 trap 'koniec false "przerwane z błędem (dziennik: /var/log/nt1100-trasy.log)"; systemctl start nt1100-trasy.service nt1100-mapa.service || true' ERR
+# przerwanie (Ctrl+C, zamknięte okno konsoli): silnik tras nie zostaje wyłączony
+trap 'koniec false "przerwane"; systemctl start nt1100-trasy.service nt1100-mapa.service || true; exit 130' INT TERM HUP
 mkdir -p "$KAT/www"
 
 etap "pobieranie danych OSM" 1

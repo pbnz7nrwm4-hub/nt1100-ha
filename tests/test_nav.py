@@ -867,6 +867,20 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(g2.findall("g:trk/g:trkseg/g:trkpt", ns)[9].findtext("g:time", namespaces=ns), "1970-01-01T00:18:10Z")
         self.assertNotIn("rte", nav.to_gpx(route))
 
+    def test_17_engine_down_message(self):
+        n = srv.navapi.NAV
+        import urllib.error
+        e = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+        orig = n.build_status
+        try:
+            n.build_status = lambda: {"pracuje": True, "etap": "mapa do przeglądarki (trasy nie liczą się)"}
+            self.assertIn("przebudowy", n.engine_error(e))
+            n.build_status = lambda: None
+            self.assertIn("systemctl start nt1100-trasy", n.engine_error(e))
+            self.assertEqual(n.engine_error(ValueError("zły punkt")), "zły punkt")
+        finally:
+            n.build_status = orig
+
 
 if __name__ == "__main__":
     unittest.main()
