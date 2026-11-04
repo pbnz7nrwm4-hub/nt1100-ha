@@ -166,6 +166,17 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(h["box_fw"], "1.3.0")
         self.assertEqual(h["odo"], odo)
 
+    def test_versions(self):
+        self.assertEqual(srv.device_version("1.4.2", "1.4.3", None)["status"], "update")
+        self.assertEqual(srv.device_version("1.4.10", "1.4.9", None)["status"], "ok")  # numeric, not text order
+        self.assertEqual(srv.device_version(None, "1.0.9", None)["status"], "unknown")
+        code, out, _ = self.req(self.pu + "/api/versions")
+        self.assertEqual(code, 200, out)
+        v = json.loads(out)
+        self.assertEqual(set(v), {"addon", "box", "screen", "engine"})
+        self.assertEqual(v["addon"]["installed"], srv.VERSION)
+        self.assertEqual(v["screen"]["latest"], (srv.navapi.screen_firmware_offer() or {}).get("version"))
+
     def test_records_line(self):
         self.ride(19, "20261001-080000", start="2026-10-01T08:00:00Z", km=20.0)
         self.ride(20, "20261005-080000", start="2026-10-05T08:00:00Z", km=500.0, extra={"max_speed": 210})

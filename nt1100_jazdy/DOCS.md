@@ -11,6 +11,13 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 - Klucz i adresy do wpisania w skrzynce: zakładka **Ustawienia** w panelu dodatku.
 - Zdarzenie `nt1100_nowa_jazda` (z podsumowaniem i problemami jazdy) do własnych automatyzacji.
 
+## Wersje oprogramowania
+
+Zakładka **Stan** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
+ekran i silnik tras: zainstalowaną wersję, najnowszą i co zrobić, gdy jest nowsza (żółta kropka,
+u góry strony znaczek „nowa wersja”). Aktualizujesz tylko dodatek: skrzynka pobiera swoją wersję
+sama w domowym Wi-Fi, a ekran z Menu → Sprawdź wersję → Aktualizuj.
+
 ## Urządzenie NT1100 (MQTT)
 
 Gdy w Home Assistant działa broker MQTT (dodatek Mosquitto), dodatek sam pobiera jego adres
