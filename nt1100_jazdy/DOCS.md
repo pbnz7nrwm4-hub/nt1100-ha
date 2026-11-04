@@ -92,7 +92,7 @@ kończy się po dojechaniu (60 m), nową trasą albo przyciskiem „Koniec posto
 
 **Strona skrzynki a ekran** (skrzynka od 1.4.3): skrzynka nadaje do ekranu także w trybie strony skrzynki. Ekran widzi ją wtedy jako postój, bez pozycji.
 
-Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wygląd” można wybrać: ciemny zawsze, jasny w dzień (ciemny w nocy) albo jasny zawsze. Od 1.0.8 górny pasek ma kolor stanu (zielony, żółty „brak GPS”, czerwony „brak skrzynki”).
+Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wygląd” można wybrać jasny w dzień.
 
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
