@@ -80,8 +80,15 @@ ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło `nt1100ekran`); na
 (`http://IP-HA:8098`), adres spoza domu i klucz. Dodatek pokazuje ekran w zakładce
 Nawigacja (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
 (`ekran.bin`, w domu, przy ładowaniu). Na postoju ekran ma strony Stan / Pogoda / Jazda / Menu
-(jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); w jeździe przytrzymanie
-1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km”.
+(jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); przytrzymanie ekranu
+1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km / Tankowanie / Jedzenie”.
+
+**Tankowanie / Jedzenie** (ekran od 1.0.1): ekran sam, z mapy na karcie, znajduje 3 najbliższe
+stacje albo miejsca z jedzeniem przed Tobą na trasie (do 40 km, do 1,5 km od trasy; bez trasy:
+w promieniu 6 km, najpierw w kierunku jazdy) i pokazuje nazwę, odległość i ile od trasy.
+Dotknięcie wybiera miejsce: ekran od razu prowadzi tam z mapy (zielony znacznik i linia),
+a gdy jest połączenie, dodatek liczy trasę przez to miejsce i z powrotem na plan. Postój
+kończy się po dojechaniu (60 m), nową trasą albo przyciskiem „Koniec postoju” w menu.
 
 ## Konfiguracja dodatku
 
