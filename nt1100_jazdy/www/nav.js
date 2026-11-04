@@ -27,6 +27,8 @@ css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)
 '.nsl{display:grid;grid-template-columns:110px 1fr 38px;gap:4px 10px;align-items:center;font-size:13px;margin:4px 0}.nsl input[type=range]{width:100%}.nsl b{grid-column:1/-1;margin-top:8px;font-size:14px;display:flex;align-items:center;gap:6px}.nsl b i{width:10px;height:10px;border-radius:50%;display:inline-block}.nsl output{text-align:right;color:var(--mut)}'+
 '.nlv{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}.nlv input{width:70px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card2)}'+
 '.nlock{background:var(--card);border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}.nlock button{border:0;border-radius:0;background:var(--card);color:inherit;width:38px;height:38px;font-size:18px;padding:0;cursor:pointer}.nlock button+button{border-top:1px solid var(--line)}'+
+'html,body{overscroll-behavior:none}#navmap.nfull{position:fixed!important;left:0;top:0;width:100vw;height:100vh;height:100dvh;z-index:10000;border-radius:0;touch-action:none}body.nfull-on{overflow:hidden;touch-action:none}'+
+'.ntoast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(20,24,36,.92);color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;z-index:10001;pointer-events:none;max-width:90vw;text-align:center}'+
 '@media(max-width:600px){.nlg{padding-left:8px}}#navmap.locked{touch-action:pan-y}#navmap.locked.add{cursor:grab}'+
 '.nmsg{margin:6px 0;font-size:14px}.nmsg.bad{color:var(--bad)}.nmsg.ok{color:var(--ok)}.ndev{font-size:13px;color:var(--mut)}';
 document.head.append(css);
@@ -43,7 +45,7 @@ function inject(){
   const b=el('button');b.id='t-nav';b.hidden=true;b.onclick=()=>tab('nav');
   b.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 2l7 19-7-4-7 4z"/></svg>Nawigacja';ref.after(b);
   const sec=el('section');sec.id='v-nav';sec.hidden=true;document.getElementById('v-stats').after(sec);
-  const t0=window.tab;window.tab=function(v){if(v==='nav'){if(STOP)STOP();for(const k of['rides','stats','scan','state','set','nav']){const s=document.getElementById('v-'+k),t=document.getElementById('t-'+k);if(s)s.hidden=k!==v;if(t)t.classList.toggle('on',k===v)}scrollTo(0,0);navView();return}
+  const t0=window.tab;window.tab=function(v){if(v==='nav'){if(STOP)STOP();for(const k of['rides','stats','scan','state','set','nav']){const s=document.getElementById('v-'+k),t=document.getElementById('t-'+k);if(s)s.hidden=k!==v;if(t)t.classList.toggle('on',k===v)}scrollTo(0,0);navGuard();navView();return}
     const s=document.getElementById('v-nav'),t=document.getElementById('t-nav');if(s)s.hidden=true;if(t)t.classList.remove('on');return t0(v)};
   const d0=window.detail;window.detail=async function(r){await d0(r);try{await planCard(r)}catch(e){}};
 }
@@ -126,8 +128,25 @@ function lockMap(on){NV.locked=!!on;const m=NV.map;if(!m)return;const touch=L.Br
   if(NV.lockBtn){NV.lockBtn.textContent=NV.locked?'🔒':'🔓';NV.lockBtn.title=NV.locked?'Mapa zablokowana – dotknij, by edytować punkty':'Mapa do edycji – dotknij, by zablokować'}}
 function lockControl(){const C=L.Control.extend({options:{position:'topright'},onAdd(){const d=L.DomUtil.create('div','nlock');L.DomEvent.disableClickPropagation(d);
     const b=L.DomUtil.create('button','',d);b.type='button';b.onclick=()=>lockMap(!NV.locked);NV.lockBtn=b;
-    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)NV.map.fitBounds(NV.fit,{padding:[30,30]});else fitAll()};return d}});
+    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)NV.map.fitBounds(NV.fit,{padding:[30,30]});else fitAll()};
+    const fs=L.DomUtil.create('button','',d);fs.type='button';fs.textContent='⛶';fs.title='Pełny ekran mapy';fs.onclick=()=>fullMap(!NV.full);NV.fullBtn=fs;return d}});
   new C().addTo(NV.map);lockMap(NV.locked)}
+// Pełny ekran mapy: mapa na cały ekran, przesuwanie jednym palcem, strona
+// pod spodem stoi (aplikacja HA nie łapie gestów przewijania ani „wstecz”).
+function fullMap(on){const m=NV.map;if(!m)return;on=!!on;if(on===!!NV.full)return;NV.full=on;const c=m.getContainer();
+  if(on){NV.lockBefore=NV.locked;c.classList.add('nfull');document.body.classList.add('nfull-on');lockMap(false)}
+  else{c.classList.remove('nfull');document.body.classList.remove('nfull-on');lockMap(NV.lockBefore);c.scrollIntoView({block:'center'})}
+  if(NV.fullBtn){NV.fullBtn.textContent=on?'✕':'⛶';NV.fullBtn.title=on?'Zamknij pełny ekran':'Pełny ekran mapy'}
+  setTimeout(()=>m.invalidateSize(),60)}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&NV.full)fullMap(false)});
+function toast(t){const d=el('div','ntoast',t);document.body.append(d);setTimeout(()=>d.remove(),2600)}
+// Gest „wstecz” (przesunięcie od krawędzi w aplikacji HA) w Nawigacji nie wychodzi
+// z dodatku: zamyka pełny ekran albo zostaje na miejscu.
+let GUARD=false;
+function navGuard(){if(GUARD)return;GUARD=true;try{history.pushState({nt1100:'nav'},'')}catch(e){return}
+  addEventListener('popstate',()=>{const v=document.getElementById('v-nav');if(!v||v.hidden)return;
+    if(NV.full)fullMap(false);else toast('Zostajesz w Nawigacji – do Home Assistanta wrócisz menu z boku.');
+    try{history.pushState({nt1100:'nav'},'')}catch(e){}})}
 function fitRoute(b){NV.fit=b;NV.map.fitBounds(b,{padding:[30,30]});lockMap(true)}
 function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}NV.map.fitBounds(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])),{padding:[30,30]})}
 function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent=''}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
