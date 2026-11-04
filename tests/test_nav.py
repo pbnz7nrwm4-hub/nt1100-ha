@@ -712,5 +712,40 @@ class NavServerTest(unittest.TestCase):
             self.jpost(self.pu + "/api/nav/settings", {"map_url": "", "home": None})
 
 
+    def test_12_skip_town_and_round_trip_by_time(self):
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu})
+        FakeGraphHopper.calls = []
+        pts = [{"lat": 50.0, "lon": 19.9, "name": "A"}, {"lat": 50.02, "lon": 19.95, "name": "B"}]
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["szybko"], "weather": False,
+                                                         "skip": [{"lat": 50.01, "lon": 19.92, "r": 1500, "name": "Wieś"}]})
+        self.assertEqual(code, 200, j)
+        cm = FakeGraphHopper.calls[0]["custom_model"]
+        self.assertEqual(cm["areas"]["features"][0]["id"], "pomin0")
+        ring = cm["areas"]["features"][0]["geometry"]["coordinates"][0]
+        self.assertEqual(ring[0], ring[-1])
+        self.assertAlmostEqual(max(p[1] for p in ring) - 50.01, 1500 / 110540, places=3)
+        self.assertEqual(cm["priority"][0], {"if": "in_pomin0", "multiply_by": "0.02"})
+        self.assertEqual(j["routes"][0]["skip"][0]["name"], "Wieś")
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "skip": [{"lat": "x", "lon": 1}]})
+        self.assertEqual(code, 400)
+        # round trip by time: only the start goes to the engine, length is corrected towards the wanted time
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["kreto"], "round_trip_min": 60,
+                                                         "weather": False})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(j["routes"][0]["name"], "Okrężna 1 h")
+        self.assertEqual(j["routes"][0]["round_trip_min"], 60)
+        calls = FakeGraphHopper.calls
+        self.assertTrue(all(c["algorithm"] == "round_trip" and len(c["points"]) == 1 for c in calls))
+        self.assertEqual(calls[0]["round_trip.distance"], 46000)          # 1 h at the curvy average
+        self.assertEqual(len(calls), 3)                                    # fake engine always says 2 min
+        self.assertGreater(calls[1]["round_trip.distance"], calls[0]["round_trip.distance"])
+        self.assertEqual(len({c["round_trip.seed"] for c in calls}), 1)    # same loop shape while correcting
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts[:1], "round_trip_min": 5})
+        self.assertEqual(code, 400)
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts[:1], "round_trip_min": 60, "round_trip_km": 50})
+        self.assertEqual(code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()
