@@ -56,12 +56,17 @@ if [ "$WOLNE" -lt "$POTRZEBA" ]; then
   echo "  powiększ dysk kontenera na Proxmoxie: pct resize <numer kontenera> rootfs +10G"
   exit 3
 fi
-"$JAVA21" -Djava.net.preferIPv4Stack=true -Xmx"${PAMIEC_MAPY:-3g}" -jar "$KAT/planetiler.jar" \
+# Węzły w RAM-ie (--storage=ram): na dysku HDD tryb mmap czytał je losowo i budowa szła
+# ~200 dróg/s (dziesiątki godzin). Polska potrzebuje ok. 5 GB pamięci Javy; silnik tras
+# stoi na czas budowy, więc kontener z 8 GB RAM wystarcza.
+HEAP="${PAMIEC_MAPY:-5g}"
+[ "$HEAP" = "3g" ] && HEAP=5g   # stara wartość domyślna z obszar.env
+"$JAVA21" -Djava.net.preferIPv4Stack=true -Xmx"$HEAP" -jar "$KAT/planetiler.jar" \
   --osm-path="$WE" \
   --water-polygons-path="$WODA" \
   --natural-earth-path="$D/natural_earth_vector.sqlite.zip" \
   --lake-centerlines-path="$D/lake_centerline.shp.zip" \
-  --tmpdir="$D/tmp" --storage=mmap --nodemap-type=sparsearray \
+  --tmpdir="$D/tmp" --storage=ram --nodemap-type=sparsearray \
   --only-layers="$WARSTWY" --maxzoom=14 \
   --output="$KAT/www/kafelki.nowe.pmtiles" --force || { rm -rf "$D/tmp" "$KAT/www/kafelki.nowe.pmtiles"; exit 1; }
 mv "$KAT/www/kafelki.nowe.pmtiles" "$KAT/www/kafelki.pmtiles"
