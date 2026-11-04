@@ -16,6 +16,7 @@ Co tu jest:
 Pliki w /share/nt1100/nawigacja/: trasy/<id>.json, trasy/<id>.ntr,
 trasy.json (lista), mapa/ (kwadraty), ekran/ (dziennik), cele.json.
 """
+import concurrent.futures
 import json
 import math
 import os
@@ -40,6 +41,9 @@ TURN_TEXT = {T_STRAIGHT: "prosto", T_SLIGHT_L: "lekko w lewo", T_LEFT: "w lewo",
 GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGHT_R, 2: T_RIGHT, 3: T_SHARP_R,
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
+WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
+WX_LOCK = threading.Lock()
+WX_TTL = 900
 VARIANTS = (("szybko", "Najszybciej"), ("lekko", "Lekko kręto"), ("kreto", "Kręto"), ("bardzo", "Bardzo kręto"))
 AVOID = ("gruntowe", "platne", "autostrady", "promy")
 MAX_ROUTE_PTS = 20000
@@ -520,7 +524,9 @@ class Nav:
 
     def weather_along(self, pts, cum, times, start_time=None):
         """Prognoza Open-Meteo dla punktów co 30 min jazdy, na przewidywaną
-        godzinę przejazdu (start = teraz albo podany czas)."""
+        godzinę przejazdu (start = teraz albo podany czas). Wszystkie brakujące
+        punkty idą jednym zapytaniem; prognozy są pamiętane 15 min (wspólnie
+        dla wariantów liczonych równolegle)."""
         start = start_time or time.time()
         idxs = [0]
         next_t = 1800
@@ -530,18 +536,28 @@ class Nav:
                 next_t = t + 1800
         if idxs[-1] != len(pts) - 1:
             idxs.append(len(pts) - 1)
+        keys = [(round(pts[i][0], 1), round(pts[i][1], 1)) for i in idxs]
+        now = time.time()
+        with WX_LOCK:
+            for k in [k for k, v in WX_CACHE.items() if now - v[0] > WX_TTL]:
+                WX_CACHE.pop(k, None)
+            missing = [k for k in dict.fromkeys(keys) if k not in WX_CACHE]
+        if missing:
+            q = urllib.parse.urlencode({
+                "latitude": ",".join("%.1f" % k[0] for k in missing),
+                "longitude": ",".join("%.1f" % k[1] for k in missing), "forecast_days": 3,
+                "hourly": "temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m",
+                "timezone": "GMT", "wind_speed_unit": "kmh"})
+            j = http_json("https://api.open-meteo.com/v1/forecast?" + q, timeout=20)
+            got = j if isinstance(j, list) else [j]
+            with WX_LOCK:
+                for k, v in zip(missing, got):
+                    WX_CACHE[k] = (now, v)
         out = []
-        cache = {}
-        for i in idxs:
-            lat, lon = pts[i]
-            k = (round(lat, 1), round(lon, 1))
-            if k not in cache:
-                q = urllib.parse.urlencode({
-                    "latitude": "%.3f" % lat, "longitude": "%.3f" % lon, "forecast_days": 3,
-                    "hourly": "temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m",
-                    "timezone": "GMT", "wind_speed_unit": "kmh"})
-                cache[k] = http_json("https://api.open-meteo.com/v1/forecast?" + q, timeout=15)
-            h = cache[k].get("hourly") or {}
+        for i, k in zip(idxs, keys):
+            with WX_LOCK:
+                fc = (WX_CACHE.get(k) or (0, {}))[1]
+            h = fc.get("hourly") or {}
             tms = h.get("time") or []
             if not tms:
                 continue
@@ -556,6 +572,35 @@ class Nav:
                         "rain": val("precipitation"), "code": val("weather_code"), "wind": val("wind_speed_10m"),
                         "gust": val("wind_gusts_10m")})
         return out
+
+    def along_route(self, route, kinds=None, max_m=2000.0, limit=300):
+        """POI wzdłuż trasy (np. stacje paliw): do max_m od linii, posortowane
+        po kilometrze trasy. Zwraca [{lat, lon, kind, name, km, off_m}]."""
+        pts = [(float(p[0]), float(p[1])) for p in route.get("pts") or []]
+        if len(pts) < 2 or not self.map.available():
+            return []
+        cum = route.get("cum") or cum_dist(pts)
+        found = {}
+        i = 0
+        n = len(pts)
+        while i < n:
+            for d, p in self.map.points_near(pts[i][0], pts[i][1], max_m + 300.0, kinds):
+                if p.id in found and found[p.id][0] <= d:
+                    continue
+                found[p.id] = (d, i, p)
+            step = 1
+            while i + step < n and cum[i + step] - cum[i] < 500:
+                step += 1
+            i += step
+        out = []
+        for d0, i0, p in found.values():
+            j, d = nearest_index(pts, (p.lat, p.lon), max(0, i0 - 30), 60)
+            if d > max_m:
+                continue
+            out.append({"lat": round(p.lat, 6), "lon": round(p.lon, 6), "kind": p.kind, "name": p.name,
+                        "km": round(cum[j] / 1000.0, 1), "off_m": int(d), "idx": j})
+        out.sort(key=lambda x: (x["km"], x["off_m"]))
+        return out[:limit]
 
     # ---- silnik tras (GraphHopper)
     def engine_ok(self):
@@ -657,14 +702,10 @@ class Nav:
         s = self.settings()
         avoid = avoid if avoid is not None else s["avoid"]
         variants = variants or [v for v, _ in VARIANTS]
-        out = []
         errors = {}
-        for v in variants:
-            try:
-                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading)
-            except Exception as e:
-                errors[v] = str(e)
-                continue
+
+        def one(v):
+            r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading)
             wps = []
             for k, p in enumerate(points[1:] if not round_trip_km else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
@@ -678,7 +719,17 @@ class Nav:
             route["avoid"] = avoid
             route["points"] = points
             route["round_trip_km"] = round_trip_km
-            out.append(route)
+            return route
+
+        # warianty liczą się naraz (silnik ma kilka rdzeni, pogoda i sieć czekają równolegle)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(variants)))) as ex:
+            futs = [(v, ex.submit(one, v)) for v in variants]
+        out = []
+        for v, f in futs:
+            try:
+                out.append(f.result())
+            except Exception as e:
+                errors[v] = str(e)
         return out, errors
 
     @staticmethod
@@ -739,6 +790,83 @@ class Nav:
         new["weather"] = route.get("weather") or []
         self.store_route(new, make_current=(self.index().get("current") == rid))
         return new
+
+    # ---- decyzje w trasie: co jest przed motocyklem i zjazd do miejsca
+    def nearby(self, lat, lon, kinds, limit=30):
+        """Miejsca przed motocyklem na bieżącej trasie (gdy jedzie po niej),
+        inaczej najbliższe wokół. dist_km = po trasie albo w linii prostej."""
+        cur = self.index().get("current")
+        route = self.route(cur) if cur else None
+        if route and route.get("pts"):
+            pts = route["pts"]
+            i, d = nearest_index(pts, (lat, lon))
+            if d is not None and d < 500:
+                cum = route.get("cum") or cum_dist(pts)
+                here = cum[i] / 1000.0
+                out = []
+                for p in self.along_route(route, kinds, 3000.0, 400):
+                    if p["km"] < here - 0.2:
+                        continue
+                    p = dict(p)
+                    p["dist_km"] = round(max(0.0, p["km"] - here), 1)
+                    out.append(p)
+                return {"mode": "trasa", "route": cur, "points": out[:limit]}
+        out = []
+        for d, p in self.map.points_near(lat, lon, 15000.0, kinds)[:limit]:
+            out.append({"lat": round(p.lat, 6), "lon": round(p.lon, 6), "kind": p.kind, "name": p.name,
+                        "dist_km": round(d / 1000.0, 1), "off_m": None})
+        return {"mode": "wokol", "route": None, "points": out}
+
+    def via_place(self, lat, lon, place, heading=None):
+        """Zjazd do miejsca (stacja, jedzenie): gdy motocykl jest na bieżącej
+        trasie, dojazd do miejsca i powrót na trasę ~300 m dalej, reszta planu
+        bez zmian; inaczej nowa trasa z pozycji do miejsca. Zapisuje jako bieżącą."""
+        cur = self.index().get("current")
+        route = self.route(cur) if cur else None
+        target = (float(place["lat"]), float(place["lon"]))
+        name = (place.get("name") or "postój")[:30]
+        if route and route.get("pts"):
+            pts = [tuple(p) for p in route["pts"]]
+            cum = route.get("cum") or cum_dist(pts)
+            i, d = nearest_index(pts, (lat, lon))
+            if d is not None and d < 500:
+                jp, _ = nearest_index(pts, target, i)
+                j = jp
+                while j < len(pts) - 1 and cum[j] - cum[jp] < 300:
+                    j += 1
+                legs = [(lat, lon), target] + ([pts[j]] if j < len(pts) - 1 else [])
+                r = self.gh_route(legs, "szybko", list(route.get("avoid") or self.settings()["avoid"]), heading=heading)
+                head = list(r["pts"])
+                tail = pts[j + 1:]
+                instr = [dict(t) for t in r["instr"]]
+                shift = len(head) - (j + 1)
+                for t in route.get("turns") or []:
+                    if t["idx"] > j:
+                        t = dict(t)
+                        t["idx"] = t["idx"] + shift
+                        instr.append(t)
+                wps = [{"lat": target[0], "lon": target[1], "name": name, "kind": 1}]
+                for w in route.get("waypoints") or []:
+                    if w["idx"] > j:
+                        p = pts[w["idx"]]
+                        wps.append({"lat": p[0], "lon": p[1], "name": w.get("name") or "", "kind": w.get("kind", 1)})
+                new = self.build_route(head + tail, route.get("name") or "Trasa", route.get("source") or "silnik", instr,
+                                       wps, None, route.get("variant"), True)
+                new["id"] = cur
+                new["created"] = route.get("created")
+                new["parent_version"] = route.get("version")
+                new["avoid"] = route.get("avoid")
+                new["points"] = route.get("points")
+                self.store_route(new, True)
+                return new
+        s = self.settings()
+        routes, errors = self.plan([{"lat": lat, "lon": lon, "name": "pozycja"},
+                                    {"lat": target[0], "lon": target[1], "name": name}],
+                                   [s["default_variant"]], s["avoid"], "→ " + name, heading=heading, with_weather=True)
+        if not routes:
+            raise RuntimeError(errors.get(s["default_variant"]) or "silnik tras nie odpowiedział")
+        rid = self.store_route(routes[0], True)
+        return self.route(rid)
 
     # ---- szukanie i cel z linku
     def search(self, q, lat=None, lon=None, limit=8):

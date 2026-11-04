@@ -52,6 +52,16 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Skrót iPhone’a „Wyślij na motocykl”**: udostępnij miejsce z Map do skrótu, który
   otwiera adres `ADRES-SPOZA-DOMU/api/nav/goto?klucz=KLUCZ&text=LINK` (klucz i adres
   w zakładce Ustawienia). Trasa liczy się z pozycji motocykla domyślnym wariantem.
+- **Po drodze**: po wybraniu policzonego wariantu albo „Pokaż” przy zapisanej trasie pod
+  planerem pojawia się lista miejsc do 2 km od trasy (stacje, jedzenie, kawa, nocleg, widoki,
+  serwis moto, ładowarki) z nazwą, kilometrem trasy i odległością od trasy; „Dodaj” wstawia
+  miejsce jako punkt po drodze we właściwej kolejności.
+- **W trasie** (karta na górze zakładki, wygodna na telefonie): pozycja motocykla z ekranu
+  (gdy łączy się przez hotspot) albo z telefonu i najbliższe miejsca przed Tobą na bieżącej
+  trasie (bez trasy: wokół). „Jedź tam” wysyła miejsce na ekran jako postój: ekran prowadzi
+  do niego i wraca na trasę ok. 300 m dalej, reszta planu zostaje bez zmian.
+- **POI na mapie**: kolorowe punkty z legendą; przy dużym obszarze pokazana jest równomierna
+  część punktów (przybliż, żeby zobaczyć wszystkie).
 - **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą),
   ekran dociąga ją sam w domu po Wi-Fi.
 - **Korki**: opcjonalny klucz TomTom (darmowy limit dzienny wystarcza); ekran sprawdza

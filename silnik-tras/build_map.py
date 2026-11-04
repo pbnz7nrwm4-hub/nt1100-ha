@@ -256,7 +256,12 @@ def build(pbf, out, bbox=None):
         with open(ids, "w") as f:
             f.write("\n".join("n%d" % n for n in sections) + "\n")
         secpbf = os.path.join(work, "odcinki.pbf")
-        run(["osmium", "getid", src, "-i", ids, "-o", secpbf, "--overwrite"])
+        # kod 1 = część punktów odcinka leży poza obszarem pliku (np. odcinek na granicy wycinka);
+        # takie odcinki odpadną niżej, bo nie mają obu końców
+        print("+ osmium getid (odcinki)", flush=True)
+        rc = subprocess.run(["osmium", "getid", src, "-i", ids, "-o", secpbf, "--overwrite"]).returncode
+        if rc not in (0, 1):
+            raise RuntimeError("osmium getid: kod %d" % rc)
         with subprocess.Popen(["osmium", "cat", secpbf, "-t", "node", "-f", "opl"], stdout=subprocess.PIPE,
                               text=True) as p:
             for line in p.stdout:

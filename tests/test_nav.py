@@ -11,8 +11,10 @@ import struct
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -136,6 +138,31 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(name, "Rynek")
         self.assertTrue(seen and all("lang=" not in u for u in seen))
 
+    def test_weather_one_request_and_cache(self):
+        seen = []
+        hourly = {"time": [time.strftime("%Y-%m-%dT%H:00", time.gmtime(time.time() + h * 3600)) for h in range(-2, 30)]}
+        for k in ("temperature_2m", "precipitation_probability", "precipitation", "weather_code", "wind_speed_10m", "wind_gusts_10m"):
+            hourly[k] = [1] * len(hourly["time"])
+
+        def fake(url, timeout=0):
+            seen.append(url)
+            n = len(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["latitude"][0].split(","))
+            return [{"hourly": hourly} for _ in range(n)] if n > 1 else {"hourly": hourly}
+        orig = nav.http_json
+        nav.http_json = fake
+        nav.WX_CACHE.clear()
+        try:
+            pts = line(50.5, 19.0, 0, 120000, 1000.0)
+            times = [i * 60 for i in range(len(pts))]  # 2 h jazdy, punkt co 30 min
+            wx = nav.Nav.weather_along(None, pts, None, times)
+            self.assertEqual(len(seen), 1)
+            self.assertEqual(len(wx), 5)
+            nav.Nav.weather_along(None, pts, None, times)
+            self.assertEqual(len(seen), 1)  # z pamięci
+        finally:
+            nav.http_json = orig
+            nav.WX_CACHE.clear()
+
     def test_place_links(self):
         p = nav.Nav.parse_place_link("https://www.google.com/maps/place/Zakopane/@49.2992,19.9496,14z/data=xyz")
         self.assertAlmostEqual(p["lat"], 49.2992)
@@ -209,6 +236,31 @@ class TileTest(unittest.TestCase):
         near = m.points_near(50.0, 19.9, 500, kinds={ntt.P_CAMERA})
         self.assertEqual(len(near), 1)
         self.assertEqual(near[0][1].limit, 50)
+
+
+class TileSampleTest(unittest.TestCase):
+    def test_bbox_sample_covers_area(self):
+        cell = build_map.Cell((500, 199))
+        cell.add_way(1, 4, 0, 90, 90, "", "", line(50.0, 19.9, 90, 5000, 50.0), [])
+        nid = 1000
+        for i in range(30):
+            for k in range(30):
+                cell.add_point(nid, 50.0 + i * 0.003, 19.9 + k * 0.003, ntt.P_FUEL, 0, "", 0)
+                nid += 1
+        cell.add_point(5, 50.09, 19.99, ntt.P_CAMERA, 50, "", 0)
+        d = tempfile.mkdtemp(prefix="nt1100-ntt-")
+        self.addCleanup(shutil.rmtree, d, True)
+        cell.write(os.path.join(d, "c_500_199.ntt"))
+        m = ntt.Map(d)
+        pts = m.points_in_bbox(50.0, 19.9, 50.1, 20.0, None, 100)
+        self.assertEqual(len(pts), 100)
+        self.assertIn(ntt.P_CAMERA, [p.kind for p in pts])
+        self.assertGreater(max(p.lat for p in pts), 50.07)  # nie tylko południe obszaru
+        # dopasowanie drogi przez siatkę odcinków, także daleko od początku drogi
+        r = m.match_road(50.0001, 19.9 + 4000 / (111320.0 * math.cos(math.radians(50.0))), heading=90)
+        self.assertIsNotNone(r)
+        self.assertEqual(r[0].id, 1)
+        self.assertIsNone(m.match_road(50.01, 19.95, radius_m=30))
 
 
 class NavServerTest(unittest.TestCase):
@@ -336,10 +388,12 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(code, 200, j)
         self.assertEqual(len(j["routes"]), 2)
         self.assertEqual(len(FakeGraphHopper.calls), 2)
-        body = FakeGraphHopper.calls[1]
+        # warianty liczą się równolegle, więc kolejność zapytań do silnika jest dowolna
+        curvy = [b for b in FakeGraphHopper.calls if any("curvature" in json.dumps(p) for p in b["custom_model"]["priority"])]
+        self.assertEqual(len(curvy), 1)
+        body = curvy[0]
         self.assertEqual(body["profile"], "motocykl")
         self.assertEqual(body["points"][0], [19.9, 50.0])
-        self.assertTrue(any("curvature" in json.dumps(p) for p in body["custom_model"]["priority"]))
         r = [x for x in j["routes"] if x["variant"] == "kreto"][0]
         self.assertEqual([w["name"] for w in r["waypoints"]], ["Sklep", "Zakopane"])
         self.assertEqual([l["kmh"] for l in r["limits"]][:2], [90, 50])
@@ -409,6 +463,51 @@ class NavServerTest(unittest.TestCase):
         self.assertTrue(c["deviations"])
         self.assertTrue(c["pts"])
         self.assertEqual(c["events"][0]["what"], "offroute")
+
+
+    def test_08_nearby_and_stop_at_place(self):
+        # mapa w dodatku: stacja 50 m od wschodniego odcinka trasy w kształcie L
+        nv = srv.navapi.NAV
+        cell = build_map.Cell((500, 199))
+        cell.add_point(777, 50.0094, 19.907, ntt.P_FUEL, 0, "Orlen", 0)
+        cell.add_point(778, 50.0300, 19.950, ntt.P_FUEL, 0, "Daleko", 0)
+        cell.write(os.path.join(nv.map_dir, "c_500_199.ntt"))
+        with open(os.path.join(nv.map_dir, "manifest.json"), "w") as f:
+            json.dump({"built": "test", "files": [{"name": "c_500_199.ntt", "size": 1}]}, f)
+        nv.map.cells.clear()
+        nv.map.order.clear()
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu})
+        code, body, _ = self.req(self.iu + "/api/nav/goto?klucz=" + KEY + "&text=" + urllib.parse.quote("50.009, 19.914"))
+        self.assertEqual(code, 200, body)
+        rid = json.loads(body)["route"]["id"]
+        # wzdłuż zapisanej trasy
+        code, body, _ = self.req(self.pu + "/api/nav/along?id=%d&kinds=10&max=2000" % rid)
+        a = json.loads(body)["points"]
+        self.assertEqual([p["name"] for p in a], ["Orlen"])
+        self.assertLess(a[0]["off_m"], 80)
+        self.assertAlmostEqual(a[0]["km"], 1.5, delta=0.1)
+        # motocykl na początku trasy: stacja przed nim, po trasie
+        self.req(self.iu + "/api/nav/ping?klucz=" + KEY + "&lat=50.0002&lon=19.9")
+        code, body, _ = self.req(self.pu + "/api/nav/nearby?kinds=10")
+        j = json.loads(body)
+        self.assertEqual((j["mode"], j["pos"]["src"]), ("trasa", "ekran"))
+        self.assertEqual(j["points"][0]["name"], "Orlen")
+        self.assertAlmostEqual(j["points"][0]["dist_km"], 1.5, delta=0.1)
+        # „Jedź tam”: postój dodany jako punkt po drodze bieżącej trasy
+        code, j = self.jpost(self.pu + "/api/nav/via", {"lat": 50.0094, "lon": 19.907, "name": "Orlen"})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(j["route"]["id"], rid)
+        r = json.loads(self.req(self.pu + "/api/nav/route?id=%d" % rid)[1])
+        self.assertIn("Orlen", [w["name"] for w in r["waypoints"]])
+        self.assertEqual(json.loads(self.req(self.pu + "/api/nav/routes")[1])["current"], rid)
+        # ekran też może poprosić o postój (z kluczem)
+        code, j = self.jpost(self.iu + "/api/nav/via?klucz=" + KEY,
+                             {"lat": 50.0002, "lon": 19.9, "plat": 50.0094, "plon": 19.907, "name": "Orlen"})
+        self.assertEqual(code, 200, j)
+        self.assertTrue(j["ok"])
+        # POI na mapie: legenda/próbka nie gubi punktów w małym obszarze
+        code, body, _ = self.req(self.pu + "/api/nav/poi?bbox=49.99,19.89,50.04,19.96")
+        self.assertEqual(len(json.loads(body)["points"]), 2)
 
 
 if __name__ == "__main__":
