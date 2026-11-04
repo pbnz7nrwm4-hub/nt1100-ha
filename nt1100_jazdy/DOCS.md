@@ -100,6 +100,8 @@ jazdy przełącza tempo ×1 / ×4. Przytrzymanie 1,5 s: menu z „Szybciej ×4�
 Tankowanie / Jedzenie. Demo niczego nie wysyła do dodatku i kończy się samo minutę po
 dojechaniu do celu. Mapa na karcie jest potrzebna tylko do tła mapy, nazw dróg i Tankowania.
 
+**Usypianie i bateria** (ekran od 1.0.3): ekran gaśnie 3 min po tym, jak skrzynka przestanie nadawać (30 min przy ładowaniu), albo po 10 min postoju bez ruchu. Wcześniej przez 10 s pokazuje „Wyłączam się”, a dotknięcie to odwołuje. Nie gaśnie w trakcie pobierania ani w trybie demo. Budzi się dotykiem, po podłączeniu ładowania i sam po włączeniu motocykla (co 30 s nasłuchuje skrzynki, po 6 h co 2 min). Ikonka baterii ma błyskawicę przy ładowaniu (ładowanie jest rozpoznawane z napięcia). Poniżej 15% ekran pokazuje „Słaba bateria”, a poniżej 3,4 V wyłącza się.
+
 **Symulacja w przeglądarce** (dodatek od 1.4.5): w zakładce Nawigacja → Zapisane trasy
 przycisk „Dodaj trasę demo” zapisuje tę samą trasę Start – Meta (z fotoradarem,
 odcinkowym pomiarem i postojem; „Na ekran” wysyła ją na ekran). Przycisk „Symulacja” przy
