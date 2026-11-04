@@ -374,6 +374,8 @@ class Nav:
             "tomtom_key": s.get("tomtom_key") or "",
             "lean_popup_deg": int(s.get("lean_popup_deg") or 20),
             "traffic_min": int(s.get("traffic_min") or 5),
+            "car_alert_min": int(s.get("car_alert_min") or 5),
+            "phone_tracker": s.get("phone_tracker") or "",
             "offroute_m": int(s.get("offroute_m") or 150),
             "free_km": float(s.get("free_km") or 2),
             "default_variant": s.get("default_variant") or "kreto",
