@@ -959,8 +959,22 @@ class Nav:
             try:
                 out.append(f.result())
             except Exception as e:
-                errors[v] = str(e)
+                errors[v] = self.engine_error(e)
         return out, errors
+
+    def engine_error(self, e):
+        """Błąd silnika tras po ludzku (zamiast „Errno 111”)."""
+        txt = str(e)
+        down = isinstance(e, (ConnectionError, TimeoutError)) or any(
+            k in txt for k in ("Connection refused", "Errno 111", "timed out", "No route to host", "Errno 113"))
+        if not down:
+            return txt
+        st = self.build_status() or {}
+        if st.get("pracuje"):
+            return "silnik tras jest wyłączony na czas przebudowy w kontenerze (%s) – wróci sam po jej końcu" % (
+                st.get("etap") or "budowa")
+        return ("silnik tras nie odpowiada – kontener wyłączony albo usługa stoi; w konsoli kontenera: "
+                "systemctl start nt1100-trasy")
 
     @staticmethod
     def auto_name(points, round_trip_km=None, round_trip_min=None):
