@@ -20,7 +20,20 @@ Format kwadratu (little-endian):
          i32 lat1e6 i32 lon1e6 (pierwszy), potem varint zygzak (dlat, dlon)
          skrzyżowania: u16 indeks_pkt u32 id_węzła
   punkty: u32 id_osm i32 lat1e6 i32 lon1e6 u8 rodzaj u8 limit u16 nazwa u16 para
+  (od 2026-11, gdy bajt 5 nagłówka ma bit 0 = 1) za punktami część „tło”:
+  u32 n_wód u32 n_rzek u32 n_miejscowości
+  wody (wielokąty przycięte do kwadratu z marginesem, uproszczone):
+         u8 rodzaj (1 = woda, 2 = wyspa w wodzie, rysowana kolorem tła po wodach)
+         u16 nazwa u16 n_pkt i32 lat1e6 i32 lon1e6, potem varint zygzak (dlat, dlon)
+  rzeki: u8 rodzaj (1 = rzeka, 2 = kanał) u16 nazwa u16 n_pkt, punkty jak wyżej
+  miejscowości: i32 lat1e6 i32 lon1e6 u8 rodzaj (1 miasto, 2 miasteczko, 3 wieś)
+         u8 ranga (0–255, większa = ważniejsza, z liczby mieszkańców) u16 nazwa
+Starsze czytniki kończą na punktach i ignorują resztę pliku.
+
+manifest.json: {"format":1,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...], ...}
+crc32 jak w zlib (binascii.crc32), dziesiętnie.
 """
+import binascii
 import collections
 import json
 import math
@@ -42,6 +55,16 @@ ROAD_FILTER = ",".join(CLASSES)
 # Drogi serwisowe tylko jako dojazdy do stacji itp.; drogi gruntowe zostają
 # (ekran je pokazuje i omija przy liczeniu trasy).
 SKIP_SERVICE = {"parking_aisle", "driveway", "emergency_access"}
+
+H_EXTRA = 1  # bajt 5 nagłówka: plik ma część „tło” (woda, rzeki, miejscowości)
+W_WATER, W_ISLAND = 1, 2
+R_RIVER, R_CANAL = 1, 2
+PL_CITY, PL_TOWN, PL_VILLAGE = 1, 2, 3
+PLACES = {"city": PL_CITY, "town": PL_TOWN, "village": PL_VILLAGE}
+WATER_FILTER = ["a/natural=water", "a/landuse=reservoir", "w/waterway=river,canal", "n/place=city,town,village"]
+WATER_MIN_M2 = 20000      # mniejsze stawy pomijamy
+WATER_TOL = 0.00008       # uproszczenie konturu, ok. 6–9 m
+CLIP_MARGIN = 0.002       # zapas przycięcia wokół kwadratu (ok. 200 m)
 
 F_ONEWAY, F_UNPAVED, F_TOLL, F_ROUNDABOUT, F_FERRY, F_TUNNEL, F_BRIDGE, F_LIT = 1, 2, 4, 8, 16, 32, 64, 128
 
@@ -114,6 +137,12 @@ class Cell:
         self.nways = 0
         self.points = bytearray()
         self.npoints = 0
+        self.waters = bytearray()
+        self.nwaters = 0
+        self.rivers = bytearray()
+        self.nrivers = 0
+        self.places = bytearray()
+        self.nplaces = 0
 
     def string(self, s):
         if not s:
@@ -143,21 +172,204 @@ class Cell:
         self.ways += rec
         self.nways += 1
 
+    @staticmethod
+    def _coords(pts):
+        plat, plon = int(round(pts[0][0] * 1e6)), int(round(pts[0][1] * 1e6))
+        rec = bytearray(struct.pack("<ii", plat, plon))
+        for lat, lon in pts[1:]:
+            ilat, ilon = int(round(lat * 1e6)), int(round(lon * 1e6))
+            rec += varint(zigzag(ilat - plat)) + varint(zigzag(ilon - plon))
+            plat, plon = ilat, ilon
+        return rec
+
+    def add_water(self, kind, name, ring):
+        if len(ring) < 3 or len(ring) > 0xFFFF:
+            return
+        self.waters += struct.pack("<BHH", kind, self.string(name), len(ring)) + self._coords(ring)
+        self.nwaters += 1
+
+    def add_river(self, kind, name, pts):
+        if len(pts) < 2 or len(pts) > 0xFFFF:
+            return
+        self.rivers += struct.pack("<BHH", kind, self.string(name), len(pts)) + self._coords(pts)
+        self.nrivers += 1
+
+    def add_place(self, lat, lon, kind, rank, name):
+        self.places += struct.pack("<iiBBH", int(round(lat * 1e6)), int(round(lon * 1e6)), kind, rank,
+                                   self.string(name))
+        self.nplaces += 1
+
     def add_point(self, nid, lat, lon, kind, limit, name, pair):
         self.points += struct.pack("<IiiBBHH", nid & 0xFFFFFFFF, int(round(lat * 1e6)), int(round(lon * 1e6)),
                                    kind, limit, self.string(name), pair)
         self.npoints += 1
 
+    def data(self):
+        extra = self.nwaters or self.nrivers or self.nplaces
+        head = struct.pack("<4sBBhhIIII", b"NTT1", FORMAT, H_EXTRA if extra else 0, self.key[0], self.key[1],
+                           self.nways, self.npoints, len(self.offsets), len(self.string_bytes))
+        out = head + struct.pack("<%dI" % len(self.offsets), *self.offsets) + self.string_bytes + self.ways + self.points
+        if extra:
+            out += struct.pack("<III", self.nwaters, self.nrivers, self.nplaces) + self.waters + self.rivers + self.places
+        return bytes(out)
+
     def write(self, path):
-        head = struct.pack("<4sBBhhIIII", b"NTT1", FORMAT, 0, self.key[0], self.key[1], self.nways, self.npoints,
-                           len(self.offsets), len(self.string_bytes))
+        """Zapisuje kwadrat; zwraca (bajty, crc32)."""
+        b = self.data()
         with open(path, "wb") as f:
-            f.write(head)
-            f.write(struct.pack("<%dI" % len(self.offsets), *self.offsets))
-            f.write(self.string_bytes)
-            f.write(self.ways)
-            f.write(self.points)
-        return len(head) + 4 * len(self.offsets) + len(self.string_bytes) + len(self.ways) + len(self.points)
+            f.write(b)
+        return len(b), binascii.crc32(b)
+
+
+def simplify(pts, tol):
+    """Douglas–Peucker (stopnie, długość skalowana cos(lat))."""
+    if len(pts) < 4:
+        return pts
+    k = math.cos(math.radians(pts[0][0]))
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        ay, ax = pts[a][0], pts[a][1] * k
+        by, bx = pts[b][0], pts[b][1] * k
+        dy, dx = by - ay, bx - ax
+        L = dx * dx + dy * dy
+        best, bi = -1.0, -1
+        for i in range(a + 1, b):
+            py, px = pts[i][0], pts[i][1] * k
+            if L == 0:
+                d = (px - ax) ** 2 + (py - ay) ** 2
+            else:
+                t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L))
+                d = (px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2
+            if d > best:
+                best, bi = d, i
+        if bi > 0 and best > tol * tol:
+            keep[bi] = True
+            stack.append((a, bi))
+            stack.append((bi, b))
+    return [p for p, f in zip(pts, keep) if f]
+
+
+def ring_area_m2(ring):
+    k = math.cos(math.radians(ring[0][0])) * 111320.0
+    a = 0.0
+    for (y1, x1), (y2, x2) in zip(ring, ring[1:] + ring[:1]):
+        a += (x1 * k) * (y2 * 110540.0) - (x2 * k) * (y1 * 110540.0)
+    return abs(a) / 2
+
+
+def clip_ring(ring, s, w, n, e):
+    """Sutherland–Hodgman: wielokąt przycięty do prostokąta."""
+    def edge(pts, inside, cut):
+        out = []
+        for i, cur in enumerate(pts):
+            prev = pts[i - 1]
+            if inside(cur):
+                if not inside(prev):
+                    out.append(cut(prev, cur))
+                out.append(cur)
+            elif inside(prev):
+                out.append(cut(prev, cur))
+        return out
+
+    def at_lat(v):
+        return lambda a, b: (v, a[1] + (b[1] - a[1]) * (v - a[0]) / (b[0] - a[0]))
+
+    def at_lon(v):
+        return lambda a, b: (a[0] + (b[0] - a[0]) * (v - a[1]) / (b[1] - a[1]), v)
+    pts = ring
+    for inside, cut in ((lambda p: p[0] >= s, at_lat(s)), (lambda p: p[0] <= n, at_lat(n)),
+                        (lambda p: p[1] >= w, at_lon(w)), (lambda p: p[1] <= e, at_lon(e))):
+        if not pts:
+            break
+        pts = edge(pts, inside, cut)
+    return pts
+
+
+def cell_box(key, margin=CLIP_MARGIN):
+    return key[0] / CELL - margin, key[1] / CELL - margin, (key[0] + 1) / CELL + margin, (key[1] + 1) / CELL + margin
+
+
+def box_cells(s, w, n, e):
+    for la in range(math.floor(s * CELL), math.floor(n * CELL) + 1):
+        for lo in range(math.floor(w * CELL), math.floor(e * CELL) + 1):
+            yield la, lo
+
+
+def line_pieces(pts):
+    """Linia pocięta na kawałki w kwadratach (kawałek ma też punkt przed i za kwadratem)."""
+    out = {}
+    for a, b in zip(pts, pts[1:]):
+        for key in box_cells(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])):
+            runs = out.setdefault(key, [])
+            if runs and runs[-1][-1] == a:
+                runs[-1].append(b)
+            else:
+                runs.append([a, b])
+    return out
+
+
+def place_rank(kind, population):
+    try:
+        pop = int(str(population).replace(" ", "").split(";")[0])
+    except (TypeError, ValueError):
+        pop = {PL_CITY: 100000, PL_TOWN: 10000, PL_VILLAGE: 500}[kind]
+    return max(1, min(255, int(round(math.log10(max(pop, 10)) * 40))))
+
+
+def add_background(src, work, cell):
+    """Woda, rzeki i miejscowości (do rysowania tła na ekranie)."""
+    t0 = time.time()
+    wpbf = os.path.join(work, "woda.pbf")
+    run(["osmium", "tags-filter", src] + WATER_FILTER + ["-o", wpbf, "--overwrite"])
+    nw = nr = npl = 0
+    with subprocess.Popen(["osmium", "export", wpbf, "-f", "geojsonseq", "--add-unique-id=type_id"],
+                          stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as exp:
+        for line in exp.stdout:
+            line = line.lstrip("\x1e")
+            if not line.startswith("{"):
+                continue
+            f = json.loads(line)
+            geom, tags = f.get("geometry") or {}, f.get("properties") or {}
+            gt = geom.get("type")
+            name = tags.get("name") or ""
+            if gt == "Point":
+                kind = PLACES.get(tags.get("place"))
+                if kind and name:
+                    lon, lat = geom["coordinates"]
+                    cell(cell_of(lat, lon)).add_place(lat, lon, kind, place_rank(kind, tags.get("population")), name)
+                    npl += 1
+            elif gt == "LineString":
+                kind = {"river": R_RIVER, "canal": R_CANAL}.get(tags.get("waterway"))
+                if not kind:
+                    continue
+                pts = simplify([(c[1], c[0]) for c in geom["coordinates"]], WATER_TOL)
+                for key, runs in line_pieces(pts).items():
+                    for r in runs:
+                        cell(key).add_river(kind, name, r)
+                nr += 1
+            elif gt in ("Polygon", "MultiPolygon"):
+                if tags.get("natural") != "water" and tags.get("landuse") != "reservoir":
+                    continue
+                polys = [geom["coordinates"]] if gt == "Polygon" else geom["coordinates"]
+                for poly in polys:
+                    for ri, ring in enumerate(poly):
+                        pts = [(c[1], c[0]) for c in ring[:-1]]
+                        if len(pts) < 3 or ring_area_m2(pts) < WATER_MIN_M2:
+                            continue
+                        pts = simplify(pts + pts[:1], WATER_TOL)[:-1]
+                        if len(pts) < 3:
+                            continue
+                        lats = [p[0] for p in pts]
+                        lons = [p[1] for p in pts]
+                        for key in box_cells(min(lats), min(lons), max(lats), max(lons)):
+                            part = clip_ring(pts, *cell_box(key))
+                            if len(part) >= 3:
+                                cell(key).add_water(W_WATER if ri == 0 else W_ISLAND, name if ri == 0 else "", part)
+                    nw += 1
+    print("tło: wód %d, rzek %d, miejscowości %d (%.0f s)" % (nw, nr, npl, time.time() - t0), flush=True)
 
 
 def run(cmd, **kw):
@@ -399,15 +611,18 @@ def build(pbf, out, bbox=None):
             cell(cell_of(lat, lon)).add_point(nid, lat, lon, kind, limit, "", pair)
             npoints += 1
 
-    # 4. zapis
+    # 4. tło dla ekranu: woda, rzeki, miejscowości
+    add_background(src, work, cell)
+
+    # 5. zapis
     files = []
     total = 0
     lats = [k[0] for k in cells]
     lons = [k[1] for k in cells]
     for key in sorted(cells):
         name = "c_%d_%d.ntt" % key
-        n = cells[key].write(os.path.join(out, name))
-        files.append([name, n])
+        n, crc = cells[key].write(os.path.join(out, name))
+        files.append([name, n, crc])
         total += n
     manifest = {
         "format": FORMAT, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
