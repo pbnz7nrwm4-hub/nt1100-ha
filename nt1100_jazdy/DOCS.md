@@ -94,6 +94,8 @@ kończy się po dojechaniu (60 m), nową trasą albo przyciskiem „Koniec posto
 
 Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wygląd” można wybrać: ciemny zawsze, jasny w dzień (ciemny w nocy) albo jasny zawsze. Od 1.0.8 wygląd odpowiada makiecie: górny pasek w kolorze stanu (zielony, żółty „brak GPS”, czerwony „brak skrzynki”), widok dzielony (strzałka + mapa) przed skrętem, zoom zależny od odległości do skrętu, przechylony motocykl w wyniku zakrętu.
 
+**Telefon (ekran 1.0.9).** Ekran łączy się z iPhone’em przez Bluetooth, bez żadnej aplikacji: pokazuje wiadomości i połączenia (na postoju można odebrać albo odrzucić), steruje muzyką (poprzedni, pauza, następny), bierze z telefonu godzinę i pokazuje jego baterię. Parowanie jeden raz: iPhone → Ustawienia → Bluetooth → „NT1100 Ekran” → zezwól na powiadomienia. W Ustawieniach → Powiadomienia ustaw „Pokazuj podglądy” na „Zawsze” albo „Gdy odblokowany”, inaczej zamiast treści przyjdzie samo „Powiadomienie”. Potem telefon łączy się sam. Na postoju jest piąta zakładka „Telefon”; w jeździe wiadomość pojawia się na chwilę w prawym górnym rogu mapy, nie zasłaniając strzałki. W ustawieniach ekranu są pola „Telefon” (włącz/wyłącz) i „Dźwięki”.
+
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
