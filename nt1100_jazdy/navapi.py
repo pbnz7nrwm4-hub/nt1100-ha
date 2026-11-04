@@ -173,7 +173,7 @@ def demo_route():
 def route_summary(r, with_pts=True, full=False):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
                                  "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km",
-                                 "legs", "leg_m")}
+                                 "round_trip_min", "skip", "legs", "leg_m")}
     out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
     out["min"] = int((r.get("time_s") or 0) / 60)
     if with_pts and full:
@@ -442,7 +442,19 @@ def page_post(h, path, q, body):
             rt = SRV.num(j.get("round_trip_km"))
             if rt is not None and not 10 <= rt <= 1500:
                 return h.send(400, {"error": "trasa okrężna 10–1500 km"}) or True
-            if len(points) < 2 and not rt:
+            rtm = SRV.num(j.get("round_trip_min"))
+            if rtm is not None and not 15 <= rtm <= 720:
+                return h.send(400, {"error": "trasa okrężna na czas: 15 min – 12 h"}) or True
+            if rt and rtm:
+                return h.send(400, {"error": "trasa okrężna: podaj km albo czas"}) or True
+            skip = []
+            for sp in (j.get("skip") or [])[:10]:
+                lat, lon, r = SRV.num((sp or {}).get("lat")), SRV.num((sp or {}).get("lon")), SRV.num((sp or {}).get("r"))
+                if lat is None or lon is None:
+                    return h.send(400, {"error": "zly punkt do pominiecia"}) or True
+                skip.append({"lat": lat, "lon": lon, "r": int(min(8000, max(200, r or 1000))),
+                             "name": str(sp.get("name") or "")[:40]})
+            if len(points) < 2 and not rt and not rtm:
                 return h.send(400, {"error": "podaj cel"}) or True
             variants = [v for v in (j.get("variants") or []) if v in [x for x, _ in nav.VARIANTS]] or None
             avoid = j.get("avoid") if isinstance(j.get("avoid"), list) else None
@@ -454,7 +466,8 @@ def page_post(h, path, q, body):
                 if len(set(legs)) < 2:
                     legs = None  # wszystkie odcinki tak samo = zwykły wariant
             routes, errors = NAV.plan(points, variants, avoid, str(j.get("name") or "")[:40], rt, SRV.num(j.get("heading")),
-                                      with_weather=bool(j.get("weather", True)), legs=legs)
+                                      with_weather=bool(j.get("weather", True)), legs=legs, skip=skip,
+                                      round_trip_min=rtm)
             token = secrets.token_hex(8)
             PLANS[token] = (time.time(), routes)
             for k in [k for k, v in PLANS.items() if time.time() - v[0] > 3600]:
