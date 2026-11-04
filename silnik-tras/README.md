@@ -38,6 +38,15 @@ i buduje to, czego jeszcze nie ma. Pierwsza budowa mapy do przeglądarki zajmuje
 30–60 minut, dane wysokości gór kolejne kilkanaście minut; w tym czasie trasy się nie liczą.
 Dodatek sam zauważy nową mapę (Ustawienia → Silnik tras, mapa, korki).
 
+Co jest w kontenerze (graf tras, mapa na ekran, mapa do przeglądarki, dane gór, wolne miejsce):
+
+```
+/opt/nt1100-trasy/bin/aktualizuj.sh --stan
+```
+
+Mapa do przeglądarki potrzebuje na czas budowy kilku GB wolnego miejsca; gdy go brakuje,
+skrypt pisze ile i podpowiada `pct resize <numer kontenera> rootfs +10G` (na hoście Proxmox).
+
 ## Co działa w kontenerze
 
 - `nt1100-trasy.service` – GraphHopper na porcie 8989 (profil „motocykl”, ustawienia
