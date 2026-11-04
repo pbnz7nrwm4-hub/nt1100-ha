@@ -13,8 +13,16 @@ curl -L --fail -sS -z "$PBF" -o "$PBF.nowy" "$URL" || { echo "pobieranie nieudan
 if [ ! -s "$PBF.nowy" ]; then
   echo "dane bez zmian"
   rm -f "$PBF.nowy"
-  if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ] && [ -s "$KAT/www/kafelki.pmtiles" ]; then
-    systemctl start nt1100-mapa.service nt1100-trasy.service
+  if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ]; then
+    # graf i mapa na kartę są; dobuduj tylko to, czego brakuje (np. po aktualizacji do 1.5.0)
+    systemctl start nt1100-mapa.service
+    if [ ! -s "$KAT/www/kafelki.pmtiles" ]; then
+      systemctl stop nt1100-trasy.service || true
+      "$KAT/bin/kafelki.sh" "$PBF" || echo "$(date '+%F %T') kafelki nieudane"
+    fi
+    systemctl start nt1100-trasy.service
+    python3 "$KAT/bin/dem.py" "$KAT/www" || echo "$(date '+%F %T') dane wysokości niepełne"
+    echo "$(date '+%F %T') gotowe"
     exit 0
   fi
 else
@@ -33,6 +41,8 @@ systemctl start nt1100-mapa.service
 # Planetiler i import GraphHoppera potrzebują dużo pamięci: silnik tras stoi na czas budowy.
 systemctl stop nt1100-trasy.service || true
 "$KAT/bin/kafelki.sh" "$PBF" || echo "$(date '+%F %T') kafelki nieudane, zostaje poprzednia mapa"
+echo "$(date '+%F %T') dane wysokości (cieniowanie gór; pobiera tylko brakujące)"
+python3 "$KAT/bin/dem.py" "$KAT/www" || echo "$(date '+%F %T') dane wysokości niepełne"
 
 echo "$(date '+%F %T') graf tras (import GraphHopper)"
 rm -rf "$KAT/dane/graf"

@@ -173,7 +173,7 @@ def demo_route():
 def route_summary(r, with_pts=True, full=False):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
                                  "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km",
-                                 "legs")}
+                                 "legs", "leg_m")}
     out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
     out["min"] = int((r.get("time_s") or 0) / 60)
     if with_pts and full:
@@ -213,6 +213,7 @@ def goto(text, variant=None, name=None):
 
 FONTS = ("Noto Sans Regular", "Noto Sans Bold", "Noto Sans Italic")
 FONT_RE = re.compile(r"^/fonty/([A-Za-z ]+)/(\d+-\d+)\.pbf$")
+DEM_RE = re.compile(r"^/api/nav/dem/(\d{1,2})/(\d{1,5})/(\d{1,5})\.png$")
 TILE_RE = re.compile(r"^/api/nav/kafelki/(\d{1,2})/(\d{1,5})/(\d{1,5})\.pbf$")
 _TILES = {"t": 0, "info": None}
 
@@ -228,11 +229,24 @@ def tiles_info():
         try:
             j = nav.http_json(base + "/kafelki/info.json", timeout=4)
             info = {"local": bool(j.get("ok")), "built": j.get("built"), "maxzoom": int(j.get("maxzoom") or 14),
-                    "minzoom": int(j.get("minzoom") or 0), "bounds": j.get("bounds")}
+                    "minzoom": int(j.get("minzoom") or 0), "bounds": j.get("bounds"), "dem": bool(j.get("dem"))}
         except Exception:
             pass
     _TILES.update(t=now, info=info)
     return info
+
+
+def dem_tile(z, x, y):
+    """Kafelek wysokości (PNG Terrarium) z kontenera albo None."""
+    import urllib.request
+    base = NAV.settings()["map_url"]
+    if not base or z > 12:
+        return None
+    try:
+        with urllib.request.urlopen("%s/dem/%d/%d/%d.png" % (base, z, x, y), timeout=10) as r:
+            return r.read()
+    except Exception:
+        return None
 
 
 def tile(z, x, y):
@@ -280,6 +294,12 @@ def page_get(h, path, q):
         return True
     if path == "/api/nav/kafelki/info":
         return h.send(200, tiles_info()) or True
+    m = DEM_RE.match(path)
+    if m:
+        data = dem_tile(*(int(v) for v in m.groups()))
+        if data is None:
+            return h.send(404, "brak", "text/plain") or True
+        return h.send(200, data, "image/png", {"Cache-Control": "max-age=604800"}) or True
     m = TILE_RE.match(path)
     if m:
         z, x, y = (int(v) for v in m.groups())
