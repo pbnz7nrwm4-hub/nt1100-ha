@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s tests
 """
+import functools
 import importlib.util
 import json
 import math
@@ -37,6 +38,10 @@ srv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(srv)
 import nav  # noqa: E402
 import ntt  # noqa: E402
+
+_ms = importlib.util.spec_from_file_location("mapa_serwer", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "silnik-tras", "mapa-serwer.py"))
+MS = importlib.util.module_from_spec(_ms)
+_ms.loader.exec_module(MS)
 
 spec2 = importlib.util.spec_from_file_location("build_map", BUILD_MAP)
 build_map = importlib.util.module_from_spec(spec2)
@@ -458,6 +463,8 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(len(FakeGraphHopper.calls), 3)
         mix = [r for r in j["routes"] if r["variant"] == "mix"][0]
         self.assertEqual(mix["legs"], ["szybko", "bardzo"])
+        self.assertEqual(len(mix["leg_m"]), 2)
+        self.assertTrue(all(m > 0 for m in mix["leg_m"]))  # proportions for the leg bar
         self.assertGreaterEqual(mix["km"], 4.0)  # two 2 km sections (the fake engine returns the same L)
         self.assertEqual([w["name"] for w in mix["waypoints"]][:2], ["B", "C"])
         legs_req = [len(b["points"]) for b in FakeGraphHopper.calls]
@@ -580,6 +587,70 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.iu + "/api/nav/route.ntr?id=%d" % rid, headers={"X-Klucz": KEY})
         self.assertEqual(code, 200)
         self.assertEqual(body[:4], b"NTR1")
+
+
+    def test_10_vector_map_from_container(self):
+        """Styl, czcionki, kafelki PMTiles i wysokości: kontener -> dodatek -> przeglądarka."""
+        import gzip
+        code, body, h = self.req(self.pu + "/mapa-ciemna.json")
+        self.assertEqual(code, 200)
+        st = json.loads(body)
+        ids = [l["id"] for l in st["layers"]]
+        self.assertIn("hillshade", ids)
+        self.assertIn("mountain_peak", ids)
+        self.assertNotIn("sprite", st)
+        fonts = {f for l in st["layers"] for f in (l.get("layout", {}).get("text-font") or [])}
+        for f in fonts:
+            code, _, _ = self.req(self.pu + "/fonty/" + urllib.parse.quote(f) + "/0-255.pbf")
+            self.assertEqual(code, 200, f)
+        code, _, _ = self.req(self.pu + "/fonty/..%2F..%2Fserver.py/0-255.pbf")
+        self.assertEqual(code, 404)
+        # container with one vector tile (z1 x1 y0) and one DEM tile
+        root = tempfile.mkdtemp(dir=TMP)
+        tile = gzip.compress(b"\x1a\x02xy")
+        tid = MS.tile_id(1, 1, 0)
+
+        def v(n):
+            out = b""
+            while True:
+                b, n = n & 0x7F, n >> 7
+                out += bytes([b | (0x80 if n else 0)])
+                if not n:
+                    return out
+        d = v(1) + v(tid) + v(1) + v(len(tile)) + v(1)
+        hdr = b"PMTiles" + bytes([3]) + struct.pack("<8Q", 127, len(d), 127 + len(d), 0, 127 + len(d), 0,
+                                                   127 + len(d), len(tile))
+        hdr += struct.pack("<3Q", 1, 1, 1) + bytes([1, 1, 2, 1, 0, 14]) + struct.pack("<4i", 140000000, 489000000, 243000000, 550000000)
+        hdr += bytes(127 - len(hdr))
+        with open(os.path.join(root, "kafelki.pmtiles"), "wb") as f:
+            f.write(hdr + d + tile)
+        os.makedirs(os.path.join(root, "dem", "12", "2"))
+        with open(os.path.join(root, "dem", "12", "2", "3.png"), "wb") as f:
+            f.write(b"\x89PNGdem")
+        ms = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(MS.H, directory=root))
+        threading.Thread(target=ms.serve_forever, daemon=True).start()
+        try:
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"map_url": "http://127.0.0.1:%d" % ms.server_address[1]})
+            self.assertEqual(code, 200, j)
+            srv.navapi._TILES.update(t=0, info=None)
+            code, body, _ = self.req(self.pu + "/api/nav/kafelki/info")
+            info = json.loads(body)
+            self.assertTrue(info["local"])
+            self.assertTrue(info["dem"])
+            self.assertEqual(info["maxzoom"], 14)
+            code, body, h = self.req(self.pu + "/api/nav/kafelki/1/1/0.pbf")
+            self.assertEqual((code, body), (200, b"\x1a\x02xy"))   # unpacked for the browser
+            self.assertIn("max-age", h.get("Cache-Control", ""))
+            code, body, _ = self.req(self.pu + "/api/nav/kafelki/1/0/0.pbf")
+            self.assertEqual(code, 204)
+            code, body, _ = self.req(self.pu + "/api/nav/dem/12/2/3.png")
+            self.assertEqual((code, body), (200, b"\x89PNGdem"))
+            code, _, _ = self.req(self.pu + "/api/nav/dem/12/2/4.png")
+            self.assertEqual(code, 404)
+        finally:
+            ms.shutdown()
+            self.jpost(self.pu + "/api/nav/settings", {"map_url": ""})
+            srv.navapi._TILES.update(t=0, info=None)
 
 
 if __name__ == "__main__":
