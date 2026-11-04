@@ -15,7 +15,8 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Gdy w Home Assistant działa broker MQTT (dodatek Mosquitto), dodatek sam pobiera jego adres
 i login, a encje pojawiają się jako urządzenie „NT1100” (Ustawienia → Urządzenia i usługi → MQTT):
-ostatnia jazda (dystans, czas, prędkości, przechyły, krętość, temperatura, problemy),
+ostatnia jazda (dystans, czas, prędkości, przechyły, paliwo i spalanie szacowane z wtrysku, użycia sprzęgła,
+krętość, temperatura, problemy),
 kilometry razem i w tym roku, przebieg, serwis (km do terminu + przycisk „zrobione”),
 parking (`device_tracker.nt1100_parking`, miejsce końca ostatniej jazdy) i stan skrzynki
 (oprogramowanie, ostatni kontakt, bateria, wolne miejsce na karcie).

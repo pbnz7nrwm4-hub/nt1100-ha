@@ -741,6 +741,9 @@ def collect_state():
         "v_sr": fmt_num(s.get("avg_speed")),
         "przechyl_l": fmt_num(s.get("max_lean_left")),
         "przechyl_p": fmt_num(s.get("max_lean_right")),
+        "paliwo": fmt_num(s.get("fuel_l"), 2),
+        "spalanie": fmt_num(s.get("fuel_l100"), 1),
+        "sprzeglo": fmt_num(s.get("clutch_pulls")),
         "start": s.get("start"),
         "kretosc": (cv or {}).get("rating"),
         "zakrety_100km": (cv or {}).get("per100"),
@@ -769,6 +772,9 @@ ENTITIES = [
     ("v_sr", "Ostatnia jazda prędkość średnia", "km/h", "speed", "mdi:speedometer-medium", None),
     ("przechyl_l", "Ostatnia jazda przechył lewo", "°", None, "mdi:angle-acute", None),
     ("przechyl_p", "Ostatnia jazda przechył prawo", "°", None, "mdi:angle-acute", None),
+    ("paliwo", "Ostatnia jazda paliwo (szacunek)", "L", "volume", "mdi:gas-station", None),
+    ("spalanie", "Ostatnia jazda spalanie (szacunek)", "L/100km", None, "mdi:gas-station-outline", None),
+    ("sprzeglo", "Ostatnia jazda użycia sprzęgła", None, None, "mdi:car-clutch", None),
     ("start", "Ostatnia jazda start", None, "timestamp", "mdi:motorbike", None),
     ("nazwa", "Ostatnia jazda nazwa", None, None, "mdi:motorbike", None),
     ("kretosc", "Ostatnia jazda krętość", None, None, "mdi:road-variant", None),
@@ -1134,6 +1140,8 @@ def notify_ride(n, s):
         parts.append("maks. %d km/h" % fmt_num(s.get("max_speed")))
     if s.get("max_lean_left") is not None and s.get("max_lean_right") is not None:
         parts.append("przechył L %d° / P %d°" % (fmt_num(s.get("max_lean_left")), fmt_num(s.get("max_lean_right"))))
+    if s.get("fuel_l100") is not None:
+        parts.append("ok. %s l/100 km" % str(fmt_num(s.get("fuel_l100"), 1)).replace(".", ","))
     lines = [" · ".join(parts)]
     cv = curvy_of(n)
     if cv and cv.get("rating"):
