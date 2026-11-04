@@ -583,7 +583,7 @@ def page_get(h, path, q):
             r = NAV.route(int(q.get("id", "0")))
             if not r:
                 return h.send(404, "brak trasy", "text/plain") or True
-            return h.send(200, nav.to_gpx(r, osmand=q.get("osmand") == "1").encode(), "application/gpx+xml",
+            return h.send(200, nav.to_gpx(r, osmand=q.get("plain") != "1").encode(), "application/gpx+xml",
                           {"Content-Disposition": gpx_disposition(r.get("name"))}) or True
         if path == "/api/nav/search":
             qq = (q.get("q") or "").strip()[:100]

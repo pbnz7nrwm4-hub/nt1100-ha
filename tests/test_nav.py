@@ -863,6 +863,8 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(rp[1].findtext("g:desc", namespaces=ns), "Skręć w prawo – Wschodnia")
         self.assertEqual(rp[1].findtext("g:extensions/o:time", namespaces=ns), "30")
         self.assertEqual(len(g.findall("g:trk/g:trkseg/g:trkpt", ns)), 10)
+        g2 = ET.fromstring(nav.to_gpx_osmand(route, start=1000))
+        self.assertEqual(g2.findall("g:trk/g:trkseg/g:trkpt", ns)[9].findtext("g:time", namespaces=ns), "1970-01-01T00:18:10Z")
         self.assertNotIn("rte", nav.to_gpx(route))
 
 
