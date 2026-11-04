@@ -100,8 +100,13 @@ wczytywanie plików GPX (np. z Kurvigera).
   do niego i wraca na trasę ok. 300 m dalej, reszta planu zostaje bez zmian.
 - **POI na mapie**: kolorowe punkty z legendą; przy dużym obszarze pokazana jest równomierna
   część punktów (przybliż, żeby zobaczyć wszystkie).
-- **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą),
-  ekran dociąga ją sam w domu po Wi-Fi.
+- **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą), za
+  każdym razem tylko kwadraty, które się zmieniły (suma kontrolna w manifeście). Pierwsze wgranie
+  najszybciej z paczki ZIP: zakładka Motocykl → „Ekran i mapa” → paczka ZIP na kartę, rozpakuj ją na
+  kartę ekranu (folder `mapa`). Dalej ekran dociąga w domu po Wi-Fi tylko zmienione kwadraty,
+  najpierw okolicę domu i bieżącej trasy. Mapa ekranu ma też wodę, rzeki i nazwy miejscowości.
+- **Przebudowa w kontenerze**: w tej samej karcie widać etap (np. „mapa do przeglądarki 3/5”)
+  i czas od startu; w tym czasie trasy mogą się nie liczyć.
 - **Korki**: opcjonalny klucz TomTom (darmowy limit dzienny wystarcza); ekran sprawdza
   zdarzenia na trasie co kilka minut przez hotspot.
 - **Zgodność jazdy z planem**: w szczegółach jazdy pojawia się trasa planowana, procent
