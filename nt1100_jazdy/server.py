@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.4.4"
+VERSION = "1.4.14"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -326,6 +326,16 @@ _CURVY = {}
 
 
 def curvy_of(n):
+    """Curviness of a ride; the description follows the thresholds set in the
+    Nawigacja settings (the cached value keeps only the numbers)."""
+    v = _curvy_of(n)
+    if v and v.get("deg_km") is not None:
+        lv = (settings().get("nav") or {}).get("curvy_levels")
+        v = dict(v, rating=navapi.nav.curvy_name(v["deg_km"], lv if lv else None))
+    return v
+
+
+def _curvy_of(n):
     """Curviness of a ride, cached in /share/nt1100/cache (keyed by file time)."""
     p = ride_path(n, "trk")
     if not os.path.exists(p):
