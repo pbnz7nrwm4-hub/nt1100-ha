@@ -509,6 +509,25 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/api/nav/poi?bbox=49.99,19.89,50.04,19.96")
         self.assertEqual(len(json.loads(body)["points"]), 2)
 
+    def test_09_demo_route_and_full_points(self):
+        code, j = self.jpost(self.pu + "/api/nav/demo", {})
+        self.assertEqual(code, 200, j)
+        rid = j["id"]
+        code, body, _ = self.req(self.pu + "/api/nav/route?id=%d&full=1" % rid)
+        r = json.loads(body)
+        self.assertEqual(r["source"], "demo")
+        self.assertEqual(len(r["pts"]), len(r["cum"]))
+        self.assertGreater(r["cum"][-1], 20000)
+        self.assertTrue(any(c["type"] == 2 for c in r["cameras"]))
+        self.assertEqual([w["kind"] for w in r["waypoints"]], [1, 2])
+        self.assertGreater(r["weather"][0]["t"], 1700000000)
+        # not put on the screen by itself; the screen can still download it
+        lst = json.loads(self.req(self.pu + "/api/nav/routes")[1])
+        self.assertNotEqual(lst["current"], rid)
+        code, body, _ = self.req(self.iu + "/api/nav/route.ntr?id=%d" % rid, headers={"X-Klucz": KEY})
+        self.assertEqual(code, 200)
+        self.assertEqual(body[:4], b"NTR1")
+
 
 if __name__ == "__main__":
     unittest.main()

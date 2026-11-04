@@ -90,6 +90,22 @@ Dotknięcie wybiera miejsce: ekran od razu prowadzi tam z mapy (zielony znacznik
 a gdy jest połączenie, dodatek liczy trasę przez to miejsce i z powrotem na plan. Postój
 kończy się po dojechaniu (60 m), nową trasą albo przyciskiem „Koniec postoju” w menu.
 
+**Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
+z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
+strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
+trasę Start – Meta (22 km). „Motocykl” trzyma limity, zwalnia przed zakrętami (pochył
+do ok. 23°), raz zjeżdża ok. 230 m w bok („wróć na trasę”) i stoi 50 s na pierwszym punkcie po
+drodze (pojawiają się strony postoju). Na mapie widać plakietkę DEMO; dotknięcie w trakcie
+jazdy przełącza tempo ×1 / ×4. Przytrzymanie 1,5 s: menu z „Szybciej ×4”, „Koniec demo”,
+Tankowanie / Jedzenie. Demo niczego nie wysyła do dodatku i kończy się samo minutę po
+dojechaniu do celu. Mapa na karcie jest potrzebna tylko do tła mapy, nazw dróg i Tankowania.
+
+**Symulacja w przeglądarce** (dodatek od 1.4.5): w zakładce Nawigacja → Zapisane trasy
+przycisk „Dodaj trasę demo” zapisuje tę samą trasę Start – Meta (z fotoradarem,
+odcinkowym pomiarem i postojem; „Na ekran” wysyła ją na ekran). Przycisk „Symulacja” przy
+każdej trasie odtwarza przejazd na mapie i obok pokazuje uproszczony podgląd ekranu
+(skręty, fotoradary, limit, wynik zakrętu), w tempie ×1 / ×4 / ×10.
+
 ## Konfiguracja dodatku
 
 - **powiadomienie**: (starsze) usługa powiadomień bez `notify.`; wybór w panelu ma pierwszeństwo.
