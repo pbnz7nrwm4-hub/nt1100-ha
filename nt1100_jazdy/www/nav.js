@@ -17,7 +17,7 @@ const css=document.createElement('style');
 css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)}#navmap.add{cursor:crosshair}'+
 '.npt{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.npt:last-child{border:0}.npt .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.npt .lb{flex:0 0 58px;font-size:12px;color:var(--mut)}.npt button{padding:4px 8px;font-size:13px}'+
 '.nsr{position:relative}.nsr ul{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--card);max-height:220px;overflow:auto}.nsr li{padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line)}.nsr li:hover{background:var(--card2)}.nsr li small{display:block}'+
-'.nveh{margin:2px 0 8px}.nveh .chip{font-size:14px;padding:6px 14px}.nfav .chip.nadd{border-style:dashed;color:var(--mut)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card2);cursor:pointer}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}'+
+'.nrt.ndrv{border:1px solid var(--acc);border-radius:10px;padding:10px 12px;margin:0 0 8px}.nrt.ndrv[hidden]{display:none}.nveh{margin:2px 0 8px}.nveh .chip{font-size:14px;padding:6px 14px}.nfav .chip.nadd{border-style:dashed;color:var(--mut)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card2);cursor:pointer}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}'+
 '.nres{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer}.nres.on{border-color:var(--acc)}.nres .sw{width:12px;height:12px;border-radius:50%;flex:0 0 12px}.nres .tx{flex:1;min-width:0}.nres small{display:block}'+
 '.nrt{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.nrt:last-child{border:0}.nrt .tx{flex:1;min-width:0}.nrt small{display:block}.nrt .cur{font-size:11px;padding:2px 7px;border-radius:8px;background:var(--ok);color:#fff}'+
 '.nrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nrow input{flex:1;min-width:160px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}'+
@@ -139,7 +139,7 @@ function statusCard(V){const d=NV.data,k=el('div','card');k.append(el('b',null,'
 let P={};
 function plannerCard(V){const k=el('div','card');V.append(k);
   const hd=el('div','nhead');hd.append(el('b',null,'Nowa trasa'));P.hint=el('small',null,'');hd.append(P.hint);k.append(hd);
-  P.veh=el('div','chips nveh');for(const [v,t] of [['moto','🏍 Motocykl'],['auto','🚗 Samochód']]){const c=el('span','chip',t);c._v=v;c.onclick=()=>setVehicle(v);P.veh.append(c)}k.append(P.veh);
+  P.veh=el('div','chips nveh');for(const [v,t] of [['moto','🏍 Motocykl'],['auto','🚗 Samochód']]){const c=el('span','chip',t);c._v=v;c.onclick=()=>setVehicle(v);P.veh.append(c)}k.append(P.veh);P.drv=el('div','nrt ndrv');P.drv.hidden=true;k.append(P.drv);
   // wyszukiwarka nad mapą
   const sr=el('div','nsr');const row=el('div','nrow');P.q=el('input');P.q.placeholder='Dodaj punkt: miejsce, adres albo link';const sb=el('button',null,'Dodaj');row.append(P.q,sb);P.res=el('ul');P.res.hidden=true;sr.append(row,P.res);P.bar.append(sr);
   P.q.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search()}};sb.onclick=search;
@@ -166,7 +166,7 @@ function plannerCard(V){const k=el('div','card');V.append(k);
   const a=el('div','acts');P.go=el('button','pri','Policz trasę');P.go.style.flex='1';P.go.style.height='50px';P.go.style.fontSize='16px';P.go.onclick=plan;a.append(P.go);k.append(a);P.msg=el('div','nmsg');k.append(P.msg);
   P.out=el('div');k.append(P.out);
   P.along=el('div');P.along.hidden=true;k.append(P.along);
-  renderVehicle(true);renderPts()}
+  renderVehicle(true);renderDrive();renderPts()}
 /* tryb pojazdu: w samochodzie liczona tylko najszybsza (inne warianty można włączyć ręcznie),
    ekran bez „wyniku zakrętu”; „jedź do” z iPhone’a i objazdy też najszybciej */
 function renderVehicle(vars){const v=NV.data.settings.vehicle||'moto';if(P.veh)for(const c of P.veh.children)c.classList.toggle('on',c._v===v);
@@ -341,7 +341,8 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
     const b=el('button','pri','Wyślij „'+vn+'” na ekran');b.onclick=async ev=>{ev.stopPropagation();b.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:true});msg(P.msg,'trasa „'+s.route.name+'” zapisana; ekran pobierze ją przy najbliższym połączeniu','ok');NV.data=await J('api/nav/routes');routesCard(null)}catch(e){msg(P.msg,e.message,'bad');b.disabled=false}};
     const sv=el('button',null,'Zapisz');sv.title='zapisz bez wysyłania na ekran';sv.onclick=async ev=>{ev.stopPropagation();sv.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});NV.data=await J('api/nav/routes');routesCard(null);msg(P.msg,'trasa „'+s.route.name+'” zapisana w „Moich trasach”','ok')}catch(e){msg(P.msg,e.message,'bad');sv.disabled=false}};
     const g=el('button',null,'GPX');g.title='zapisz i udostępnij plik GPX';g.onclick=async ev=>{ev.stopPropagation();g.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});NV.data=await J('api/nav/routes');routesCard(null);await shareGpx(s.id,s.route.name);msg(P.msg,'trasa „'+s.route.name+'” zapisana (bez wysyłania na ekran)','ok')}catch(e){msg(P.msg,e.message,'bad')}g.disabled=false};
-    ac.append(b,sv,g);d.append(ac);d.onclick=()=>pick(i);cards.push(d);P.out.append(d)}
+    const dr=el('button','pri','🚗 Jadę (OsmAnd)');dr.title='zapisz, otwórz w OsmAnd i pilnuj korków po drodze';dr.onclick=async ev=>{ev.stopPropagation();dr.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});await startDrive(s.id,s.route.name)}catch(e){msg(P.msg,e.message,'bad')}dr.disabled=false};
+    if(NV.data.settings.vehicle==='auto')ac.append(dr,sv,g);else ac.append(b,sv,g);d.append(ac);d.onclick=()=>pick(i);cards.push(d);P.out.append(d)}
   if(bnds.length)fitRoute(L.latLngBounds(bnds));if(order.length){pick(order[0]);sheet('mid');setTimeout(()=>P.out.scrollIntoView({behavior:'smooth',block:'start'}),250)}}
 
 /* ---- GPX: arkusz udostępniania na telefonie (Wiadomości, WhatsApp, Pliki), na komputerze pobranie */
@@ -365,7 +366,17 @@ function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='
     const gx=el('button',null,'GPX');gx.title='pobierz albo udostępnij plik GPX';gx.onclick=()=>shareGpx(r.id,r.name).catch(e=>alert(e.message));
     const rm=el('button','warn','Usuń');rm.onclick=async()=>{if(!confirm('Usunąć trasę „'+(r.name||r.id)+'”?'))return;try{await post('api/nav/delete',{id:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
     const sm=el('button',null,'Symulacja');sm.title='Przejazd trasy na niby: mapa i podgląd ekranu z kierownicy';sm.onclick=()=>simulate(r);
-    a.append(sh,sm,cu,gx,rm);row.append(tx,a);RC.append(row)}}
+    const jd=el('button',null,'🚗 Jadę');jd.title='otwórz w OsmAnd i pilnuj korków po drodze';jd.onclick=()=>startDrive(r.id,r.name).catch(e=>alert(e.message));
+    if(NV.data.settings.vehicle==='auto')a.append(sh,jd,gx,rm);else a.append(sh,sm,cu,gx,rm);row.append(tx,a);RC.append(row)}}
+/* ---- jazda autem z OsmAnd: dodatek pilnuje korków i wysyła powiadomienie z objazdem */
+async function startDrive(id,name){const j=await post('api/nav/drive',{id});NV.data.drive=j.drive;renderDrive();
+  if(!j.phone)toast('Ustaw telefon w Ustawienia nawigacji → Jazda autem, żeby dodatek znał pozycję.');
+  await shareGpx(id,name);msg(P.msg,'„'+name+'” w OsmAnd; pilnuję korków co '+NV.data.settings.traffic_min+' min i dam znać powiadomieniem','ok')}
+function renderDrive(){if(!P.drv)return;const d=NV.data.drive;P.drv.hidden=!d;P.drv.textContent='';if(!d)return;
+  const tx=el('div','tx');tx.append(el('b',null,'🚗 Pilnuję korków: '+d.name),el('small','mut',d.status||''));
+  const a=el('div','acts');a.style.margin='0';const g=el('button',null,'GPX');g.onclick=()=>{const id=d.rids[d.rids.length-1];shareGpx(id,d.name).catch(e=>alert(e.message))};
+  const x=el('button','warn','Zakończ');x.onclick=async()=>{try{await post('api/nav/drive',{stop:true});NV.data.drive=null;renderDrive()}catch(e){alert(e.message)}};a.append(g,x);P.drv.append(tx,a)}
+setInterval(async()=>{if(!P.drv||!NV.data||!NV.data.drive||document.hidden)return;try{const j=await J('api/nav/drive');NV.data.drive=j.drive;renderDrive()}catch(e){}},60000);
 
 /* ---- symulacja przejazdu (to samo co „Demo trasy” na ekranie, w przeglądarce) */
 const SIM={};
@@ -474,7 +485,10 @@ function settingsCard(V){const S=NV.data.settings;const k0=el('div','card');k0.a
   const eu=field(k,'Silnik tras (kontener Proxmox, np. http://192.168.1.50:8989)','url',null,S.engine_url);
   const mu=field(k,'Mapa na kartę (ten sam kontener, np. http://192.168.1.50:8988)','url',null,S.map_url);
   const tk=field(k,'Klucz TomTom (korki; puste = wyłączone)','password',null,'',S.tomtom_key);
-  const kp=grp('Planowanie i dom');const ke=grp('Ekran w trasie');k=ke;
+  const kp=grp('Planowanie i dom');const kc=grp('Jazda autem (OsmAnd): korki i objazdy');const ke=grp('Ekran w trasie');k=ke;
+  kc.append(el('p','mut','Po „🚗 Jadę (OsmAnd)” dodatek co tyle minut, ile „Sprawdzanie korków”, patrzy na korki przed telefonem (TomTom). Gdy objazd jest szybszy, przychodzi powiadomienie z nową trasą do otwarcia w OsmAnd.'));
+  const pt=field(kc,'Telefon (encja z pozycją; puste = z celu powiadomień: '+(NV.data.phone_entity||'brak')+')','text',null,S.phone_tracker);pt.placeholder='device_tracker.iphone';
+  const ca=field(kc,'Powiadom od opóźnienia (min)','number',null,S.car_alert_min);
   const dv=field(kp,'Domyślny wariant (skrót „jedź do…” z iPhone’a)','select',NV.data.variants,S.default_variant);
   const ld=field(k,'Wynik zakrętu na ekranie od pochyłu (°)','number',null,S.lean_popup_deg);
   const tm=field(k,'Sprawdzanie korków co (min)','number',null,S.traffic_min);
@@ -483,7 +497,7 @@ function settingsCard(V){const S=NV.data.settings;const k0=el('div','card');k0.a
   const cs=curvySliders(kp,S);
   const hd=el('div','f');hd.append(el('label',null,'Dom (start, gdy ekran nie podał pozycji)'));SF.home=el('div',null,S.home?(S.home.name+' · '+S.home.lat.toFixed(4)+', '+S.home.lon.toFixed(4)):'nie ustawiony');const ha=el('div','acts');const hb=el('button',null,'Wskaż dom na mapie');hb.onclick=()=>{NV.mode='home';tab('nav');setTimeout(()=>{lockMap(false);toast('Dotknij na mapie miejsca domu.')},800)};
   const hs=el('button',null,'Dom = start z listy punktów');hs.onclick=()=>{if(!NV.pts.length){alert('Najpierw dodaj punkt startu w zakładce Trasy.');return}setHome({lat:NV.pts[0].lat,lon:NV.pts[0].lon,name:NV.pts[0].name||'Dom'})};ha.append(hb,hs);hd.append(SF.home,ha);kp.insertBefore(hd,kp.children[2]||null);const fd=el('div','f');fd.append(el('label',null,'Ulubione miejsca (szkoła, praca...): w zakładce Trasy jako przyciski; skrót iPhone’a rozumie też samą nazwę, np. text=Praca'));SF.fav=el('div');fd.append(SF.fav);kp.insertBefore(fd,hd.nextSibling);renderFavSet();k=k0;
-  const a=el('div','acts');const sb=el('button','pri','Zapisz ustawienia');const m=el('span','nmsg');sb.onclick=async()=>{sb.disabled=true;const body={engine_url:eu.value,map_url:mu.value,default_variant:dv.value,lean_popup_deg:ld.value,traffic_min:tm.value,offroute_m:om.value,free_km:fk.value,avoid:P.av?Object.keys(P.av).filter(v=>P.av[v]):(NV.data.settings.avoid||[]),curvy:cs.curvy(),curvy_levels:cs.levels()};if(tk.value)body.tomtom_key=tk.value;
+  const a=el('div','acts');const sb=el('button','pri','Zapisz ustawienia');const m=el('span','nmsg');sb.onclick=async()=>{sb.disabled=true;const body={engine_url:eu.value,map_url:mu.value,default_variant:dv.value,lean_popup_deg:ld.value,traffic_min:tm.value,offroute_m:om.value,free_km:fk.value,phone_tracker:pt.value.trim(),car_alert_min:ca.value,avoid:P.av?Object.keys(P.av).filter(v=>P.av[v]):(NV.data.settings.avoid||[]),curvy:cs.curvy(),curvy_levels:cs.levels()};if(tk.value)body.tomtom_key=tk.value;
     try{const s=await post('api/nav/settings',body);NV.data.settings=s;NV.data.engine=!!s.engine_url;msg(m,'zapisano','ok');tk.value='';tk.placeholder=s.tomtom_key?'•••••• (bez zmian)':''}catch(e){msg(m,e.message,'bad')}sb.disabled=false};a.append(sb,m);k.append(a);
   k.append(el('p','mut','Omijanie zaznaczone w zakładce Trasy („omijaj: …”) zapisuje się razem z ustawieniami jako domyślne. Skrót iPhone’a „Wyślij na motocykl”: adres z zakładki Ustawienia → Połączenie, ścieżka /api/nav/goto?klucz=KLUCZ&text=LINK.'));
   const SH=NV.data.settings.home;if(SH&&NV.map&&!NV.homeMk)NV.homeMk=L.circleMarker([SH.lat,SH.lon],{radius:7,color:'#fff',fillColor:'#7950f2',fillOpacity:1}).bindTooltip('dom').addTo(NV.map)}

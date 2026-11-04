@@ -796,6 +796,54 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.iu + "/api/nav/ping?klucz=" + KEY)
         self.assertNotEqual(json.loads(body)["settings"]["lean_popup_deg"], 90)
 
+    def test_15_car_drive_traffic_detour(self):
+        api = srv.navapi
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "vehicle": "auto"})
+        pts = [{"lat": 50.0, "lon": 19.9, "name": "Dom"}, {"lat": 50.009, "lon": 19.914, "name": "Praca"}]
+        code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["szybko"], "weather": False})
+        self.assertEqual(code, 200, j)
+        code, s = self.jpost(self.pu + "/api/nav/send", {"token": j["token"], "variant": "szybko", "current": False})
+        rid = s["id"]
+        route = api.NAV.route(rid)
+        start, dest = route["pts"][1], route["pts"][-1]
+        pos = {"p": start}
+        sent = []
+        mid = len(route["pts"]) // 2
+        orig = (api.phone_position, api.NAV.traffic, srv.send_notification, srv.options)
+        api.phone_position = lambda: {"lat": pos["p"][0], "lon": pos["p"][1], "age_s": 30, "entity": "device_tracker.x"}
+        api.NAV.traffic = lambda r, lat, lon: ({"delay_s": 900, "incidents": [{"idx": mid, "km": 0.4, "delay_s": 900, "len_m": 150, "text": "roboty"}]}
+                                               if r == rid else {"delay_s": 0, "incidents": []})
+        srv.send_notification = lambda title, msg, tag="", url=None, link_text="": sent.append((title, msg, url))
+        srv.options = lambda: {"klucz": KEY, "adres_spoza_domu": self.iu}
+        try:
+            code, d = self.jpost(self.pu + "/api/nav/drive", {"id": rid})
+            self.assertEqual(code, 200, d)
+            self.assertIn("/api/nav/trasa.gpx?id=%d" % rid, d["link"])
+            self.assertEqual(api.drive_check(), "objazd")
+            self.assertEqual(len(sent), 1)
+            self.assertIn("Korek 15 min", sent[0][0])
+            alt_id = api.drive()["alert"]["alt"]
+            self.assertIn("id=%d" % alt_id, sent[0][2])
+            # link z powiadomienia działa bez klucza, zły podpis nie
+            code, body, hd = self.req(sent[0][2])
+            self.assertEqual(code, 200)
+            self.assertIn(b"<trkpt", body)
+            code, _, _ = self.req(sent[0][2][:-3] + "abc")
+            self.assertEqual(code, 404)
+            # ten sam korek nie wraca co kilka minut
+            self.assertEqual(api.drive_check(), "zgloszony")
+            self.assertEqual(len(sent), 1)
+            # przy celu sprawdzanie samo się kończy
+            pos["p"] = dest
+            self.assertEqual(api.drive_check(), "na miejscu")
+            self.assertIsNone(api.drive())
+            code, d = self.jpost(self.pu + "/api/nav/drive", {"id": rid})
+            code, d = self.jpost(self.pu + "/api/nav/drive", {"stop": True})
+            self.assertIsNone(d["drive"])
+        finally:
+            api.phone_position, api.NAV.traffic, srv.send_notification, srv.options = orig
+            self.jpost(self.pu + "/api/nav/settings", {"vehicle": "moto"})
+
 
 if __name__ == "__main__":
     unittest.main()

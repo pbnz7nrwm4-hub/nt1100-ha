@@ -75,6 +75,16 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Motocykl / samochód**: przełącznik na górze „Nowa trasa”. W samochodzie liczona jest
   najszybsza trasa (inne warianty można włączyć ręcznie), skrót „jedź do”, objazdy i powroty
   na trasę też liczą się najszybciej, a ekran nie pokazuje wyniku zakrętu.
+- **Jazda autem z OsmAnd (korki)**: w trybie samochód przycisk „🚗 Jadę (OsmAnd)” zapisuje
+  trasę i otwiera arkusz udostępniania (wybierz OsmAnd). Potem dodatek co „Sprawdzanie korków”
+  minut patrzy na korki (TomTom) przed telefonem – pozycja z aplikacji Home Assistant
+  (`device_tracker` telefonu; domyślnie ten od celu powiadomień, można wpisać w Ustawienia
+  nawigacji → Jazda autem). Gdy korek kosztuje co najmniej ustawione minuty, dodatek liczy
+  objazd; jeśli jest szybszy, przychodzi powiadomienie – dotknięcie otwiera nowy GPX
+  (link z „Adres spoza domu”, podpisany tylko dla tej trasy), dalej „Otwórz w OsmAnd”.
+  Jeśli objazd nie jest szybszy, powiadomienie mówi, żeby zostać na trasie. Ten sam korek
+  nie wraca co kilka minut. Sprawdzanie kończy się samo 800 m od celu (albo po 8 h,
+  albo „Zakończ” na pasku nad punktami). iPhone nie pozwala podmienić trasy w OsmAnd w tle.
 - **Ulubione miejsca** (szkoła, praca...): gwiazdka ☆ przy wyniku wyszukiwania albo przy punkcie
   trasy zapisuje miejsce. Nad punktami trasy są przyciski ulubionych (i domu) – dotknięcie dodaje je
   do trasy; na mapie żółte kropki. Zmiana nazwy, kolejność i usuwanie: Ustawienia nawigacji →
