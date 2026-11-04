@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.4.14"
+VERSION = "1.4.15"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -685,6 +685,52 @@ def addon_info(reload_store=False):
     d = (ha_call("GET", "/addons/self/info") or {}).get("data") or {}
     return {"version": d.get("version") or VERSION, "latest": d.get("version_latest") or d.get("version") or VERSION,
             "update": bool(d.get("update_available")), "slug": d.get("slug") or ""}
+
+
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return ()
+
+
+def device_version(installed, offer, seen):
+    """Status of one device for the Versions card: ok / update / unknown."""
+    if not installed:
+        st = "unknown"
+    elif offer and version_tuple(offer) > version_tuple(installed):
+        st = "update"
+    else:
+        st = "ok"
+    return {"installed": installed or None, "latest": offer or installed or None, "status": st, "seen": seen}
+
+
+def engine_alive(url):
+    try:
+        with urllib.request.urlopen(url + "/health", timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def versions(reload_store=False):
+    """All software of the system in one place: installed vs newest."""
+    try:
+        a = addon_info(reload_store)
+        addon = {"installed": a["version"], "latest": a["latest"], "status": "update" if a["update"] else "ok",
+                 "can_update": a["update"]}
+    except Exception as e:
+        log("Wersja dodatku nieznana:", e)
+        addon = {"installed": VERSION, "latest": None, "status": "unknown", "error": str(e)}
+    s = state()
+    box = device_version(s.get("box_fw"), (firmware_offer() or {}).get("version"),
+                         int(s["box_seen"] / 1000) if s.get("box_seen") else None)
+    sc = (navapi.NAV.screen_position() if navapi.NAV else None) or {}
+    screen = device_version(sc.get("fw"), (navapi.screen_firmware_offer() or {}).get("version"),
+                            sc.get("t_seen") or sc.get("t"))
+    url = navapi.NAV.settings()["engine_url"] if navapi.NAV else ""
+    engine = {"configured": bool(url), "alive": engine_alive(url) if url else False}
+    return {"addon": addon, "box": box, "screen": screen, "engine": engine}
 
 
 def notify_targets():
@@ -1683,6 +1729,8 @@ class Page(Base):
             return self.send(200, {"scans": []})
         if path == "/api/status":
             return self.send(200, self.status_json())
+        if path == "/api/versions":
+            return self.send(200, versions(reload_store=q.get("check") == "1"))
         if path == "/api/settings":
             remote = (options().get("adres_spoza_domu") or "").strip().rstrip("/")
             st = settings()
