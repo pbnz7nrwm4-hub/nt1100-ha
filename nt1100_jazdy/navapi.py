@@ -6,7 +6,7 @@ Strona (Ingress, bez klucza):
        /api/nav/nearby?kinds&lat&lon (miejsca przed motocyklem), /api/nav/resolve?text, /api/nav/settings,
        /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
-       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/via (zjazd do miejsca)
+       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/drive (jazda autem: korki), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
   GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
@@ -28,7 +28,7 @@ import ntt
 SRV = None
 NAV = None
 PLANS = {}  # token -> (czas, lista tras) z ostatnich planowań
-NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000)}
+NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000), "car_alert_min": (2, 30)}
 RECENT_MAX = 12
 
 
@@ -44,6 +44,7 @@ def init(server):
     SRV = server
     NAV = nav.Nav(server.SHARE, server.DATA, lambda: server.settings().get("nav") or {}, server.log)
     threading.Thread(target=map_loop, daemon=True).start()
+    threading.Thread(target=drive_loop, daemon=True).start()
     return NAV
 
 
@@ -57,6 +58,209 @@ def map_loop():
         except Exception as e:
             SRV.log("mapa: sprawdzanie nieudane:", e)
         time.sleep(24 * 3600)
+
+
+# ---------------------------------------------------------------- jazda autem z OsmAnd: korki i objazd
+# Trasa jedzie do OsmAnd jako GPX; dodatek co kilka minut sprawdza korki przed telefonem
+# (pozycja z aplikacji Home Assistant) i gdy objazd jest szybszy, wysyła powiadomienie
+# z linkiem do nowego GPX. iPhone nie pozwala podmienić trasy w OsmAnd w tle.
+DRIVE_MAX_S = 8 * 3600
+DRIVE_END_M = 800
+DRIVE_SAVE_S = 180
+
+
+def gpx_token(rid, ver):
+    import hmac
+    import hashlib
+    return hmac.new(SRV.key().encode(), ("gpx:%d:%d" % (int(rid), int(ver))).encode(), hashlib.sha256).hexdigest()[:20]
+
+
+def gpx_link(rid):
+    """Link do GPX trasy działający poza HA (z telefonu, z powiadomienia): adres spoza domu
+    z konfiguracji dodatku, a bez niego adres w sieci domowej. Podpisany dla tej wersji trasy."""
+    r = NAV.route(rid)
+    if not r:
+        return ""
+    base = (SRV.options().get("adres_spoza_domu") or "").strip().rstrip("/") or SRV.local_url()
+    if not base:
+        return ""
+    return "%s/api/nav/trasa.gpx?id=%d&v=%d&t=%s" % (base, rid, r["version"], gpx_token(rid, r["version"]))
+
+
+def phone_entity():
+    """Telefon z aplikacją Home Assistant: z ustawień albo z celu powiadomień
+    (notify.mobile_app_iphone → device_tracker.iphone)."""
+    e = NAV.settings()["phone_tracker"]
+    if e:
+        return e
+    t = SRV.notify_target()
+    return "device_tracker." + t[len("mobile_app_"):] if t.startswith("mobile_app_") else ""
+
+
+def phone_position():
+    ent = phone_entity()
+    if not ent:
+        return None
+    st = SRV.ha_call("GET", "/core/api/states/" + ent) or {}
+    a = st.get("attributes") or {}
+    lat, lon = SRV.num(a.get("latitude")), SRV.num(a.get("longitude"))
+    if lat is None or lon is None:
+        return None
+    try:
+        from datetime import datetime
+        t = datetime.fromisoformat(str(st.get("last_updated")).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        t = time.time()
+    return {"lat": lat, "lon": lon, "age_s": int(time.time() - t), "entity": ent}
+
+
+def drive():
+    return NAV.state.get("drive") or None
+
+
+def drive_set(**kw):
+    d = drive()
+    if d is None:
+        return
+    d.update(kw)
+    NAV.save_state(drive=d)
+
+
+def drive_start(rid):
+    r = NAV.route(rid)
+    if not r:
+        raise ValueError("brak trasy")
+    end = r["pts"][-1]
+    d = {"rids": [rid], "name": r.get("name") or "trasa", "start": int(time.time()), "last": 0,
+         "dest": [end[0], end[1]], "status": "czekam na pierwsze sprawdzenie", "alert": None}
+    NAV.save_state(drive=d)
+    return d
+
+
+def drive_stop(status=""):
+    NAV.save_state(drive=None)
+    if status:
+        SRV.log("jazda autem:", status)
+
+
+def drive_loop():
+    while True:
+        time.sleep(30)
+        try:
+            d = drive()
+            if d and time.time() - d.get("last", 0) >= NAV.settings()["traffic_min"] * 60:
+                drive_check()
+        except Exception as e:
+            SRV.log("jazda autem: sprawdzanie nieudane:", e)
+            drive_set(last=int(time.time()), status="błąd sprawdzania: %s" % str(e)[:80])
+
+
+def jam_span(route, i, incidents):
+    """Indeksy początku i końca korków (od pierwszego do końca ostatniego istotnego)."""
+    cum = route["cum"]
+    k0 = min(x["idx"] for x in incidents)
+    last = max(incidents, key=lambda x: x["idx"])
+    k1 = last["idx"]
+    while k1 < len(cum) - 1 and cum[k1] - cum[last["idx"]] < max(200, last.get("len_m") or 0):
+        k1 += 1
+    return max(i + 1, k0 - 1), k1
+
+
+def drive_check(now=None):
+    now = now or time.time()
+    d = drive()
+    if not d:
+        return None
+    drive_set(last=int(now))
+    if now - d["start"] > DRIVE_MAX_S:
+        drive_stop("koniec po 8 h")
+        return "koniec"
+    pos = phone_position()
+    if not pos:
+        drive_set(status="brak pozycji telefonu (%s)" % (phone_entity() or "ustaw telefon w Ustawieniach nawigacji"))
+        return "brak pozycji"
+    if pos["age_s"] > 1200:
+        drive_set(status="pozycja telefonu sprzed %d min" % (pos["age_s"] // 60))
+        return "stara pozycja"
+    here = (pos["lat"], pos["lon"])
+    if ntt.dist_m(here, d["dest"]) < DRIVE_END_M:
+        drive_stop("na miejscu")
+        return "na miejscu"
+    best = None
+    for rid in d["rids"]:
+        r = NAV.route(rid)
+        if not r:
+            continue
+        i, dist = nav.nearest_index(r["pts"], here)
+        if best is None or dist < best[2]:
+            best = (rid, r, dist, i)
+    if not best:
+        drive_stop("trasa usunięta")
+        return "brak trasy"
+    rid, route, dist, i = best
+    if dist > 1000:
+        drive_set(status="telefon %.1f km od trasy (OsmAnd prowadzi po swojemu)" % (dist / 1000))
+        return "poza trasa"
+    tr = NAV.traffic(rid, pos["lat"], pos["lon"])
+    if tr is None:
+        drive_set(status="brak klucza TomTom (Ustawienia nawigacji)")
+        return "brak klucza"
+    big = [x for x in tr["incidents"] if x["delay_s"] >= 60]
+    delay = sum(x["delay_s"] for x in big)
+    hhmm = time.strftime("%H:%M", time.localtime(now))
+    if delay < NAV.settings()["car_alert_min"] * 60:
+        drive_set(status="%s: bez korków na trasie przed Tobą" % hhmm + (" (opóźnienie %d min)" % round(delay / 60) if delay >= 60 else ""))
+        return "ok"
+    first = min(big, key=lambda x: x["km"])
+    al = d.get("alert") or {}
+    # to samo zgłoszenie (korek w tym samym miejscu, nie urósł o 3 min) nie wraca co 5 minut
+    same = al.get("rid") == rid and abs(al.get("abs_km", -99) - (route["cum"][first["idx"]] / 1000.0)) < 2 \
+        and delay < al.get("delay_s", 0) + 180
+    if same:
+        drive_set(status="%s: korek %d min za %s km (już zgłoszony)" % (hhmm, round(delay / 60), first["km"]))
+        return "zgloszony"
+    where = ("za %s km" % str(first["km"]).replace(".", ",")) + (" (%s)" % first["text"] if first.get("text") else "")
+    # objazd: od telefonu do celu (i pozostałych punktów) z zakazanym odcinkiem korka
+    k0, k1 = jam_span(route, i, big)
+    points = [{"lat": pos["lat"], "lon": pos["lon"], "name": "pozycja"}]
+    for w in route.get("waypoints") or []:
+        if w["idx"] > max(i + 5, k1):
+            p = route["pts"][w["idx"]]
+            points.append({"lat": p[0], "lon": p[1], "name": w.get("name") or ""})
+    end = route["pts"][-1]
+    if len(points) < 2 or (points[-1]["lat"], points[-1]["lon"]) != (end[0], end[1]):
+        points.append({"lat": end[0], "lon": end[1], "name": "cel"})
+    NAV._avoid_segment = route["pts"][k0:k1 + 1] if k1 - k0 >= 1 else []
+    try:
+        routes, errors = NAV.plan(points, ["szybko"], route.get("avoid") or NAV.settings()["avoid"],
+                                  ("objazd: " + d["name"])[:40], skip=route.get("skip"))
+    finally:
+        NAV._avoid_segment = []
+    rest_s = route.get("time_s", 0) * (1 - route["cum"][i] / max(1.0, route["dist_m"])) + delay
+    alert = {"rid": rid, "abs_km": route["cum"][first["idx"]] / 1000.0, "delay_s": delay, "t": int(now)}
+    if routes:
+        alt = routes[0]
+        alt["source"] = "objazd korka"
+        alt_id = NAV.store_route(alt, make_current=False)
+        tr2 = NAV.traffic(alt_id, pos["lat"], pos["lon"]) or {"incidents": []}
+        alt_s = alt.get("time_s", 0) + sum(x["delay_s"] for x in tr2["incidents"] if x["delay_s"] >= 60)
+        save = rest_s - alt_s
+        if save >= DRIVE_SAVE_S:
+            link = gpx_link(alt_id)
+            alert.update(alt=alt_id, save_s=int(save))
+            d = drive() or d
+            drive_set(rids=(d.get("rids") or [])[-3:] + [alt_id], alert=alert,
+                      status="%s: korek %d min %s – objazd szybszy o %d min (wysłany)" % (hhmm, round(delay / 60), where, round(save / 60)))
+            SRV.send_notification("Korek %d min %s" % (round(delay / 60), where),
+                                  "Objazd szybszy o ok. %d min (%s km). Dotknij, żeby otworzyć nową trasę, i wybierz „Otwórz w OsmAnd”."
+                                  % (round(save / 60), round(alt["dist_m"] / 1000)),
+                                  tag="nt1100_korek", url=link or None, link_text="Otwórz nową trasę")
+            return "objazd"
+        NAV.delete_route(alt_id)
+    drive_set(alert=alert, status="%s: korek %d min %s – objazd nie jest szybszy" % (hhmm, round(delay / 60), where))
+    SRV.send_notification("Korek %d min %s" % (round(delay / 60), where),
+                          "Objazd nie jest szybszy, zostań na trasie.", tag="nt1100_korek")
+    return "bez objazdu"
 
 
 def nav_settings_apply(j):
@@ -81,6 +285,11 @@ def nav_settings_apply(j):
             if not lo <= v <= hi:
                 return "poza zakresem: " + k
             cur[k] = v
+    if "phone_tracker" in j:
+        v = str(j["phone_tracker"] or "").strip()
+        if v and not re.fullmatch(r"(device_tracker|person)\.[a-z0-9_]+", v):
+            return "telefon: encja device_tracker.… albo person.…"
+        cur["phone_tracker"] = v
     if "vehicle" in j:
         if j["vehicle"] not in ("moto", "auto"):
             return "zly pojazd"
@@ -353,6 +562,8 @@ def page_get(h, path, q):
     if not path.startswith("/api/nav/"):
         return False
     try:
+        if path == "/api/nav/drive":
+            return h.send(200, {"drive": drive(), "phone": phone_entity()}) or True
         if path == "/api/nav/routes":
             lst = NAV.list_routes()
             lst.update(map=NAV.map_status(), zip=NAV.zip_status(), build=NAV.build_status(), engine=NAV.engine_ok(), screen=NAV.screen_position(),
@@ -360,6 +571,8 @@ def page_get(h, path, q):
                        avoid_all=nav.AVOID, curvy_default=nav.CURVY_DEFAULT,
                        curvy_levels_default=nav.CURVY_LEVELS_DEFAULT)
             lst["settings"]["tomtom_key"] = bool(lst["settings"]["tomtom_key"])
+            lst["drive"] = drive()
+            lst["phone_entity"] = phone_entity()
             return h.send(200, lst) or True
         if path == "/api/nav/route":
             r = NAV.route(int(q.get("id", "0")))
@@ -563,6 +776,14 @@ def page_post(h, path, q, body):
             r = NAV.via_place(pos["lat"], pos["lon"], place)
             NAV.note_current(r["id"])
             return h.send(200, {"route": route_summary(r, False), "pos": pos}) or True
+        if path == "/api/nav/drive":
+            if j.get("stop"):
+                drive_stop("zakończone ręcznie")
+                return h.send(200, {"drive": None}) or True
+            d = drive_start(int(j.get("id") or 0))
+            if j.get("check_now"):
+                drive_check()
+            return h.send(200, {"drive": drive(), "link": gpx_link(d["rids"][0]), "phone": phone_entity()}) or True
         if path == "/api/nav/fav":
             err = nav_settings_apply({"fav": j.get("fav")})
             if err:
@@ -626,6 +847,16 @@ def note_screen(h, q):
 def screen_get(h, path, q):
     if not path.startswith("/api/nav/"):
         return False
+    if path == "/api/nav/trasa.gpx":
+        # link z powiadomienia (OsmAnd): podpis tylko dla tej trasy i wersji, bez klucza skrzynki
+        import hmac
+        rid = int(SRV.num(q.get("id")) or 0)
+        r = NAV.route(rid) if rid > 0 else None
+        if not r or not hmac.compare_digest(str(q.get("t") or ""), gpx_token(rid, r["version"])) \
+                or str(q.get("v")) != str(r["version"]):
+            return h.send(404, "trasa nieaktualna albo zły link", "text/plain") or True
+        return h.send(200, nav.to_gpx(r).encode(), "application/gpx+xml",
+                      {"Content-Disposition": gpx_disposition(r.get("name"))}) or True
     if not screen_authorized(h, q):
         SRV.log("Odrzucono ekran: zly klucz (", h.client_address[0], ")")
         return h.send(401, {"ok": False, "error": "zly klucz"}) or True

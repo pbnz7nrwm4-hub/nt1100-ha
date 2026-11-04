@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.8"
+VERSION = "1.5.9"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1134,16 +1134,17 @@ def service_done(sid):
 
 # ---------------------------------------------------------------- notifications
 
-def send_notification(title, msg, tag="nt1100_jazda"):
+def send_notification(title, msg, tag="nt1100_jazda", url=None, link_text="Pokaż jazdy"):
+    """url: dokąd prowadzi dotknięcie (domyślnie panel dodatku), np. plik GPX dla OsmAnd."""
     target = notify_target()
-    panel = panel_url()
+    panel = url or panel_url()
     if target:
         ha_call("POST", "/core/api/services/notify/" + target,
                 {"title": title, "message": msg,
                  "data": {"url": panel, "clickAction": panel, "group": "nt1100", "tag": tag}})
     else:
         ha_call("POST", "/core/api/services/persistent_notification/create",
-                {"title": title, "message": msg + "\n\n[Pokaż jazdy](" + panel + ")", "notification_id": tag})
+                {"title": title, "message": msg + "\n\n[" + link_text + "](" + panel + ")", "notification_id": tag})
 
 
 RECORDS = [
