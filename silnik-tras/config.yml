@@ -1,0 +1,38 @@
+# GraphHopper 10 – silnik tras NT1100 (kontener Proxmox)
+# Jeden profil „motocykl”; warianty (szybko / lekko / kręto / bardzo kręto) i omijanie
+# dodatek przysyła w każdym zapytaniu jako custom_model, dlatego profil jest „elastyczny”
+# (bez CH), a liczba odwiedzanych węzłów podniesiona na trasy przez całą Polskę.
+graphhopper:
+  datareader.file: /opt/nt1100-trasy/dane/mapa.osm.pbf
+  graph.location: /opt/nt1100-trasy/dane/graf
+  graph.dataaccess.type: RAM_STORE
+  graph.encoded_values: car_access, car_average_speed, road_class, road_class_link, road_environment, max_speed, surface, toll, curvature, track_type, road_access, roundabout
+  import.osm.ignored_highways: footway, cycleway, path, pedestrian, steps, bridleway, corridor, platform
+  prepare.min_network_size: 200
+  custom_models.directory: /opt/nt1100-trasy/modele
+  profiles:
+    - name: motocykl
+      custom_model_files: [motocykl.json]
+  profiles_ch: []
+  profiles_lm: []
+  routing.max_visited_nodes: 12000000
+  routing.non_ch.max_waypoint_distance: 1500000
+  routing.round_trip.max_distance: 1600000
+  routing.max_round_trip_distance: 1600000
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 127.0.0.1
+  request_log:
+    appenders: []
+logging:
+  level: INFO
+  appenders:
+    - type: console
+      time_zone: Europe/Warsaw
+      log_format: "%d{HH:mm:ss} [%level] %msg%n"
