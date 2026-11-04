@@ -363,7 +363,7 @@ const lvImu=m=>!m?'':!m.ok?'bad':(m.read_errors||m.overruns||m.module_imu==='con
 const lvBat=b=>b===null||b===undefined?'':b>30?'ok':b>10?'warn':'bad';
 async function getState(){try{const r=await fetch('api/status');if(!r.ok)throw 0;ST=await r.json()}catch(e){ST=null}pills()}
 function pills(){const P=document.getElementById('pills');P.textContent='';const add=(lv,t)=>{const p=el('span','pill');p.append(el('i','dot '+lv),t);p.onclick=()=>tab('state');P.append(p)};
-if(isHA()){const h=ST&&ST.ha;if(h){add(h.last_ingest||h.rides?'ok':'',h.last_ingest?'ostatnio odebrano: '+new Date(h.last_ingest).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):h.rides?'jazd: '+h.rides:'czekam na pierwszą jazdę');if(h.mqtt&&!h.mqtt.connected&&h.mqtt.error)add('warn','MQTT')}foot();return}
+if(isHA()){const h=ST&&ST.ha;if(h){add(h.last_ingest||h.rides?'ok':'',h.last_ingest?'ostatnio odebrano: '+new Date(h.last_ingest).toLocaleString('pl-PL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):h.rides?'jazd: '+h.rides:'czekam na pierwszą jazdę');if(h.mqtt&&!h.mqtt.connected&&h.mqtt.error)add('warn','MQTT')}const up=verUpdates();if(up.length)add('warn','nowa wersja: '+up.join(', '));foot();return}
 if(DATA)add(lvBat(DATA.battery),fmt(DATA.battery)+'%'+(DATA.vbus?' · zasilanie':''));
 if(ST){const L=ST.last||{};add(lvGps(L.gnss),'GPS');add(lvImu(L.imu),'czujniki');const u=ST.upload||{};add(!u.configured?'':u.last_error?'bad':u.pending?'warn':'ok',!u.configured?'wysyłka wył.':u.pending?'do wysłania: '+u.pending:'wysłane')};foot()}
 function foot(){const F=document.getElementById('foot');if(!F||!DATA)return;F.textContent=isHA()?'dodatek NT1100 Jazdy '+DATA.fw+(ST&&ST.ha&&ST.ha.box_fw?' · skrzynka '+ST.ha.box_fw:''):'skrzynka NT1100 · oprogramowanie '+DATA.fw}
@@ -427,7 +427,27 @@ const body={home_ssid:hs.value,hotspot_ssid:ps.value,can_mode:+cm.value,screen_a
 try{const r=await api('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});msg.className=r.ok?'ok-msg':'bad-msg';msg.textContent=r.ok?'Zapisano. Działa od następnego uruchomienia skrzynki.':'Nie udało się zapisać.';if(r.ok&&ap.value){try{localStorage.setItem('nt-pass',ap.value)}catch(e){}}if(r.ok&&typeof DATA!=='undefined'&&DATA){DATA.trip_gap_h=+tg.value;try{list()}catch(e){}}}catch(e){msg.className='bad-msg';msg.textContent='Nie udało się zapisać.'}};
 V.append(UPD)}
 
-function haState(V){const h=ST&&ST.ha||{};const dt=t=>t?new Date(t).toLocaleString('pl-PL',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';const has=v=>v!==null&&v!==undefined;
+let VER=null;
+const VNAME={addon:'dodatek',box:'skrzynka',screen:'ekran'};
+function verUpdates(){if(!VER)return[];return['addon','box','screen'].filter(k=>VER[k]&&VER[k].status==='update').map(k=>VNAME[k])}
+async function loadVersions(check){try{const r=await fetch('api/versions'+(check?'?check=1':''));if(!r.ok)throw 0;VER=await r.json()}catch(e){if(check)throw e}try{pills()}catch(e){}return VER}
+function versionsCard(V){const c=el('div','card');c.append(el('b',null,'Wersje oprogramowania'));V.append(c);const box=el('div');c.append(box);
+const a=el('div','acts');const cb=el('button',null,'Sprawdź nowe wersje');const m=el('small');a.append(cb,m);c.append(a);
+const ago=t=>{if(!t)return '';const s=Math.max(0,Date.now()/1000-t);return s<120?'przed chwilą':s<3600?Math.round(s/60)+' min temu':s<86400?Math.round(s/3600)+' h temu':Math.round(s/86400)+' dni temu'};
+const draw=()=>{box.textContent='';if(!VER){box.append(el('p','mut','wczytywanie...'));return}const v=VER;
+const row=(k,title,howUpd,howFirst)=>{const d=v[k]||{};const val=d.installed?d.installed+(d.status==='update'?' → '+d.latest:''):'jeszcze nieznana';
+let note=d.status==='update'?'dostępna '+d.latest+'. '+howUpd:d.status==='ok'?'najnowsza'+(d.latest&&d.latest!==d.installed?' (w dodatku: '+d.latest+')':''):howFirst;if(d.seen)note+=' · ostatni kontakt '+ago(d.seen);
+return sRow(box,d.status==='ok'?'ok':d.status==='update'?'warn':'',title,val,note)};
+const ad=row('addon','Dodatek NT1100 Jazdy (Home Assistant)','Kliknij „Aktualizuj dodatek”.',v.addon&&v.addon.error?'nie udało się zapytać Home Assistanta: '+v.addon.error:'');
+if(v.addon&&v.addon.status==='update'){const aa=el('div','acts');const ub=el('button','pri','Aktualizuj dodatek');const um=el('small');aa.append(ub,um);ad.append(aa);
+ub.onclick=async()=>{if(!confirm('Zaktualizować dodatek do '+v.addon.latest+'? Strona zniknie na kilka minut, potem odśwież ją.'))return;ub.disabled=true;um.className='';um.textContent=' aktualizacja trwa kilka minut...';try{const r=await fetch('api/addon/update',{method:'POST'});const j=await r.json();if(!r.ok)throw j.error;um.className='ok-msg';um.textContent=' instaluję '+j.latest+'. Za kilka minut odśwież stronę.'}catch(e){um.className='bad-msg';um.textContent=' nie udało się: '+(e||'brak odpowiedzi')+'. Zaktualizuj w Ustawienia → Dodatki.';ub.disabled=false}}}
+row('box','Skrzynka (rejestrator na motocyklu)','Nic nie musisz robić: skrzynka pobierze ją sama, gdy połączy się z domowym Wi-Fi.','skrzynka poda wersję przy pierwszym połączeniu z dodatkiem');
+row('screen','Ekran na kierownicy','Na ekranie w domowym Wi-Fi: przytrzymaj ekran → Menu → Sprawdź wersję → Aktualizuj.','ekran poda wersję, gdy połączy się z dodatkiem (domowe Wi-Fi albo hotspot)');
+const e=v.engine||{};sRow(box,!e.configured?'':e.alive?'ok':'bad','Silnik tras (kontener na Proxmoxie)',!e.configured?'nie ustawiony':e.alive?'działa':'nie odpowiada',!e.configured?'adres wpiszesz w zakładce Nawigacja':e.alive?'nie wymaga aktualizacji, mapa odświeża się sama raz na dobę':'sprawdź, czy kontener jest włączony w Proxmoxie');
+box.append(el('small','mut','Aktualizujesz tylko dodatek: nowe wersje skrzynki i ekranu przychodzą razem z nim.'))};
+draw();loadVersions(false).then(draw);
+cb.onclick=async()=>{cb.disabled=true;m.className='';m.textContent=' sprawdzanie...';try{await loadVersions(true);draw();m.className='ok-msg';m.textContent=verUpdates().length?'':' wszystko aktualne'}catch(e){m.className='bad-msg';m.textContent=' nie udało się sprawdzić'}cb.disabled=false}}
+function haState(V){const h=ST&&ST.ha||{};versionsCard(V);const dt=t=>t?new Date(t).toLocaleString('pl-PL',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';const has=v=>v!==null&&v!==undefined;
 let c=el('div','card');c.append(el('b',null,'Skrzynka'));V.append(c);const nv=h.fw_offer&&h.box_fw&&h.fw_offer!==h.box_fw;
 sRow(c,!h.box_fw?'':nv?'warn':'ok','Oprogramowanie',h.box_fw||'jeszcze nieznane',!h.box_fw?'skrzynka poda wersję przy pierwszym połączeniu':nv?'czeka wersja '+h.fw_offer+': skrzynka zainstaluje ją sama w domowym Wi-Fi':'aktualne');
 sRow(c,h.box_seen?'ok':'','Ostatni kontakt',h.box_seen?dt(h.box_seen):'–','');if(has(h.box_battery))sRow(c,lvBat(h.box_battery),'Akumulator skrzynki',h.box_battery+'%','przy ostatnim połączeniu');
@@ -470,7 +490,7 @@ const lk=el('input');lk.type='number';lk.value=it.last_km??'';lk.placeholder='km
 const a6=el('div','acts');const ad=el('button',null,'Dodaj pozycję');ad.onclick=()=>{svc.push({name:'',interval_km:6000,last_km:h.odo??null});drawS()};const sv=el('button','pri','Zapisz serwis');const m6=el('small');a6.append(ad,sv,m6);k.append(a6,el('small','mut','Gdy zostanie mniej niż 300 km, przyjdzie powiadomienie. Przycisk „Zrobione” jest w zakładce Stan i w Home Assistant (urządzenie NT1100).'));
 sv.onclick=async()=>{if(await save({service:svc.filter(x=>String(x.name).trim())},m6))await getState()}}
 
-async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){SCANS=[]}DATA=await (await fetch('api/rides')).json();if(DATA.source!=='ha'){try{const q=await (await fetch('api/scanstatus')).json();SCANRUN=!!(q.running||q.pending)}catch(e){SCANRUN=false}}document.getElementById('t-scan').hidden=DATA.source==='ha'&&!SCANS.length;DATA.rides.sort((a,b)=>rkey(b)-rkey(a)||b.n-a.n);document.getElementById('info').textContent=(isHA()?'Home Assistant · dodatek ':'rejestrator jazd · ')+DATA.fw;list();getState()}
+async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scans||[]}catch(e){SCANS=[]}DATA=await (await fetch('api/rides')).json();if(DATA.source!=='ha'){try{const q=await (await fetch('api/scanstatus')).json();SCANRUN=!!(q.running||q.pending)}catch(e){SCANRUN=false}}document.getElementById('t-scan').hidden=DATA.source==='ha'&&!SCANS.length;DATA.rides.sort((a,b)=>rkey(b)-rkey(a)||b.n-a.n);document.getElementById('info').textContent=(isHA()?'Home Assistant · dodatek ':'rejestrator jazd · ')+DATA.fw;list();getState();if(isHA()&&!VER)loadVersions(false)}
 async function remove(r){if(!confirm('Usunąć przejazd '+pad(r.n)+(isHA()?' z Home Assistant? Na karcie skrzynki zostaje.':' z karty? Tej operacji nie można cofnąć.')))return;
 const q=await api('api/delete?n='+r.n,{method:'POST'});if(!q.ok){alert('Nie udało się usunąć.');return}await reload()}
 async function detail(r){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);D._seek=null;
