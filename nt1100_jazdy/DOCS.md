@@ -61,6 +61,18 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Ustawienia nawigacji**: adresy silnika i mapy, klucz TomTom, domyślny wariant,
   próg pochyłu dla wyniku zakrętu, częstość korków, próg zjazdu z trasy, dom.
 
+### Ekran nawigacji
+
+Ekran na kierownicy dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
+mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze uruchomienie:
+ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło `nt1100ekran`); na stronie
+`http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu
+(`http://IP-HA:8098`), adres spoza domu i klucz. Dodatek pokazuje ekran w zakładce
+Nawigacja (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
+(`ekran.bin`, w domu, przy ładowaniu). Na postoju ekran ma strony Stan / Pogoda / Jazda / Menu
+(jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); w jeździe przytrzymanie
+1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km”.
+
 ## Konfiguracja dodatku
 
 - **powiadomienie**: (starsze) usługa powiadomień bez `notify.`; wybór w panelu ma pierwszeństwo.
