@@ -121,7 +121,9 @@ echo "== dane OSM i pierwsza budowa (od pół godziny do godziny)"
 
 IP=$(hostname -I | awk '{print $1}')
 echo
-echo "Gotowe. W dodatku NT1100 Jazdy → Ustawienia → Ustawienia nawigacji wpisz:"
+echo "Instalacja zakończona (co jest w kontenerze: lista „Stan kontenera” wyżej)."
+echo "W dodatku NT1100 Jazdy → Ustawienia → Ustawienia nawigacji wpisz:"
 echo "  silnik tras:  http://$IP:8989"
 echo "  mapa:         http://$IP:8988"
-echo "Stan: systemctl status nt1100-trasy nt1100-mapa ; dziennik: journalctl -u nt1100-trasy -f"
+echo "Sprawdzenie później: $KAT/bin/aktualizuj.sh --stan"
+echo "Usługi: systemctl status nt1100-trasy nt1100-mapa ; dziennik: journalctl -u nt1100-trasy -f"
