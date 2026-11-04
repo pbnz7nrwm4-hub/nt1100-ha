@@ -84,6 +84,32 @@ class BuildMapBackgroundTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class EmptySeaTest(unittest.TestCase):
+    def test_empty_water_polygons_zip(self):
+        import struct
+        import zipfile
+        spec = importlib.util.spec_from_file_location("pusta_woda", os.path.join(HERE, "..", "silnik-tras", "pusta_woda.py"))
+        pw = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pw)
+        d = tempfile.mkdtemp(prefix="nt1100-woda-")
+        try:
+            out = os.path.join(d, "w.zip")
+            pw.main(out)
+            with zipfile.ZipFile(out) as z:
+                names = sorted(n.rsplit(".", 1)[1] for n in z.namelist())
+                shp = z.read("water-polygons-split-3857/water_polygons.shp")
+                dbf = z.read("water-polygons-split-3857/water_polygons.dbf")
+            self.assertEqual(names, ["dbf", "prj", "shp", "shx"])
+            self.assertEqual(len(shp), 100)
+            self.assertEqual(struct.unpack(">i", shp[:4])[0], 9994)
+            self.assertEqual(struct.unpack(">i", shp[24:28])[0] * 2, len(shp))
+            self.assertEqual(struct.unpack("<i", shp[32:36])[0], 5)
+            self.assertEqual(struct.unpack("<I", dbf[4:8])[0], 0)            # no records
+            self.assertEqual(struct.unpack("<H", dbf[8:10])[0], len(dbf) - 1)  # header length (+ EOF byte)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class ClipTest(unittest.TestCase):
     def test_clip_and_simplify(self):
         ring = [(49.95, 19.95), (49.95, 20.05), (50.05, 20.05), (50.05, 19.95)]
