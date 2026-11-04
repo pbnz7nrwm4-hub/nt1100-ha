@@ -101,9 +101,31 @@ def unzigzag(n):
 
 def read_cell(path):
     """Czyta kwadrat: (lista Way, lista Point)."""
+    return _read(path)[:2]
+
+
+def read_background(path):
+    """Tło kwadratu dla ekranu: {"waters": [(rodzaj, nazwa, pkt)], "rivers": [...], "places": [(lat, lon, rodzaj, ranga, nazwa)]}."""
+    return _read(path, True)[2]
+
+
+def _coords(buf, pos, n):
+    lat, lon = struct.unpack_from("<ii", buf, pos)
+    pos += 8
+    pts = [(lat / 1e6, lon / 1e6)]
+    for _ in range(n - 1):
+        d, pos = read_varint(buf, pos)
+        lat += unzigzag(d)
+        d, pos = read_varint(buf, pos)
+        lon += unzigzag(d)
+        pts.append((lat / 1e6, lon / 1e6))
+    return pts, pos
+
+
+def _read(path, background=False):
     with open(path, "rb") as f:
         buf = f.read()
-    magic, ver, _, lat10, lon10, nways, npoints, nstr, strbytes = struct.unpack_from("<4sBBhhIIII", buf, 0)
+    magic, ver, hflags, lat10, lon10, nways, npoints, nstr, strbytes = struct.unpack_from("<4sBBhhIIII", buf, 0)
     if magic != b"NTT1" or ver != 1:
         raise ValueError("zły plik mapy: " + path)
     pos = struct.calcsize("<4sBBhhIIII")
@@ -141,7 +163,20 @@ def read_cell(path):
         nid, lat, lon, kind, limit, name, pair = struct.unpack_from("<IiiBBHH", buf, pos)
         pos += 18
         points.append(Point(nid, lat / 1e6, lon / 1e6, kind, limit, s(name), pair))
-    return ways, points
+    bg = {"waters": [], "rivers": [], "places": []}
+    if background and hflags & 1:
+        nw, nr, npl = struct.unpack_from("<III", buf, pos)
+        pos += 12
+        for key, n in (("waters", nw), ("rivers", nr)):
+            for _ in range(n):
+                kind, name, npts = struct.unpack_from("<BHH", buf, pos)
+                pts, pos = _coords(buf, pos + 5, npts)
+                bg[key].append((kind, s(name), pts))
+        for _ in range(npl):
+            lat, lon, kind, rank, name = struct.unpack_from("<iiBBH", buf, pos)
+            pos += 12
+            bg["places"].append((lat / 1e6, lon / 1e6, kind, rank, s(name)))
+    return ways, points, bg
 
 
 GRID = 0.005  # oczko siatki odcinków (ok. 550 × 350 m) do szybkiego dopasowania drogi

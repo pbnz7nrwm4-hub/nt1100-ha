@@ -123,8 +123,16 @@ function statusCard(V){const d=NV.data,k=el('div','card');k.append(el('b',null,'
   const s=d.screen;if(s&&s.t){const fresh=Date.now()/1000-s.t<600;add(fresh?'ok':'',"Ekran: "+(fresh?'połączony':'ostatnio '+ago(s.t)),(s.fw?'wersja '+s.fw+' · ':'')+(s.battery!==undefined?'bateria '+s.battery+'% · ':'')+(s.map?'mapa '+s.map:''))}else add('','Ekran: jeszcze się nie zgłosił','klucz jak w skrzynce (zakładka Ustawienia)');
   const m=d.map;if(m.available)add('ok','Mapa na kartę: '+m.files+' plików, '+m.mb+' MB','zbudowana '+(m.built||'?')+(m.sync&&m.sync.t?' · sprawdzono '+ago(m.sync.t):''));else add('warn','Mapa na kartę: brak',m.source_url?'pobierz z kontenera (przycisk niżej)':'podaj adres kontenera: Ustawienia → Ustawienia nawigacji');
   add(d.engine?'ok':'warn','Silnik tras: '+(d.engine?'skonfigurowany':'brak adresu'),d.engine?d.settings.engine_url:'bez niego działa tylko GPX i trasy proste');
+  const b=d.build;if(b&&b.pracuje)add('warn','Kontener: przebudowa '+(b.krok||'?')+'/'+(b.z||5)+(b.proc!==undefined?' · '+b.proc+'%':''),(b.etap||'')+' · od '+ago(b.od));
+  else if(b&&b.ok===false&&Date.now()/1000-b.t<7*86400)add('bad','Kontener: ostatnia przebudowa nieudana',b.etap||'');
+  else if(b&&b.ok&&b.t)add('ok','Kontener: mapy aktualne','przebudowa skończona '+ago(b.t));
   add(d.settings.tomtom_key?'ok':'','Korki: '+(d.settings.tomtom_key?'włączone (TomTom)':'wyłączone'),d.settings.tomtom_key?'':'klucz TomTom: Ustawienia → Ustawienia nawigacji');
-  const a=el('div','acts');const sb=el('button',null,'Pobierz mapę z kontenera');const sm=el('span','nmsg');sb.onclick=async()=>{sb.disabled=true;msg(sm,'sprawdzanie i pobieranie... (może potrwać kilka minut)');try{const j=await post('api/nav/map/sync',{});msg(sm,j.ok?(j.changed?'pobrano '+j.files+' plików, mapa z '+j.built:'mapa aktualna ('+j.built+')'):j.error,j.ok?'ok':'bad')}catch(e){msg(sm,e.message,'bad')}sb.disabled=false};a.append(sb,sm);k.append(a);V.append(k)}
+  const a=el('div','acts');const sb=el('button',null,'Pobierz mapę z kontenera');const sm=el('span','nmsg');sb.onclick=async()=>{sb.disabled=true;msg(sm,'sprawdzanie i pobieranie... (może potrwać kilka minut)');try{const j=await post('api/nav/map/sync',{});msg(sm,j.ok?(j.changed?'pobrano '+j.files+' plików, mapa z '+j.built:'mapa aktualna ('+j.built+')'):j.error,j.ok?'ok':'bad')}catch(e){msg(sm,e.message,'bad')}sb.disabled=false};a.append(sb,sm);k.append(a);
+  if(m.available){const z=d.zip||{};const a2=el('div','acts');const zm=el('span','nmsg');
+    if(z.ready){const l=el('button',null,'Pobierz paczkę ZIP na kartę ('+z.mb+' MB)');l.onclick=()=>{const x=document.createElement('a');x.href='api/nav/mapa.zip';x.download='mapa-ekranu.zip';document.body.append(x);x.click();x.remove()};a2.append(l)}
+    else{const zb=el('button',null,z.working?'Paczka ZIP się przygotowuje…':'Przygotuj paczkę ZIP na kartę');zb.disabled=!!z.working;zb.onclick=async()=>{zb.disabled=true;try{await fetch('api/nav/mapa.zip')}catch(e){}msg(zm,'przygotowuję paczkę, to potrwa kilka minut; wróć tu później','ok')};a2.append(zb)}
+    a2.append(zm);k.append(a2);k.append(el('small','mut','Pierwsze wgranie: rozpakuj ZIP na kartę ekranu (powstanie folder „mapa”). Dalej ekran dociąga w domu tylko zmienione kwadraty.'))}
+  V.append(k)}
 
 /* ---- planer */
 let P={};
