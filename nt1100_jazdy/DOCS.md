@@ -134,6 +134,8 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 
 **Telefon (ekran 1.0.9).** Ekran łączy się z iPhone’em przez Bluetooth, bez żadnej aplikacji: pokazuje wiadomości i połączenia (na postoju można odebrać albo odrzucić), steruje muzyką (poprzedni, pauza, następny), bierze z telefonu godzinę i pokazuje jego baterię. Parowanie jeden raz: iPhone → Ustawienia → Bluetooth → „NT1100 Ekran” → zezwól na powiadomienia. W Ustawieniach → Powiadomienia ustaw „Pokazuj podglądy” na „Zawsze” albo „Gdy odblokowany”, inaczej zamiast treści przyjdzie samo „Powiadomienie”. Potem telefon łączy się sam. Na postoju jest piąta zakładka „Telefon”; w jeździe wiadomość pojawia się na chwilę w prawym górnym rogu mapy, nie zasłaniając strzałki. W ustawieniach ekranu są pola „Telefon” (włącz/wyłącz) i „Dźwięki”.
 
+**Szybsze Wi-Fi (ekran 1.0.10).** Ekran pamięta ostatnią sieć, do której się połączył, i łączy się z nią od razu, bez skanowania. Gdy jej nie ma, robi jedno krótkie skanowanie i wybiera najsilniejszą znaną sieć w zasięgu, zamiast czekać na każdą po kolei. Hotspot iPhone’a (czasem niewidoczny w skanie) próbuje „na ślepo” tylko w jeździe.
+
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
