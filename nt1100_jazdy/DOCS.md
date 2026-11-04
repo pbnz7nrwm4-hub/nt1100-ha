@@ -90,6 +90,8 @@ Dotknięcie wybiera miejsce: ekran od razu prowadzi tam z mapy (zielony znacznik
 a gdy jest połączenie, dodatek liczy trasę przez to miejsce i z powrotem na plan. Postój
 kończy się po dojechaniu (60 m), nową trasą albo przyciskiem „Koniec postoju” w menu.
 
+**Strona skrzynki a ekran** (skrzynka od 1.4.3): skrzynka nadaje do ekranu także w trybie strony skrzynki. Ekran widzi ją wtedy jako postój, bez pozycji.
+
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
