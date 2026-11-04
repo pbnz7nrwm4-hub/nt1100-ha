@@ -19,6 +19,7 @@ import secrets
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 
 import nav
@@ -172,7 +173,7 @@ def demo_route():
 def route_summary(r, with_pts=True, full=False):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
                                  "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km",
-                                 "legs")}
+                                 "legs", "leg_m")}
     out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
     out["min"] = int((r.get("time_s") or 0) / 60)
     if with_pts and full:
@@ -208,6 +209,67 @@ def goto(text, variant=None, name=None):
     return route_summary(routes[0], False), place
 
 
+# ---------------------------------------------------------------- mapa w przeglądarce (kafelki z kontenera)
+
+FONTS = ("Noto Sans Regular", "Noto Sans Bold", "Noto Sans Italic")
+FONT_RE = re.compile(r"^/fonty/([A-Za-z ]+)/(\d+-\d+)\.pbf$")
+DEM_RE = re.compile(r"^/api/nav/dem/(\d{1,2})/(\d{1,5})/(\d{1,5})\.png$")
+TILE_RE = re.compile(r"^/api/nav/kafelki/(\d{1,2})/(\d{1,5})/(\d{1,5})\.pbf$")
+_TILES = {"t": 0, "info": None}
+
+
+def tiles_info():
+    """Czy kontener ma własne kafelki mapy (kafelki.pmtiles)? Pamiętane przez minutę."""
+    now = time.time()
+    if _TILES["info"] is not None and now - _TILES["t"] < 60:
+        return _TILES["info"]
+    base = NAV.settings()["map_url"]
+    info = {"local": False}
+    if base:
+        try:
+            j = nav.http_json(base + "/kafelki/info.json", timeout=4)
+            info = {"local": bool(j.get("ok")), "built": j.get("built"), "maxzoom": int(j.get("maxzoom") or 14),
+                    "minzoom": int(j.get("minzoom") or 0), "bounds": j.get("bounds"), "dem": bool(j.get("dem"))}
+        except Exception:
+            pass
+    _TILES.update(t=now, info=info)
+    return info
+
+
+def dem_tile(z, x, y):
+    """Kafelek wysokości (PNG Terrarium) z kontenera albo None."""
+    import urllib.request
+    base = NAV.settings()["map_url"]
+    if not base or z > 12:
+        return None
+    try:
+        with urllib.request.urlopen("%s/dem/%d/%d/%d.png" % (base, z, x, y), timeout=10) as r:
+            return r.read()
+    except Exception:
+        return None
+
+
+def tile(z, x, y):
+    """Kafelek wektorowy z kontenera (rozpakowany); b"" = pusty, None = brak kontenera."""
+    import gzip
+    import urllib.request
+    base = NAV.settings()["map_url"]
+    if not base or z > 14:
+        return None
+    try:
+        with urllib.request.urlopen("%s/kafelki/%d/%d/%d.pbf" % (base, z, x, y), timeout=10) as r:
+            data = r.read()
+            if r.status == 204:
+                return b""
+    except urllib.error.HTTPError as e:
+        return b"" if e.code in (204, 404) else None
+    except Exception:
+        return None
+    if data[:2] == b"\x1f\x8b":
+        data = gzip.decompress(data)
+    return data
+
+
 # ---------------------------------------------------------------- strona
 
 def page_get(h, path, q):
@@ -219,6 +281,34 @@ def page_get(h, path, q):
         else:
             h.send(404, "brak", "text/plain")
         return True
+    if path in ("/mapa-ciemna.json", "/mapa-jasna.json"):
+        h.send_path(os.path.join(SRV.WWW, path[1:]), "application/json", {"Cache-Control": "max-age=3600"})
+        return True
+    m = FONT_RE.match(urllib.parse.unquote(path))
+    if m and m.group(1) in FONTS:
+        p = os.path.join(SRV.WWW, "fonty", m.group(1), m.group(2) + ".pbf")
+        if os.path.exists(p):
+            h.send_path(p, "application/x-protobuf", {"Cache-Control": "max-age=604800"})
+        else:
+            h.send(404, "brak", "text/plain")
+        return True
+    if path == "/api/nav/kafelki/info":
+        return h.send(200, tiles_info()) or True
+    m = DEM_RE.match(path)
+    if m:
+        data = dem_tile(*(int(v) for v in m.groups()))
+        if data is None:
+            return h.send(404, "brak", "text/plain") or True
+        return h.send(200, data, "image/png", {"Cache-Control": "max-age=604800"}) or True
+    m = TILE_RE.match(path)
+    if m:
+        z, x, y = (int(v) for v in m.groups())
+        data = tile(z, x, y)
+        if data is None:
+            return h.send(404, "brak", "text/plain") or True
+        if data == b"":
+            return h.send(204, b"", "application/x-protobuf", {"Cache-Control": "max-age=86400"}) or True
+        return h.send(200, data, "application/x-protobuf", {"Cache-Control": "max-age=86400"}) or True
     if not path.startswith("/api/nav/"):
         return False
     try:
