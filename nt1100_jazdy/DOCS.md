@@ -85,8 +85,9 @@ wczytywanie plików GPX (np. z Kurvigera).
   Jeśli objazd nie jest szybszy, powiadomienie mówi, żeby zostać na trasie. Ten sam korek
   nie wraca co kilka minut. Sprawdzanie kończy się samo 800 m od celu (albo po 8 h,
   albo „Zakończ” na pasku nad punktami). iPhone nie pozwala podmienić trasy w OsmAnd w tle.
-  W trybie samochód GPX ma też manewry w zapisie OsmAnd (skręty, ronda z numerem zjazdu),
-  więc OsmAnd prowadzi głosowo po trasie z dodatku bez „Przyciągnij do dróg”.
+  GPX z dodatku (motocykl i samochód) ma manewry w zapisie OsmAnd (skręty, ronda z numerem
+  zjazdu) i czas przy każdym punkcie, więc OsmAnd prowadzi głosowo po trasie z dodatku bez
+  „Dołącz do dróg” i pokazuje dobry czas przyjazdu.
 - **Ulubione miejsca** (szkoła, praca...): gwiazdka ☆ przy wyniku wyszukiwania albo przy punkcie
   trasy zapisuje miejsce. Nad punktami trasy są przyciski ulubionych (i domu) – dotknięcie dodaje je
   do trasy; na mapie żółte kropki. Zmiana nazwy, kolejność i usuwanie: Ustawienia nawigacji →
