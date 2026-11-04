@@ -1,5 +1,6 @@
 #!/bin/bash
-# Pobiera świeże dane OSM, buduje mapę na kartę ekranu i przebudowuje graf tras.
+# Pobiera świeże dane OSM, buduje mapę na kartę ekranu, kafelki mapy do przeglądarki
+# i przebudowuje graf tras.
 # Uruchamiane przez install-lxc.sh i co miesiąc z crona.
 set -euo pipefail
 KAT=/opt/nt1100-trasy
@@ -12,7 +13,7 @@ curl -L --fail -sS -z "$PBF" -o "$PBF.nowy" "$URL" || { echo "pobieranie nieudan
 if [ ! -s "$PBF.nowy" ]; then
   echo "dane bez zmian"
   rm -f "$PBF.nowy"
-  if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ]; then
+  if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ] && [ -s "$KAT/www/kafelki.pmtiles" ]; then
     systemctl start nt1100-mapa.service nt1100-trasy.service
     exit 0
   fi
@@ -29,8 +30,11 @@ mv "$KAT/www/mapa.nowa" "$KAT/www/mapa"
 rm -rf "$KAT/www/mapa.stara"
 systemctl start nt1100-mapa.service
 
-echo "$(date '+%F %T') graf tras (import GraphHopper)"
+# Planetiler i import GraphHoppera potrzebują dużo pamięci: silnik tras stoi na czas budowy.
 systemctl stop nt1100-trasy.service || true
+"$KAT/bin/kafelki.sh" "$PBF" || echo "$(date '+%F %T') kafelki nieudane, zostaje poprzednia mapa"
+
+echo "$(date '+%F %T') graf tras (import GraphHopper)"
 rm -rf "$KAT/dane/graf"
 cd "$KAT"
 java -Xmx"${PAMIEC}" -Xms1g -jar "$KAT/graphhopper-web.jar" import "$KAT/config.yml"
