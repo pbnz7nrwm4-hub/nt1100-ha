@@ -35,6 +35,32 @@ Bez MQTT najważniejsze czujniki `sensor.nt1100_*` są ustawiane bezpośrednio (
 - **Pogoda na trasie**: Open-Meteo (historia, bez konta) dla startu, co ok. 30 min i końca.
 - **Przebieg i serwis**: stan licznika wpisany raz, dalej liczony z jazd; pozycje serwisowe.
 
+## Nawigacja (zakładka „Nawigacja”)
+
+Planowanie tras dla ekranu nawigacji na kierownicy. Trasy liczy silnik tras w kontenerze
+Proxmox (katalog `silnik-tras/` w repozytorium, instrukcja w jego README); bez niego działa
+wczytywanie plików GPX (np. z Kurvigera).
+
+- **Punkty**: start (pozycja motocykla z ekranu albo dom), dowolna liczba punktów po drodze
+  i cel; wyszukiwanie miejsc, wklejenie linku z Map Google/Apple albo współrzędnych,
+  kliknięcie na mapie, przeciąganie punktów.
+- **Warianty**: najszybciej / lekko kręto / kręto / bardzo kręto liczone obok siebie
+  (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych, płatnych,
+  autostrad i promów; trasa okrężna o zadanej długości.
+- **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
+  Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
+- **Skrót iPhone’a „Wyślij na motocykl”**: udostępnij miejsce z Map do skrótu, który
+  otwiera adres `ADRES-SPOZA-DOMU/api/nav/goto?klucz=KLUCZ&text=LINK` (klucz i adres
+  w zakładce Ustawienia). Trasa liczy się z pozycji motocykla domyślnym wariantem.
+- **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą),
+  ekran dociąga ją sam w domu po Wi-Fi.
+- **Korki**: opcjonalny klucz TomTom (darmowy limit dzienny wystarcza); ekran sprawdza
+  zdarzenia na trasie co kilka minut przez hotspot.
+- **Zgodność jazdy z planem**: w szczegółach jazdy pojawia się trasa planowana, procent
+  zgodności, odstępstwa i zdarzenia z ekranu (objazdy, pominięte punkty).
+- **Ustawienia nawigacji**: adresy silnika i mapy, klucz TomTom, domyślny wariant,
+  próg pochyłu dla wyniku zakrętu, częstość korków, próg zjazdu z trasy, dom.
+
 ## Konfiguracja dodatku
 
 - **powiadomienie**: (starsze) usługa powiadomień bez `notify.`; wybór w panelu ma pierwszeństwo.

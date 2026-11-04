@@ -507,4 +507,4 @@ k.append(el('small','mut','Ocena z samego kształtu trasy: suma zmian kierunku (
 if(v.top.length){k.append(el('h2',null,'Najgłębsze zakręty'));v.top.forEach((c,j)=>{const row=el('div','leg');row.append(el('span',null,(j+1)+'. '+(c.lean<0?'w lewo ':'w prawo ')+fmt(Math.abs(c.lean))+'°'),el('span','mut',fmt(c.speed)+' km/h'+(c.t!==null?' · '+hms(c.t):'')));row.onclick=()=>{if(D._seek)D._seek(c.t!==null?c.t:c.i)};k.append(row);
 if(map){try{L.circleMarker([pts[c.i][0],pts[c.i][1]],{radius:9,color:'#fff',weight:2,fillColor:'#7950f2',fillOpacity:1}).bindTooltip(String(j+1),{permanent:true,direction:'top',offset:[0,-6],className:'lab'}).addTo(map)}catch(e){}}})}P.append(k)}
 reload().catch(()=>{document.getElementById('info').textContent='błąd wczytywania listy jazd'});
-</script></body></html>
+</script><script src="nav.js"></script></body></html>

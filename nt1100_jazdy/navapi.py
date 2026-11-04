@@ -1,0 +1,470 @@
+"""Nawigacja: adresy HTTP dodatku (strona przez panel HA i port ekranu).
+
+Strona (Ingress, bez klucza):
+  GET  /nav.js, /api/nav/routes, /api/nav/route?id, /api/nav/gpx?id, /api/nav/search?q,
+       /api/nav/poi?bbox, /api/nav/resolve?text, /api/nav/settings, /api/nav/map, /api/nav/plan?n (zgodność jazdy),
+       /api/nav/screen, /api/nav/recent
+  POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
+       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home
+Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
+  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik>,
+       /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
+  POST /api/nav/reroute, /api/nav/log
+"""
+import json
+import os
+import re
+import secrets
+import threading
+import time
+
+import nav
+
+SRV = None
+NAV = None
+PLANS = {}  # token -> (czas, lista tras) z ostatnich planowań
+NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000)}
+RECENT_MAX = 12
+
+
+def init(server):
+    global SRV, NAV
+    SRV = server
+    NAV = nav.Nav(server.SHARE, server.DATA, lambda: server.settings().get("nav") or {}, server.log)
+    threading.Thread(target=map_loop, daemon=True).start()
+    return NAV
+
+
+def map_loop():
+    """Raz dziennie sprawdza, czy kontener ma nowszą mapę."""
+    time.sleep(90)
+    while True:
+        try:
+            if NAV.settings()["map_url"]:
+                NAV.map_sync()
+        except Exception as e:
+            SRV.log("mapa: sprawdzanie nieudane:", e)
+        time.sleep(24 * 3600)
+
+
+def nav_settings_apply(j):
+    """Ustawienia nawigacji ze strony (klucz 'nav' w /api/settings)."""
+    if not isinstance(j, dict):
+        return "zle dane nawigacji"
+    cur = dict(SRV.settings().get("nav") or {})
+    for k in ("engine_url", "map_url", "tomtom_key", "default_variant"):
+        if k in j:
+            v = str(j[k] or "").strip()
+            if k.endswith("_url") and v and not re.fullmatch(r"https?://[^\s/]+(:\d+)?(/[^\s]*)?", v):
+                return "zly adres: " + k
+            if k == "default_variant" and v not in [x for x, _ in nav.VARIANTS]:
+                return "zly wariant"
+            cur[k] = v[:200]
+    for k, (lo, hi) in NAV_LIMITS.items():
+        if k in j:
+            try:
+                v = int(j[k])
+            except (TypeError, ValueError):
+                return "zla wartosc: " + k
+            if not lo <= v <= hi:
+                return "poza zakresem: " + k
+            cur[k] = v
+    if "free_km" in j:
+        v = SRV.num(j["free_km"])
+        if v is None or not 0.5 <= v <= 20:
+            return "poza zakresem: free_km"
+        cur["free_km"] = v
+    if "avoid" in j:
+        a = j["avoid"]
+        if not isinstance(a, list) or any(x not in nav.AVOID for x in a):
+            return "zle omijanie"
+        cur["avoid"] = a
+    if "home" in j:
+        h = j["home"]
+        if h is None:
+            cur["home"] = None
+        else:
+            lat, lon = SRV.num((h or {}).get("lat")), SRV.num((h or {}).get("lon"))
+            if lat is None or lon is None:
+                return "zly dom"
+            cur["home"] = {"lat": lat, "lon": lon, "name": str(h.get("name") or "Dom")[:40]}
+    SRV.save_state(nav=cur)
+    return ""
+
+
+def recent():
+    return NAV.state.get("recent") or []
+
+
+def add_recent(place):
+    r = [p for p in recent() if abs(p["lat"] - place["lat"]) > 1e-4 or abs(p["lon"] - place["lon"]) > 1e-4]
+    r.insert(0, {"lat": place["lat"], "lon": place["lon"], "name": place.get("name") or ""})
+    NAV.save_state(recent=r[:RECENT_MAX])
+
+
+def start_point():
+    """Start trasy bez podanego: pozycja ekranu z ostatnich 3 h, inaczej dom."""
+    sc = NAV.screen_position()
+    if sc and time.time() - sc.get("t", 0) < 3 * 3600:
+        return {"lat": sc["lat"], "lon": sc["lon"], "name": "pozycja motocykla"}
+    home = NAV.settings()["home"]
+    if home:
+        return dict(home)
+    return None
+
+
+def route_summary(r, with_pts=True):
+    out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
+                                 "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km")}
+    out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
+    out["min"] = int((r.get("time_s") or 0) / 60)
+    if with_pts:
+        # co 3. punkt wystarczy na mapę w przeglądarce (ekran dostaje pełną paczkę)
+        pts = r["pts"]
+        out["pts"] = [[round(p[0], 5), round(p[1], 5)] for p in pts[::3]] + [[round(pts[-1][0], 5), round(pts[-1][1], 5)]]
+    return out
+
+
+def goto(text, variant=None, name=None):
+    """Cel z tekstu/linku: trasa z pozycji motocykla (albo domu) i oznaczenie
+    jako bieżąca dla ekranu."""
+    place = NAV.resolve_place(text)
+    if not place:
+        raise ValueError("nie rozpoznałem miejsca w: %s" % (text or "")[:60])
+    start = start_point()
+    if not start:
+        raise ValueError("nie znam pozycji motocykla ani domu (ustaw dom w zakładce Nawigacja)")
+    s = NAV.settings()
+    v = variant or s["default_variant"]
+    routes, errors = NAV.plan([start, {"lat": place["lat"], "lon": place["lon"], "name": place["name"]}], [v],
+                              s["avoid"], name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True)
+    if not routes:
+        raise ValueError(errors.get(v) or "silnik tras nie odpowiedział")
+    rid = NAV.store_route(routes[0], True)
+    NAV.note_current(rid)
+    add_recent(place)
+    return route_summary(routes[0], False), place
+
+
+# ---------------------------------------------------------------- strona
+
+def page_get(h, path, q):
+    """True = obsłużone."""
+    if path == "/nav.js":
+        p = os.path.join(SRV.WWW, "nav.js")
+        if os.path.exists(p):
+            h.send_path(p, "application/javascript; charset=utf-8")
+        else:
+            h.send(404, "brak", "text/plain")
+        return True
+    if not path.startswith("/api/nav/"):
+        return False
+    try:
+        if path == "/api/nav/routes":
+            lst = NAV.list_routes()
+            lst.update(map=NAV.map_status(), engine=NAV.engine_ok(), screen=NAV.screen_position(),
+                       settings=NAV.settings(), recent=recent(), variants=nav.VARIANTS, avoid_all=nav.AVOID)
+            lst["settings"]["tomtom_key"] = bool(lst["settings"]["tomtom_key"])
+            return h.send(200, lst) or True
+        if path == "/api/nav/route":
+            r = NAV.route(int(q.get("id", "0")))
+            if not r:
+                return h.send(404, {"error": "brak trasy"}) or True
+            return h.send(200, route_summary(r)) or True
+        if path == "/api/nav/gpx":
+            r = NAV.route(int(q.get("id", "0")))
+            if not r:
+                return h.send(404, "brak trasy", "text/plain") or True
+            fn = re.sub(r"[^\w.-]+", "_", r.get("name") or "trasa")[:40] + ".gpx"
+            return h.send(200, nav.to_gpx(r).encode(), "application/gpx+xml",
+                          {"Content-Disposition": 'attachment; filename="%s"' % fn}) or True
+        if path == "/api/nav/search":
+            qq = (q.get("q") or "").strip()[:100]
+            if not qq:
+                return h.send(200, {"results": []}) or True
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+            return h.send(200, {"results": NAV.search(qq, lat, lon)}) or True
+        if path == "/api/nav/poi":
+            try:
+                s, w, n, e = [float(x) for x in q.get("bbox", "").split(",")]
+            except ValueError:
+                return h.send(400, {"error": "zly bbox"}) or True
+            kinds = {int(k) for k in q.get("kinds", "").split(",") if k.strip().isdigit()} or None
+            if (n - s) * (e - w) > 4:
+                return h.send(200, {"points": [], "too_big": True}) or True
+            pts = NAV.map.points_in_bbox(s, w, n, e, kinds, 400)
+            return h.send(200, {"points": [{"lat": p.lat, "lon": p.lon, "kind": p.kind, "name": p.name, "limit": p.limit}
+                                           for p in pts]}) or True
+        if path == "/api/nav/resolve":
+            place = NAV.resolve_place((q.get("text") or "")[:500])
+            if not place:
+                return h.send(404, {"error": "nie rozpoznałem miejsca"}) or True
+            return h.send(200, {"place": place}) or True
+        if path == "/api/nav/settings":
+            s = NAV.settings()
+            s["tomtom_key"] = bool(s["tomtom_key"])
+            return h.send(200, s) or True
+        if path == "/api/nav/map":
+            return h.send(200, NAV.map_status()) or True
+        if path == "/api/nav/screen":
+            return h.send(200, {"screen": NAV.screen_position()}) or True
+        if path == "/api/nav/recent":
+            return h.send(200, {"recent": recent(), "home": NAV.settings()["home"]}) or True
+        if path == "/api/nav/plan":
+            n = int(q.get("n", "0"))
+            s = SRV.summary(n) or {}
+            start = SRV.parse_time(s.get("start"))
+            if start is None:
+                return h.send(404, {"error": "brak jazdy"}) or True
+            pts, _ = SRV.read_track(n)
+            end = start + (pts[-1][5] or 0) if pts else start
+            c = NAV.compliance([(p[0], p[1]) for p in pts], start, end) if pts else None
+            if c:
+                r = NAV.route(c["route"])
+                if r:
+                    c["pts"] = [[round(p[0], 5), round(p[1], 5)] for p in r["pts"][::4]]
+            return h.send(200, {"plan": c}) or True
+    except ValueError as e:
+        return h.send(400, {"error": str(e)}) or True
+    except Exception as e:
+        SRV.log("nawigacja:", path, e)
+        return h.send(502, {"error": str(e)}) or True
+    return False
+
+
+def page_post(h, path, q, body):
+    if not path.startswith("/api/nav/"):
+        return False
+    try:
+        j = json.loads(body or b"{}") if path != "/api/nav/gpx" else None
+    except ValueError:
+        return h.send(400, {"error": "zle dane"}) or True
+    try:
+        if path == "/api/nav/plan":
+            pts = j.get("points") or []
+            if not isinstance(pts, list) or not 1 <= len(pts) <= 30:
+                return h.send(400, {"error": "podaj od 1 do 30 punktów"}) or True
+            points = []
+            for p in pts:
+                lat, lon = SRV.num((p or {}).get("lat")), SRV.num((p or {}).get("lon"))
+                if lat is None or lon is None:
+                    return h.send(400, {"error": "zly punkt"}) or True
+                points.append({"lat": lat, "lon": lon, "name": str(p.get("name") or "")[:40]})
+            rt = SRV.num(j.get("round_trip_km"))
+            if rt is not None and not 10 <= rt <= 1500:
+                return h.send(400, {"error": "trasa okrężna 10–1500 km"}) or True
+            if len(points) < 2 and not rt:
+                return h.send(400, {"error": "podaj cel"}) or True
+            variants = [v for v in (j.get("variants") or []) if v in [x for x, _ in nav.VARIANTS]] or None
+            avoid = j.get("avoid") if isinstance(j.get("avoid"), list) else None
+            routes, errors = NAV.plan(points, variants, avoid, str(j.get("name") or "")[:40], rt, SRV.num(j.get("heading")),
+                                      with_weather=bool(j.get("weather", True)))
+            token = secrets.token_hex(8)
+            PLANS[token] = (time.time(), routes)
+            for k in [k for k, v in PLANS.items() if time.time() - v[0] > 3600]:
+                PLANS.pop(k, None)
+            return h.send(200, {"token": token, "routes": [route_summary(r) for r in routes], "errors": errors}) or True
+        if path == "/api/nav/send":
+            plan = PLANS.get(j.get("token") or "")
+            if not plan:
+                return h.send(410, {"error": "planowanie wygasło, policz jeszcze raz"}) or True
+            v = j.get("variant")
+            route = next((r for r in plan[1] if r.get("variant") == v), plan[1][0] if plan[1] else None)
+            if not route:
+                return h.send(404, {"error": "brak wariantu"}) or True
+            route = json.loads(json.dumps(route))
+            if j.get("name"):
+                route["name"] = str(j["name"])[:40]
+            rid = NAV.store_route(route, bool(j.get("current", True)))
+            if j.get("current", True):
+                NAV.note_current(rid)
+            for p in (route.get("points") or [])[1:]:
+                add_recent(p)
+            return h.send(200, {"id": rid, "route": route_summary(route, False)}) or True
+        if path == "/api/nav/gpx":
+            if not body:
+                return h.send(400, {"error": "brak pliku"}) or True
+            route = NAV.route_from_gpx(body, q.get("name", ""))
+            rid = NAV.store_route(route, True)
+            NAV.note_current(rid)
+            return h.send(200, {"id": rid, "route": route_summary(route)}) or True
+        if path == "/api/nav/current":
+            rid = int(j.get("id") or 0) or None
+            NAV.set_current(rid)
+            NAV.note_current(rid)
+            return h.send(200, {"ok": True, "current": rid}) or True
+        if path == "/api/nav/delete":
+            NAV.delete_route(int(j.get("id") or 0))
+            return h.send(200, {"ok": True}) or True
+        if path == "/api/nav/settings":
+            err = nav_settings_apply(j)
+            if err:
+                return h.send(400, {"error": err}) or True
+            s = NAV.settings()
+            s["tomtom_key"] = bool(s["tomtom_key"])
+            return h.send(200, s) or True
+        if path == "/api/nav/map/sync":
+            return h.send(200, NAV.map_sync(force=bool(j.get("force")))) or True
+        if path == "/api/nav/goto":
+            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"))
+            return h.send(200, {"route": r, "place": place}) or True
+        if path == "/api/nav/home":
+            err = nav_settings_apply({"home": j.get("home")})
+            if err:
+                return h.send(400, {"error": err}) or True
+            return h.send(200, {"home": NAV.settings()["home"]}) or True
+    except ValueError as e:
+        return h.send(400, {"error": str(e)}) or True
+    except Exception as e:
+        SRV.log("nawigacja:", path, e)
+        return h.send(502, {"error": str(e)}) or True
+    return False
+
+
+# ---------------------------------------------------------------- ekran (port 8098)
+
+def screen_firmware_offer():
+    j = SRV.read_json(os.path.join(SRV.FIRMWARE, "ekran.json"), {})
+    path = os.path.join(SRV.FIRMWARE, "ekran.bin")
+    if not j.get("version") or not os.path.exists(path):
+        return None
+    return {"version": j["version"], "size": os.path.getsize(path), "path": path}
+
+
+def screen_authorized(h, q):
+    if h.authorized():
+        return True
+    k = (q.get("klucz") or "").strip()
+    import hmac
+    return bool(k) and hmac.compare_digest(k.encode(), SRV.key().encode())
+
+
+def note_screen(h, q):
+    lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+    extra = {}
+    v = (q.get("v") or "").strip()
+    if re.fullmatch(r"[0-9.]{1,16}", v):
+        extra["fw"] = v
+    b = SRV.num(q.get("bat"))
+    if b is not None:
+        extra["battery"] = int(b)
+    if q.get("route"):
+        extra["route"] = int(SRV.num(q.get("route")) or 0)
+        extra["route_version"] = int(SRV.num(q.get("ver")) or 0)
+    extra["map"] = (q.get("map") or "")[:16]
+    extra["ip"] = h.client_address[0]
+    extra["via"] = h.source()
+    if lat is not None and lon is not None and (lat or lon):
+        NAV.screen_seen(lat, lon, SRV.num(q.get("speed")) or 0, SRV.num(q.get("hdg")) or 0, extra)
+    else:
+        st = dict(NAV.screen_position() or {})
+        st.update(extra)
+        st["t_seen"] = int(time.time())
+        NAV.save_state(screen=st)
+
+
+def screen_get(h, path, q):
+    if not path.startswith("/api/nav/"):
+        return False
+    if not screen_authorized(h, q):
+        SRV.log("Odrzucono ekran: zly klucz (", h.client_address[0], ")")
+        return h.send(401, {"ok": False, "error": "zly klucz"}) or True
+    try:
+        if path == "/api/nav/ping":
+            note_screen(h, q)
+            idx = NAV.index()
+            cur = idx.get("current")
+            route = None
+            if cur:
+                r = next((x for x in idx["routes"] if x["id"] == cur), None)
+                if r:
+                    route = {"id": r["id"], "version": r["version"], "name": r["name"], "km": r["km"]}
+            m = NAV.map.manifest() or {}
+            s = NAV.settings()
+            out = {"ok": True, "time": int(time.time()), "route": route,
+                   "map": {"built": m.get("built"), "files": len(m.get("files", [])), "bytes": m.get("bytes", 0)} if m else None,
+                   "settings": {k: s[k] for k in ("lean_popup_deg", "traffic_min", "offroute_m", "free_km")},
+                   "traffic": bool(s["tomtom_key"]), "fw": (screen_firmware_offer() or {}).get("version") or ""}
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+            if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
+                try:
+                    out["traffic_now"] = NAV.traffic(route["id"], lat, lon)
+                except Exception as e:
+                    SRV.log("korki nieudane:", e)
+            return h.send(200, out) or True
+        if path in ("/api/nav/route.ntr", "/api/nav/route.json"):
+            rid = int(SRV.num(q.get("id")) or 0)
+            p = NAV.route_path(rid, path.rsplit(".", 1)[1])
+            if rid <= 0 or not os.path.exists(p):
+                return h.send(404, {"ok": False, "error": "brak trasy"}) or True
+            return h.send_path(p, "application/octet-stream" if p.endswith(".ntr") else "application/json") or True
+        if path.startswith("/api/nav/mapa/"):
+            p = NAV.map_file(path.rsplit("/", 1)[1])
+            if not p:
+                return h.send(404, {"ok": False, "error": "brak pliku"}) or True
+            return h.send_path(p, "application/octet-stream") or True
+        if path == "/api/nav/traffic":
+            rid = int(SRV.num(q.get("id")) or 0)
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+            if lat is None or lon is None:
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            return h.send(200, {"ok": True, "traffic": NAV.traffic(rid, lat, lon)}) or True
+        if path == "/api/nav/fw":
+            note_screen(h, q)
+            o = screen_firmware_offer()
+            return h.send(200, {"version": o["version"] if o else "", "size": o["size"] if o else 0}) or True
+        if path == "/api/nav/fw/bin":
+            o = screen_firmware_offer()
+            if not o:
+                return h.send(404, {"ok": False, "error": "brak pliku"}) or True
+            SRV.log("Ekran pobiera oprogramowanie", o["version"])
+            return h.send_path(o["path"], "application/octet-stream") or True
+        if path == "/api/nav/goto":
+            r, place = goto(q.get("text") or q.get("q") or "", q.get("variant"))
+            return h.send(200, {"ok": True, "route": r, "place": place}) or True
+    except ValueError as e:
+        return h.send(400, {"ok": False, "error": str(e)}) or True
+    except Exception as e:
+        SRV.log("nawigacja (ekran):", path, e)
+        return h.send(502, {"ok": False, "error": str(e)}) or True
+    return h.send(404, {"ok": False, "error": "brak"}) or True
+
+
+def screen_post(h, path, q, body):
+    if not path.startswith("/api/nav/"):
+        return False
+    if not screen_authorized(h, q):
+        return h.send(401, {"ok": False, "error": "zly klucz"}) or True
+    try:
+        j = json.loads(body or b"{}")
+    except ValueError:
+        return h.send(400, {"ok": False, "error": "zle dane"}) or True
+    try:
+        if path == "/api/nav/reroute":
+            rid = int(j.get("id") or 0)
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            if lat is None or lon is None:
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            r = NAV.reroute(rid, lat, lon, SRV.num(j.get("heading")), bool(j.get("skip")), SRV.num(j.get("avoid_km")))
+            return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
+                                "min": int(r["time_s"] / 60)}) or True
+        if path == "/api/nav/log":
+            entries = j.get("entries") if isinstance(j, dict) else j
+            if not isinstance(entries, list):
+                return h.send(400, {"ok": False, "error": "zle dane"}) or True
+            clean = []
+            for e in entries[:2000]:
+                if isinstance(e, dict) and isinstance(e.get("t"), (int, float)) and isinstance(e.get("what"), str):
+                    clean.append({"t": int(e["t"]), "what": e["what"][:24], "idx": e.get("idx"), "value": e.get("value"),
+                                  "lat": e.get("lat"), "lon": e.get("lon")})
+            NAV.screen_log(clean)
+            return h.send(200, {"ok": True, "saved": len(clean)}) or True
+        if path == "/api/nav/goto":
+            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"))
+            return h.send(200, {"ok": True, "route": r, "place": place}) or True
+    except ValueError as e:
+        return h.send(400, {"ok": False, "error": str(e)}) or True
+    except Exception as e:
+        SRV.log("nawigacja (ekran):", path, e)
+        return h.send(502, {"ok": False, "error": str(e)}) or True
+    return h.send(404, {"ok": False, "error": "brak"}) or True
