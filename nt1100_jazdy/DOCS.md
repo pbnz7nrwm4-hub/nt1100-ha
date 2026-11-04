@@ -69,8 +69,13 @@ wczytywanie plików GPX (np. z Kurvigera).
   i cel; wyszukiwanie miejsc, wklejenie linku z Map Google/Apple albo współrzędnych,
   kliknięcie na mapie, przeciąganie punktów.
 - **Warianty**: najszybciej / lekko kręto / kręto / bardzo kręto liczone obok siebie
-  (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych, płatnych,
+  (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych (polnych,
+  leśnych), szutrowych (publicznych z nawierzchnią szutrową – osobna opcja), płatnych,
   autostrad i promów; trasa okrężna o zadanej długości.
+- **Ulubione miejsca** (szkoła, praca...): gwiazdka ☆ przy wyniku wyszukiwania albo przy punkcie
+  trasy zapisuje miejsce. Nad punktami trasy są przyciski ulubionych (i domu) – dotknięcie dodaje je
+  do trasy; na mapie żółte kropki. Zmiana nazwy, kolejność i usuwanie: Ustawienia nawigacji →
+  Planowanie i dom. Skrót iPhone’a „jedź do” rozumie samą nazwę, np. `text=Praca`.
 - **Pomiń miejscowość**: przy wyniku wyszukiwania przycisk „Pomiń” (albo wpisz „pomiń Pszczyna”),
   albo „+ pomiń miejscowość” i dotknij mapy. Trasa omija koło wokół miejscowości (czerwone
   przerywane na mapie); dotknięcie ✕ usuwa. Objazdy z ekranu też je omijają.
