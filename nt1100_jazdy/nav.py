@@ -742,7 +742,8 @@ class Nav:
 
     # ---- szukanie i cel z linku
     def search(self, q, lat=None, lon=None, limit=8):
-        params = {"q": q, "lang": "pl", "limit": limit}
+        # Photon nie obsługuje "pl" (odrzuca zapytanie); domyślnie zwraca nazwy lokalne, czyli polskie.
+        params = {"q": q, "limit": limit}
         if lat is not None and lon is not None:
             params.update({"lat": "%.4f" % lat, "lon": "%.4f" % lon})
         j = http_json("https://photon.komoot.io/api/?" + urllib.parse.urlencode(params), timeout=15)
@@ -759,7 +760,7 @@ class Nav:
 
     def reverse(self, lat, lon):
         try:
-            j = http_json("https://photon.komoot.io/reverse?lat=%.5f&lon=%.5f&lang=pl" % (lat, lon), timeout=10)
+            j = http_json("https://photon.komoot.io/reverse?lat=%.5f&lon=%.5f" % (lat, lon), timeout=10)
             f = (j.get("features") or [{}])[0]
             p = f.get("properties") or {}
             return p.get("name") or p.get("street") or p.get("city") or p.get("village") or ""
