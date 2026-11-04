@@ -71,6 +71,12 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Warianty**: najszybciej / lekko kręto / kręto / bardzo kręto liczone obok siebie
   (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych, płatnych,
   autostrad i promów; trasa okrężna o zadanej długości.
+- **Pomiń miejscowość**: przy wyniku wyszukiwania przycisk „Pomiń” (albo wpisz „pomiń Meta”),
+  albo „+ pomiń miejscowość” i dotknij mapy. Trasa omija koło wokół miejscowości (czerwone
+  przerywane na mapie); dotknięcie ✕ usuwa. Objazdy z ekranu też je omijają.
+- **Trasa okrężna jednym dotknięciem**: 50 / 100 / 150 / 200 km albo 30 min / 1 h / 1,5 h / 2 h / 3 h
+  od startu (bez startu: od domu). Na czas: dodatek dobiera długość tak, żeby czas jazdy
+  wyszedł bliski wybranemu (każdy wariant krętości osobno).
 - **Krętość po swojemu**: w ustawieniach nawigacji suwaki każdego wariantu (unikaj głównych,
   szukaj zakrętów, dłuższa trasa) i progi opisu krętości w °/km (prosta / lekko kręta /
   kręta / bardzo kręta; dotyczą tras i jazd).
