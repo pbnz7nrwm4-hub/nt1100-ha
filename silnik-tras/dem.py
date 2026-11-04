@@ -9,6 +9,7 @@ Użycie: dem.py KATALOG_WWW [--bbox W,S,E,N] [--maxzoom 12]"""
 import argparse
 import concurrent.futures
 import math
+import json
 import os
 import sys
 import urllib.request
@@ -45,6 +46,22 @@ def fetch(root, z, x, y):
     return -1
 
 
+def progress(www, pct):
+    """Procent do stan.json (postęp w dodatku), gdy aktualizuj.sh jest na tym etapie."""
+    p = os.path.join(www, "stan.json")
+    try:
+        with open(p) as f:
+            st = json.load(f)
+        if not st.get("pracuje"):
+            return
+        st["proc"] = pct
+        with open(p + ".tmp", "w") as f:
+            json.dump(st, f, ensure_ascii=False)
+        os.replace(p + ".tmp", p)
+    except (OSError, ValueError):
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("www")
@@ -67,6 +84,7 @@ def main():
                 size += r
             if done % 2000 == 0:
                 print("dem: %d/%d kafelków, %.0f MB nowych" % (done, len(jobs), size / 1e6), flush=True)
+                progress(a.www, 100 * done // len(jobs))
     with open(os.path.join(root, "info.txt"), "w") as f:
         f.write("bbox=%s maxzoom=%d tiles=%d missing=%d\n" % (a.bbox, a.maxzoom, len(jobs), bad))
     print("dem: gotowe, %d kafelków (%d brakujących), %.0f MB nowych" % (len(jobs), bad, size / 1e6))
