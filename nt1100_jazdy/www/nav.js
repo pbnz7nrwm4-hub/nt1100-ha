@@ -17,7 +17,7 @@ const css=document.createElement('style');
 css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)}#navmap.add{cursor:crosshair}'+
 '.npt{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.npt:last-child{border:0}.npt .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.npt .lb{flex:0 0 58px;font-size:12px;color:var(--mut)}.npt button{padding:4px 8px;font-size:13px}'+
 '.nsr{position:relative}.nsr ul{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--card);max-height:220px;overflow:auto}.nsr li{padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--line)}.nsr li:hover{background:var(--card2)}.nsr li small{display:block}'+
-'.nfav .chip.nadd{border-style:dashed;color:var(--mut)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card2);cursor:pointer}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}'+
+'.nveh{margin:2px 0 8px}.nveh .chip{font-size:14px;padding:6px 14px}.nfav .chip.nadd{border-style:dashed;color:var(--mut)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card2);cursor:pointer}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}'+
 '.nres{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer}.nres.on{border-color:var(--acc)}.nres .sw{width:12px;height:12px;border-radius:50%;flex:0 0 12px}.nres .tx{flex:1;min-width:0}.nres small{display:block}'+
 '.nrt{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.nrt:last-child{border:0}.nrt .tx{flex:1;min-width:0}.nrt small{display:block}.nrt .cur{font-size:11px;padding:2px 7px;border-radius:8px;background:var(--ok);color:#fff}'+
 '.nrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nrow input{flex:1;min-width:160px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}'+
@@ -139,6 +139,7 @@ function statusCard(V){const d=NV.data,k=el('div','card');k.append(el('b',null,'
 let P={};
 function plannerCard(V){const k=el('div','card');V.append(k);
   const hd=el('div','nhead');hd.append(el('b',null,'Nowa trasa'));P.hint=el('small',null,'');hd.append(P.hint);k.append(hd);
+  P.veh=el('div','chips nveh');for(const [v,t] of [['moto','🏍 Motocykl'],['auto','🚗 Samochód']]){const c=el('span','chip',t);c._v=v;c.onclick=()=>setVehicle(v);P.veh.append(c)}k.append(P.veh);
   // wyszukiwarka nad mapą
   const sr=el('div','nsr');const row=el('div','nrow');P.q=el('input');P.q.placeholder='Dodaj punkt: miejsce, adres albo link';const sb=el('button',null,'Dodaj');row.append(P.q,sb);P.res=el('ul');P.res.hidden=true;sr.append(row,P.res);P.bar.append(sr);
   P.q.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search()}};sb.onclick=search;
@@ -155,7 +156,7 @@ function plannerCard(V){const k=el('div','card');V.append(k);
   P.skipBox=el('div','nsec nskip');k.append(P.skipBox);renderSkip();
   const S=NV.data.settings;
   const op=el('details','ngrp nopts');op.append(el('summary',null,'Warianty, omijanie dróg, okrężna na inną długość, GPX'));k.append(op);
-  P.var={};const vc=el('div','chips');for(const [v,t] of NV.data.variants){const c=el('span','chip on',t);c.onclick=()=>{c.classList.toggle('on');P.var[v]=c.classList.contains('on')};P.var[v]=true;vc.append(c)}op.append(el('small',null,'Warianty do porównania:'),vc);
+  P.var={};P.varC={};const vc=el('div','chips');for(const [v,t] of NV.data.variants){const c=el('span','chip on',t);c.onclick=()=>{c.classList.toggle('on');P.var[v]=c.classList.contains('on')};P.var[v]=true;P.varC[v]=c;vc.append(c)}op.append(el('small',null,'Warianty do porównania:'),vc);
   P.av={};const ac=el('div','chips');for(const v of NV.data.avoid_all){const on=(S.avoid||[]).includes(v);const c=el('span','chip'+(on?' on':''),'omijaj: '+AVN[v]);c.onclick=()=>{c.classList.toggle('on');P.av[v]=c.classList.contains('on')};P.av[v]=on;ac.append(c)}op.append(ac);
   const r2=el('div','nrow');P.rt=el('input');P.rt.type='number';P.rt.placeholder='trasa okrężna: ile km';P.rt.min=10;P.rt.max=1500;P.rt.oninput=()=>{NV.rt=null;renderRt()};P.name=el('input');P.name.placeholder='nazwa trasy (opcjonalnie)';P.name.maxLength=40;r2.append(P.rt,P.name);op.append(r2);
   const mo=el('div','acts');P.poiBtn=el('button',null,'Pokaż na mapie: fotoradary, stacje, widoki');P.poiBtn.onclick=togglePoi;mo.append(P.poiBtn);op.append(mo);P.leg=el('div','nleg');P.leg.hidden=true;for(const [kd,t] of LEG){const sp=el('span');const i=el('i');i.style.background=KIND[kd][1];sp.append(i,t);P.leg.append(sp)}P.legHint=el('small','mut','');P.leg.append(P.legHint);op.append(P.leg);
@@ -165,7 +166,12 @@ function plannerCard(V){const k=el('div','card');V.append(k);
   const a=el('div','acts');P.go=el('button','pri','Policz trasę');P.go.style.flex='1';P.go.style.height='50px';P.go.style.fontSize='16px';P.go.onclick=plan;a.append(P.go);k.append(a);P.msg=el('div','nmsg');k.append(P.msg);
   P.out=el('div');k.append(P.out);
   P.along=el('div');P.along.hidden=true;k.append(P.along);
-  renderPts()}
+  renderVehicle(true);renderPts()}
+/* tryb pojazdu: w samochodzie liczona tylko najszybsza (inne warianty można włączyć ręcznie),
+   ekran bez „wyniku zakrętu”; „jedź do” z iPhone’a i objazdy też najszybciej */
+function renderVehicle(vars){const v=NV.data.settings.vehicle||'moto';if(P.veh)for(const c of P.veh.children)c.classList.toggle('on',c._v===v);
+  if(vars&&P.varC)for(const k of Object.keys(P.varC)){const on=v==='moto'||k==='szybko';P.varC[k].classList.toggle('on',on);P.var[k]=on}}
+async function setVehicle(v){if((NV.data.settings.vehicle||'moto')===v)return;try{const s=await post('api/nav/settings',{vehicle:v});NV.data.settings=s;renderVehicle(true);if(NV.plan)clearPlan();toast(v==='auto'?'Tryb samochód: najszybsza trasa, ekran bez wyniku zakrętu':'Tryb motocykl: wszystkie warianty krętości')}catch(e){alert(e.message)}}
 
 const RT_OPTS=[['50 km',{km:50}],['100 km',{km:100}],['150 km',{km:150}],['200 km',{km:200}],['30 min',{min:30}],['1 h',{min:60}],['1,5 h',{min:90}],['2 h',{min:120}],['3 h',{min:180}]];
 function rtLabel(o){return o.km?o.km+' km':(o.min>=60?(o.min/60+'').replace('.',',')+' h':o.min+' min')}
@@ -315,7 +321,7 @@ async function goVia(p,b){const nm=p.name||(KIND[p.kind]||['postój'])[0];if(!co
 async function plan(){const vars=Object.keys(P.var).filter(v=>P.var[v]);const rt=P.rt.value?+P.rt.value:(NV.rt&&NV.rt.km)||null;const rtm=!P.rt.value&&NV.rt&&NV.rt.min||null;
   if(!NV.pts.length){msg(P.msg,'dodaj przynajmniej start i cel','bad');return}if(NV.pts.length<2&&!rt&&!rtm){msg(P.msg,'dodaj cel albo podaj długość trasy okrężnej','bad');return}if(!vars.length){msg(P.msg,'zaznacz choć jeden wariant','bad');return}
   if(!NV.data.engine){msg(P.msg,'brak adresu silnika tras – wpisz go w Ustawienia → Ustawienia nawigacji (albo wczytaj GPX)','bad');return}
-  const dv=NV.data.settings.default_variant;let legs=null;
+  const dv=NV.data.settings.go_variant||NV.data.settings.default_variant;let legs=null;
   if(!rt&&!rtm&&NV.pts.length>=2&&NV.legs.some(x=>x)){legs=NV.legs.map(x=>x||dv);if(new Set(legs).size<2){if(!vars.includes(legs[0]))vars.push(legs[0]);legs=null}}
   P.go.disabled=true;msg(P.msg,'liczenie '+(vars.length+(legs?1:0))+' wariantów...');clearPlan();
   try{const j=await post('api/nav/plan',{points:NV.pts,variants:vars,legs,avoid:Object.keys(P.av).filter(v=>P.av[v]),name:P.name.value,round_trip_km:rt,round_trip_min:rtm,skip:NV.skip,weather:true});NV.plan=j;msg(P.msg,j.routes.length?'':'żaden wariant się nie policzył',j.routes.length?'':'bad');results(j)}catch(e){msg(P.msg,e.message,'bad')}P.go.disabled=false}
