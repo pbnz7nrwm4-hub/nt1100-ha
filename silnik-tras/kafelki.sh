@@ -36,13 +36,20 @@ pobierz() {  # pobierz NAZWA URL
   curl -L --fail -sS --retry 3 -z "$D/$1" -o "$D/$1.nowy" "$2" || { rm -f "$D/$1.nowy"; [ -s "$D/$1" ]; return; }
   if [ -s "$D/$1.nowy" ]; then mv "$D/$1.nowy" "$D/$1"; else rm -f "$D/$1.nowy"; fi
 }
-pobierz water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip
+WODA="$D/water-polygons-split-3857.zip"
+if ! pobierz water-polygons-split-3857.zip https://osmdata.openstreetmap.de/download/water-polygons-split-3857.zip; then
+  # serwer morza bywa niedostępny: budujemy bez wypełnienia morza (jeziora i rzeki są z OSM),
+  # przy następnej przebudowie skrypt spróbuje znowu
+  echo "$(date '+%F %T') brak pliku z morzem (osmdata.openstreetmap.de nie odpowiada): mapa bez morza"
+  WODA="$D/morze-zastepcze.zip"
+  python3 "$KAT/bin/pusta_woda.py" "$WODA"
+fi
 pobierz natural_earth_vector.sqlite.zip https://dev.maptiler.download/geodata/omt/natural_earth_vector.sqlite.zip
 pobierz lake_centerline.shp.zip https://dev.maptiler.download/geodata/omt/lake_centerline.shp.zip
 rm -f "$KAT/www/kafelki.nowe.pmtiles"
 "$JAVA21" -Djava.net.preferIPv4Stack=true -Xmx"${PAMIEC_MAPY:-3g}" -jar "$KAT/planetiler.jar" \
   --osm-path="$WE" \
-  --water-polygons-path="$D/water-polygons-split-3857.zip" \
+  --water-polygons-path="$WODA" \
   --natural-earth-path="$D/natural_earth_vector.sqlite.zip" \
   --lake-centerlines-path="$D/lake_centerline.shp.zip" \
   --tmpdir="$D/tmp" --storage=mmap --nodemap-type=array \
