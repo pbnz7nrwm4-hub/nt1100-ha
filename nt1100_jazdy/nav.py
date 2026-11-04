@@ -779,7 +779,7 @@ class Nav:
             dist += part["dist_m"]
             tsec += part["time_s"]
         return {"pts": pts, "times": times, "instr": instr, "dist_m": dist, "time_s": tsec, "snapped": None,
-                "limits": limits}
+                "limits": limits, "leg_m": [int(p["dist_m"]) for p in parts]}
 
     def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
              legs=None):
@@ -813,6 +813,7 @@ class Nav:
             route["round_trip_km"] = round_trip_km
             if v == MIX[0]:
                 route["legs"] = list(legs)
+                route["leg_m"] = r.get("leg_m")
             return route
 
         # warianty liczą się naraz (silnik ma kilka rdzeni, pogoda i sieć czekają równolegle)

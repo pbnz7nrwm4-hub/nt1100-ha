@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.4.16"
+VERSION = "1.5.0"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1401,7 +1401,8 @@ class Base(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if "Cache-Control" not in (extra or {}):
+            self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -1414,7 +1415,8 @@ class Base(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(size))
-        self.send_header("Cache-Control", "no-store")
+        if "Cache-Control" not in (extra or {}):
+            self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
