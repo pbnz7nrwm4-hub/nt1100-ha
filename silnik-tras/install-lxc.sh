@@ -47,6 +47,7 @@ cp "$TU/mapa-serwer.py" "$KAT/bin/mapa-serwer.py"
 cp "$TU/aktualizuj.sh" "$KAT/bin/aktualizuj.sh"
 cp "$TU/kafelki.sh" "$KAT/bin/kafelki.sh"
 cp "$TU/dem.py" "$KAT/bin/dem.py"
+cp "$TU/pusta_woda.py" "$KAT/bin/pusta_woda.py"
 chmod +x "$KAT/bin/aktualizuj.sh" "$KAT/bin/kafelki.sh"
 # Ustawienia budowy; zmieniasz w $KAT/obszar.env (np. MAPA_DODATKOWE, MAPA_BUDYNKI).
 if [ ! -s "$KAT/obszar.env" ]; then
