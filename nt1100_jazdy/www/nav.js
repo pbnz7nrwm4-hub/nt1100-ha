@@ -346,7 +346,7 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
   if(bnds.length)fitRoute(L.latLngBounds(bnds));if(order.length){pick(order[0]);sheet('mid');setTimeout(()=>P.out.scrollIntoView({behavior:'smooth',block:'start'}),250)}}
 
 /* ---- GPX: arkusz udostępniania na telefonie (Wiadomości, WhatsApp, Pliki), na komputerze pobranie */
-async function shareGpx(id,name,osm){const r=await fetch('api/nav/gpx?id='+id+(osm||NV.data.settings.vehicle==='auto'?'&osmand=1':''));if(!r.ok)throw new Error('nie udało się pobrać GPX');const blob=await r.blob();
+async function shareGpx(id,name,osm){const r=await fetch('api/nav/gpx?id='+id);if(!r.ok)throw new Error('nie udało się pobrać GPX');const blob=await r.blob();
   const PL={ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z',Ą:'A',Ć:'C',Ę:'E',Ł:'L',Ń:'N',Ó:'O',Ś:'S',Ź:'Z',Ż:'Z'};
   const fn=((name||'trasa').replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g,c=>PL[c]).replace(/[^\w.\-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'trasa')+'.gpx';
   const file=new File([blob],fn,{type:'application/gpx+xml'});
