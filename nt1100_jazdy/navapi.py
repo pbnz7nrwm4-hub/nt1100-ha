@@ -6,7 +6,7 @@ Strona (Ingress, bez klucza):
        /api/nav/nearby?kinds&lat&lon (miejsca przed motocyklem), /api/nav/resolve?text, /api/nav/settings,
        /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
-       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/via (zjazd do miejsca)
+       /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
   GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
@@ -118,8 +118,36 @@ def nav_settings_apply(j):
             if lat is None or lon is None:
                 return "zly dom"
             cur["home"] = {"lat": lat, "lon": lon, "name": str(h.get("name") or "Dom")[:40]}
+    if "fav" in j:
+        fl = j["fav"]
+        if not isinstance(fl, list) or len(fl) > nav.FAV_MAX:
+            return "ulubione: najwyżej %d miejsc" % nav.FAV_MAX
+        out = []
+        for f in fl:
+            lat, lon = SRV.num((f or {}).get("lat")), SRV.num((f or {}).get("lon"))
+            name = str((f or {}).get("name") or "").strip()[:30]
+            if lat is None or lon is None or not name or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                return "zle ulubione miejsce"
+            if any(o["name"].lower() == name.lower() for o in out):
+                return "dwa ulubione o nazwie „%s”" % name
+            out.append({"lat": round(lat, 6), "lon": round(lon, 6), "name": name})
+        cur["fav"] = out
     SRV.save_state(nav=cur)
     return ""
+
+
+def fav_place(text):
+    """Ulubione miejsce (albo dom) po nazwie, np. „praca” – dla skrótu iPhone’a i „jedź do”."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    s = NAV.settings()
+    for f in s["fav"]:
+        if f["name"].lower() == t:
+            return {"lat": f["lat"], "lon": f["lon"], "name": f["name"]}
+    if s["home"] and t in ("dom", "do domu", (s["home"].get("name") or "").lower()):
+        return {"lat": s["home"]["lat"], "lon": s["home"]["lon"], "name": s["home"].get("name") or "Dom"}
+    return None
 
 
 def recent():
@@ -191,7 +219,7 @@ def route_summary(r, with_pts=True, full=False):
 def goto(text, variant=None, name=None):
     """Cel z tekstu/linku: trasa z pozycji motocykla (albo domu) i oznaczenie
     jako bieżąca dla ekranu."""
-    place = NAV.resolve_place(text)
+    place = fav_place(text) or NAV.resolve_place(text)
     if not place:
         raise ValueError("nie rozpoznałem miejsca w: %s" % (text or "")[:60])
     start = start_point()
@@ -385,7 +413,7 @@ def page_get(h, path, q):
                 return h.send(200, {"points": [], "no_map": True}) or True
             return h.send(200, {"points": NAV.along_route(route, kinds, max_m)}) or True
         if path == "/api/nav/resolve":
-            place = NAV.resolve_place((q.get("text") or "")[:500])
+            place = fav_place((q.get("text") or "")[:60]) or NAV.resolve_place((q.get("text") or "")[:500])
             if not place:
                 return h.send(404, {"error": "nie rozpoznałem miejsca"}) or True
             return h.send(200, {"place": place}) or True
@@ -398,7 +426,7 @@ def page_get(h, path, q):
         if path == "/api/nav/screen":
             return h.send(200, {"screen": NAV.screen_position()}) or True
         if path == "/api/nav/recent":
-            return h.send(200, {"recent": recent(), "home": NAV.settings()["home"]}) or True
+            return h.send(200, {"recent": recent(), "home": NAV.settings()["home"], "fav": NAV.settings()["fav"]}) or True
         if path == "/api/nav/plan":
             n = int(q.get("n", "0"))
             s = SRV.summary(n) or {}
@@ -531,6 +559,11 @@ def page_post(h, path, q, body):
             r = NAV.via_place(pos["lat"], pos["lon"], place)
             NAV.note_current(r["id"])
             return h.send(200, {"route": route_summary(r, False), "pos": pos}) or True
+        if path == "/api/nav/fav":
+            err = nav_settings_apply({"fav": j.get("fav")})
+            if err:
+                return h.send(400, {"error": err}) or True
+            return h.send(200, {"fav": NAV.settings()["fav"]}) or True
         if path == "/api/nav/home":
             err = nav_settings_apply({"home": j.get("home")})
             if err:

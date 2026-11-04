@@ -94,7 +94,8 @@ def curvy_name(deg_km, levels=None):
         if deg_km < lim:
             return name
     return CURVY_NAMES[-1]
-AVOID = ("gruntowe", "platne", "autostrady", "promy")
+AVOID = ("gruntowe", "szutrowe", "platne", "autostrady", "promy")
+FAV_MAX = 30
 MAX_ROUTE_PTS = 20000
 LOG = print
 
@@ -380,6 +381,7 @@ class Nav:
             "curvy_levels": curvy_levels(s.get("curvy_levels") or CURVY_LEVELS_DEFAULT),
             "avoid": s.get("avoid") if isinstance(s.get("avoid"), list) else ["gruntowe", "platne"],
             "home": s.get("home") if isinstance(s.get("home"), dict) else None,
+            "fav": [f for f in s.get("fav") if isinstance(f, dict)][:FAV_MAX] if isinstance(s.get("fav"), list) else [],
         }
 
     # ---- lista tras
@@ -697,10 +699,14 @@ class Nav:
             if variant == "bardzo":
                 pr.append({"if": "road_class == SECONDARY", "multiply_by": "0.8"})
                 pr.append({"if": "road_environment == TUNNEL", "multiply_by": "0.5"})
+        # gruntowe: polne i leśne (track, ziemia, trawa, piach); szutrowe: drogi publiczne
+        # z nawierzchnią szutrową/utwardzoną, legalne dla motocykla – osobna opcja
         if "gruntowe" in avoid:
-            pr.append({"if": "surface == UNPAVED || surface == GRAVEL || surface == DIRT || surface == GROUND || "
-                             "surface == GRASS || surface == SAND || surface == COMPACTED || surface == FINE_GRAVEL || "
-                             "road_class == TRACK", "multiply_by": "0.05"})
+            pr.append({"if": "road_class == TRACK || surface == UNPAVED || surface == DIRT || surface == GROUND || "
+                             "surface == GRASS || surface == SAND", "multiply_by": "0.05"})
+        if "szutrowe" in avoid:
+            pr.append({"if": "surface == GRAVEL || surface == FINE_GRAVEL || surface == COMPACTED",
+                       "multiply_by": "0.1"})
         if "platne" in avoid:
             pr.append({"if": "toll == ALL || toll == HGV", "multiply_by": "0.1"})
         if "autostrady" in avoid:

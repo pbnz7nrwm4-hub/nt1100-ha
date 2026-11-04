@@ -1,7 +1,7 @@
 # Silnik tras NT1100 (kontener Proxmox)
 
 Liczy trasy dla nawigacji (warianty: najszybciej / lekko kręto / kręto / bardzo kręto,
-omijanie gruntowych, płatnych, autostrad i promów, trasy okrężne, objazdy) i buduje
+omijanie gruntowych, szutrowych, płatnych, autostrad i promów, trasy okrężne, objazdy) i buduje
 mapę na kartę ekranu z danych OpenStreetMap. Dodatek Home Assistant „NT1100 Jazdy”
 łączy się z nim w sieci domowej; sam kontener nie musi być widoczny z internetu.
 
