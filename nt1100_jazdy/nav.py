@@ -299,6 +299,19 @@ def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+RT_KMH = {"szybko": 62, "lekko": 52, "kreto": 46, "bardzo": 41}  # typowa średnia na trasie okrężnej
+
+
+def circle(lat, lon, r_m, n=20):
+    """Wielokąt (lon, lat) przybliżający koło o promieniu r_m metrów."""
+    out = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        out.append([round(lon + r_m * math.sin(a) / (111320.0 * math.cos(math.radians(lat))), 6),
+                    round(lat + r_m * math.cos(a) / 110540.0, 6)])
+    return out + [out[0]]
+
+
 def file_crc(path):
     crc = 0
     with open(path, "rb") as f:
@@ -701,7 +714,7 @@ class Nav:
             di = int(round(70 - 0.65 * self.settings()["curvy"][variant]["dluzej"]))
         return {"priority": pr, "distance_influence": di}
 
-    def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None):
+    def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None, skip=None, seed=None):
         s = self.settings()
         if not s["engine_url"]:
             raise RuntimeError("brak adresu silnika tras w ustawieniach")
@@ -724,13 +737,19 @@ class Nav:
                 left.append([p[1] + dlon, p[0] + dlat])
                 right.append([p[1] - dlon, p[0] - dlat])
             ring = left + right[::-1] + [left[0]]
-            body["custom_model"]["areas"] = {"type": "FeatureCollection", "features": [
-                {"type": "Feature", "id": "objazd", "properties": {}, "geometry": {"type": "Polygon", "coordinates": [ring]}}]}
+            body["custom_model"].setdefault("areas", {"type": "FeatureCollection", "features": []})["features"].append(
+                {"type": "Feature", "id": "objazd", "properties": {}, "geometry": {"type": "Polygon", "coordinates": [ring]}})
             body["custom_model"]["priority"].insert(0, {"if": "in_objazd", "multiply_by": "0"})
+        for k, sp in enumerate(skip or []):
+            # pomiń miejscowość: koło wokół niej prawie zakazane (start w środku nadal da się wyjechać)
+            body["custom_model"].setdefault("areas", {"type": "FeatureCollection", "features": []})["features"].append(
+                {"type": "Feature", "id": "pomin%d" % k, "properties": {},
+                 "geometry": {"type": "Polygon", "coordinates": [circle(sp["lat"], sp["lon"], sp["r"])]}})
+            body["custom_model"]["priority"].insert(0, {"if": "in_pomin%d" % k, "multiply_by": "0.02"})
         if round_trip_km:
             body["algorithm"] = "round_trip"
             body["round_trip.distance"] = int(round_trip_km * 1000)
-            body["round_trip.seed"] = int(time.time()) % 1000
+            body["round_trip.seed"] = seed if seed is not None else int(time.time()) % 1000
             if heading is not None:
                 body["heading"] = [int(heading)]
         j = http_json(s["engine_url"] + "/route", body, timeout=90)
@@ -765,14 +784,14 @@ class Nav:
         return {"pts": pts, "times": [int(t) for t in times], "instr": instr, "dist_m": path.get("distance", 0),
                 "time_s": path.get("time", 0) / 1000.0, "snapped": path.get("snapped_waypoints"), "limits": limits}
 
-    def gh_mix(self, points, legs, avoid, heading=None):
+    def gh_mix(self, points, legs, avoid, heading=None, skip=None):
         """Trasa z odcinków liczonych osobno, każdy swoim wariantem
         (legs[i] = wariant odcinka points[i] → points[i+1]), sklejona w jedną."""
         if len(legs) != len(points) - 1:
             raise RuntimeError("zła liczba odcinków")
         pairs = [((points[i]["lat"], points[i]["lon"]), (points[i + 1]["lat"], points[i + 1]["lon"])) for i in range(len(legs))]
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(legs)))) as ex:
-            futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None)
+            futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None, skip)
                     for i, (pr, lv) in enumerate(zip(pairs, legs))]
             parts = [f.result() for f in futs]
         pts, times, instr, limits = [], [], [], []
@@ -795,11 +814,17 @@ class Nav:
                 "limits": limits, "leg_m": [int(p["dist_m"]) for p in parts]}
 
     def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
-             legs=None):
+             legs=None, skip=None, round_trip_min=None):
         """Warianty tras przez punkty [{lat, lon, name}]; zwraca listę tras
         (bez zapisu). Pierwszy punkt = start. legs = wariant każdego odcinka
-        (dodaje wariant „mix”, czyli „Mój plan”)."""
+        (dodaje wariant „mix”, czyli „Mój plan”). skip = [{lat, lon, r, name}]
+        miejscowości do pominięcia. round_trip_min = trasa okrężna na czas."""
         s = self.settings()
+        skip = list(skip or [])
+        if round_trip_km or round_trip_min:
+            points = points[:1]
+            legs = None
+        seed = int(time.time()) % 1000
         avoid = avoid if avoid is not None else s["avoid"]
         variants = list(variants or [v for v, _ in VARIANTS])
         if legs and not round_trip_km and len(legs) == len(points) - 1 and MIX[0] not in variants:
@@ -807,14 +832,26 @@ class Nav:
         errors = {}
 
         def one(v):
+            rt_km = round_trip_km
             if v == MIX[0]:
-                r = self.gh_mix(points, legs, avoid, heading)
+                r = self.gh_mix(points, legs, avoid, heading, skip)
+            elif round_trip_min:
+                # na czas: długość z typowej średniej wariantu, potem poprawka o różnicę czasu
+                rt_km = max(10.0, round_trip_min / 60.0 * RT_KMH.get(v, 50))
+                r = None
+                for _ in range(3):
+                    r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, rt_km, heading, skip, seed)
+                    got = r["time_s"] / 60.0 if r["time_s"] else None
+                    if not got or abs(got - round_trip_min) <= max(5, 0.12 * round_trip_min):
+                        break
+                    rt_km = max(10.0, min(1500.0, rt_km * round_trip_min / got))
             else:
-                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading)
+                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading, skip, seed)
             wps = []
-            for k, p in enumerate(points[1:] if not round_trip_km else []):
+            for k, p in enumerate(points[1:] if not (round_trip_km or round_trip_min) else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
-            route = self.build_route(r["pts"], name or self.auto_name(points, round_trip_km), "silnik", r["instr"], wps,
+            route = self.build_route(r["pts"], name or self.auto_name(points, round_trip_km, round_trip_min), "silnik",
+                                     r["instr"], wps,
                                      None, v, with_weather, limits_hint=r["limits"])
             # czas z silnika zamiast szacunku: przeskaluj na nasze punkty
             if r["time_s"]:
@@ -824,6 +861,10 @@ class Nav:
             route["avoid"] = avoid
             route["points"] = points
             route["round_trip_km"] = round_trip_km
+            if round_trip_min:
+                route["round_trip_min"] = round_trip_min
+            if skip:
+                route["skip"] = skip
             if v == MIX[0]:
                 route["legs"] = list(legs)
                 route["leg_m"] = r.get("leg_m")
@@ -841,7 +882,10 @@ class Nav:
         return out, errors
 
     @staticmethod
-    def auto_name(points, round_trip_km=None):
+    def auto_name(points, round_trip_km=None, round_trip_min=None):
+        if round_trip_min:
+            h, m = divmod(int(round_trip_min), 60)
+            return "Okrężna " + ("%d h" % h if h else "") + (" %d min" % m if m else "")
         if round_trip_km:
             return "Okrężna %d km" % int(round_trip_km)
         names = [p.get("name") for p in points if p.get("name")]
@@ -896,7 +940,8 @@ class Nav:
             if avoid_km and tail:
                 tail = [tail[0]] + tail
             legs = tail if len(tail) == n else [self.settings()["default_variant"]] * n
-        routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs)
+        routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs,
+                                   skip=route.get("skip"))
         self._avoid_segment = []
         if not routes:
             raise RuntimeError(errors.get(variant) or "silnik nie policzył objazdu")
@@ -1000,7 +1045,11 @@ class Nav:
             parts = [x for x in (p.get("street"), p.get("housenumber"), p.get("city") or p.get("town") or p.get("village"),
                                  p.get("county"), p.get("country")) if x]
             label = ", ".join(dict.fromkeys([name] + parts)) if name else ", ".join(parts)
-            out.append({"name": name or label, "label": label, "lat": c[1], "lon": c[0], "type": p.get("osm_value")})
+            item = {"name": name or label, "label": label, "lat": c[1], "lon": c[0], "type": p.get("osm_value")}
+            ext = p.get("extent")  # [zachód, północ, wschód, południe] dla miejscowości i obszarów
+            if isinstance(ext, list) and len(ext) == 4:
+                item["extent"] = ext
+            out.append(item)
         return out
 
     def reverse(self, lat, lon):
