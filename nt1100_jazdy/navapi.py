@@ -125,12 +125,34 @@ def bike_position(q_lat=None, q_lon=None):
     return None
 
 
-def route_summary(r, with_pts=True):
+DEMO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-trasa.json")
+
+
+def demo_route():
+    """Trasa demo (Bieruń – Pszczyna, 22 km) z fotoradarem, odcinkowym pomiarem
+    i postojem; czasy pogody są względne, tu przesunięte na teraz."""
+    with open(DEMO_PATH, encoding="utf-8") as f:
+        r = json.load(f)
+    now = int(time.time())
+    for w in r.get("weather") or []:
+        w["t"] = now + int(w.get("t") or 0)
+    r.pop("id", None)
+    r.pop("version", None)
+    r.pop("created", None)
+    return r
+
+
+def route_summary(r, with_pts=True, full=False):
     out = {k: r.get(k) for k in ("id", "name", "variant", "source", "dist_m", "time_s", "curvy", "waypoints", "turns",
                                  "limits", "cameras", "weather", "avoid", "points", "version", "created", "round_trip_km")}
     out["km"] = round((r.get("dist_m") or 0) / 1000, 1)
     out["min"] = int((r.get("time_s") or 0) / 60)
-    if with_pts:
+    if with_pts and full:
+        # symulacja w przeglądarce: każdy punkt, odległości i czasy (indeksy wskazówek pasują 1:1)
+        out["pts"] = [[round(p[0], 6), round(p[1], 6)] for p in r["pts"]]
+        out["cum"] = r.get("cum")
+        out["times"] = r.get("times")
+    elif with_pts:
         # co 3. punkt wystarczy na mapę w przeglądarce (ekran dostaje pełną paczkę)
         pts = r["pts"]
         out["pts"] = [[round(p[0], 5), round(p[1], 5)] for p in pts[::3]] + [[round(pts[-1][0], 5), round(pts[-1][1], 5)]]
@@ -182,7 +204,7 @@ def page_get(h, path, q):
             r = NAV.route(int(q.get("id", "0")))
             if not r:
                 return h.send(404, {"error": "brak trasy"}) or True
-            return h.send(200, route_summary(r)) or True
+            return h.send(200, route_summary(r, full=q.get("full") == "1")) or True
         if path == "/api/nav/gpx":
             r = NAV.route(int(q.get("id", "0")))
             if not r:
@@ -303,6 +325,9 @@ def page_post(h, path, q, body):
             for k in [k for k, v in PLANS.items() if time.time() - v[0] > 3600]:
                 PLANS.pop(k, None)
             return h.send(200, {"token": token, "routes": [route_summary(r) for r in routes], "errors": errors}) or True
+        if path == "/api/nav/demo":
+            rid = NAV.store_route(demo_route(), make_current=bool(j.get("current")))
+            return h.send(200, {"id": rid}) or True
         if path == "/api/nav/send":
             plan = PLANS.get(j.get("token") or "")
             if not plan:

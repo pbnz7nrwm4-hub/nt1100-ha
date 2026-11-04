@@ -176,6 +176,8 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
 /* ---- zapisane trasy */
 let RC=null;
 function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='';RC.append(el('b',null,'Zapisane trasy'));const d=NV.data;
+  const dm=el('div','acts');dm.style.margin='4px 0 8px';const db=el('button',null,'Dodaj trasę demo (Bieruń – Pszczyna, 22 km)');db.title='Przykładowa trasa z rondami, fotoradarem, odcinkowym pomiarem i postojem. Możesz ją puścić w „Symulacji” albo wysłać na ekran.';
+  db.onclick=async()=>{db.disabled=true;try{const j=await post('api/nav/demo',{});NV.data=await J('api/nav/routes');routesCard(null);const r=NV.data.routes.find(x=>x.id===j.id);if(r)simulate(r)}catch(e){alert(e.message)}db.disabled=false};dm.append(db);RC.append(dm);
   if(!d.routes.length){RC.append(el('p','mut','Jeszcze nic nie zaplanowano.'));return}
   for(const r of d.routes){const row=el('div','nrt');const tx=el('div','tx');const t=el('span',null,r.name||('trasa '+r.id));tx.append(t);if(r.id===d.current)tx.append(' ',el('span','cur','na ekranie'));
     tx.append(el('small','mut',r.km+' km · '+dur(r.min)+(r.variant?' · '+((d.variants.find(x=>x[0]===r.variant)||[0,r.variant])[1]).toLowerCase():'')+(r.source?' · '+r.source:'')+' · '+when(r.created)));
@@ -183,7 +185,85 @@ function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='
     const cu=el('button',null,r.id===d.current?'Zdejmij z ekranu':'Na ekran');cu.onclick=async()=>{try{await post('api/nav/current',{id:r.id===d.current?0:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
     const gx=el('a');gx.href='api/nav/gpx?id='+r.id;gx.textContent='GPX';gx.className='chip';gx.download='';
     const rm=el('button','warn','Usuń');rm.onclick=async()=>{if(!confirm('Usunąć trasę „'+(r.name||r.id)+'”?'))return;try{await post('api/nav/delete',{id:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
-    a.append(sh,cu,gx,rm);row.append(tx,a);RC.append(row)}}
+    const sm=el('button',null,'Symulacja');sm.title='Przejazd trasy na niby: mapa i podgląd ekranu z kierownicy';sm.onclick=()=>simulate(r);
+    a.append(sh,sm,cu,gx,rm);row.append(tx,a);RC.append(row)}}
+
+/* ---- symulacja przejazdu (to samo co „Demo trasy” na ekranie, w przeglądarce) */
+const SIM={};
+const ARW={0:'↑',1:'↗',2:'←',3:'↙',4:'↗',5:'→',6:'↘',7:'↶',8:'⟳',9:'↖',10:'↗',11:'•',12:'⚑',13:'⛴'};
+const ARWL={1:'↖',4:'↗'};
+const TTX={0:'prosto',1:'lekko w lewo',2:'w lewo',3:'ostro w lewo',4:'lekko w prawo',5:'w prawo',6:'ostro w prawo',7:'zawróć',8:'rondo',9:'trzymaj się lewej',10:'trzymaj się prawej',11:'punkt trasy',12:'cel',13:'prom'};
+function arrow(t){return ARWL[t]||ARW[t]||'↑'}
+function brg(a,b){const y=Math.sin((b[1]-a[1])*Math.PI/180)*Math.cos(b[0]*Math.PI/180),x=Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos((b[1]-a[1])*Math.PI/180);return (Math.atan2(y,x)*180/Math.PI+360)%360}
+function adiff(a,b){return ((b-a+540)%360)-180}
+function fdist(m){m=Math.max(0,m);return m<950?(Math.round(m/10)*10)+' m':m<9950?(m/1000).toFixed(1).replace('.',',')+' km':Math.round(m/1000)+' km'}
+function simStop(){if(SIM.timer)clearInterval(SIM.timer);SIM.timer=null;if(SIM.map){SIM.map.remove();SIM.map=null}if(SIM.card){SIM.card.remove();SIM.card=null}}
+async function simulate(r0){simStop();let r;try{r=await J('api/nav/route?id='+r0.id+'&full=1')}catch(e){alert(e.message);return}
+  if(!r.pts||r.pts.length<2||!r.cum){alert('ta trasa nie ma punktów');return}
+  const k=el('div','card');SIM.card=k;const anchor=RC||document.getElementById('v-nav');anchor.after(k);
+  const hd=el('div','nrow');hd.append(el('b',null,'Symulacja: '+(r.name||'trasa')));k.append(hd);
+  k.append(el('p','mut','Przejazd na niby, bez skrzynki: „motocykl” trzyma limity, zwalnia przed zakrętami, staje na pierwszym punkcie po drodze. Po prawej to, co pokazałby ekran na kierownicy (uproszczone). Na prawdziwym ekranie to samo robi „Demo trasy”.'));
+  const wrap=el('div');wrap.style.cssText='display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start';
+  const md=el('div');md.style.cssText='flex:1 1 320px;height:300px;border-radius:10px;background:var(--card2)';
+  const cv=document.createElement('canvas');cv.width=320;cv.height=240;cv.style.cssText='flex:0 0 auto;width:320px;max-width:100%;border-radius:10px;border:6px solid #222;background:#000';
+  wrap.append(md,cv);k.append(wrap);
+  const ctl=el('div','chips');const speeds=[1,4,10];const btn={};for(const x of speeds){const b=el('span','chip'+(x===4?' on':''),'×'+x);b.onclick=()=>{SIM.k=x;for(const y of speeds)btn[y].className='chip'+(y===x?' on':'')};btn[x]=b;ctl.append(b)}
+  const pa=el('span','chip','pauza');pa.onclick=()=>{SIM.pause=!SIM.pause;pa.className='chip'+(SIM.pause?' on':'')};const rs=el('span','chip','od początku');rs.onclick=()=>{S.s=0;S.v=0;S.stopUntil=0;S.stopDone=false;S.arrived=false;S.t=0};const en=el('span','chip','zamknij');en.onclick=simStop;
+  ctl.append(pa,rs,en);k.append(ctl);
+  const pts=r.pts,cum=r.cum,n=pts.length,LEN=cum[n-1];
+  // prędkość dopuszczalna w punktach: limit, zakręty (~4,2 m/s² w bok), hamowanie
+  const cap=new Array(n).fill(80/3.6),cur=new Array(n).fill(0),hdg=new Array(n);
+  let li=0,lim=0;const lims=r.limits||[];for(let i=0;i<n;i++){while(li<lims.length&&lims[li].idx<=i)lim=lims[li++].kmh;if(lim)cap[i]=lim/3.6}
+  for(let i=0;i<n;i++){let a=i,b=i;while(a>0&&cum[i]-cum[a]<12)a--;while(b<n-1&&cum[b]-cum[i]<12)b++;hdg[i]=a===b?0:brg(pts[a],pts[b])}
+  for(let i=1;i<n-1;i++){let a=i,b=i;while(a>0&&cum[i]-cum[a]<15)a--;while(b<n-1&&cum[b]-cum[i]<15)b++;const ds=cum[b]-cum[a];if(ds<5)continue;const kk=adiff(hdg[a],hdg[b])*Math.PI/180/ds;cur[i]=kk;if(Math.abs(kk)>1e-4)cap[i]=Math.min(cap[i],Math.max(3,Math.sqrt(4.2/Math.abs(kk))))}
+  const wps=r.waypoints||[];const via=wps.find(w=>w.kind===1&&w.idx>0&&w.idx<n-1);const stopAt=via?cum[via.idx]:-1;if(via)cap[via.idx]=0;cap[n-1]=0;
+  for(let i=n-2;i>=0;i--){const v=Math.sqrt(cap[i+1]*cap[i+1]+2*2.2*(cum[i+1]-cum[i]));if(v<cap[i])cap[i]=v}
+  const S={s:0,v:0,lean:0,stopUntil:0,stopDone:false,arrived:false,t:0,leanMax:0,inCorner:false,calm:0,leanShow:0,leanRes:0};SIM.k=4;SIM.pause=false;
+  const idxAt=s=>{let lo=0,hi=n-1;while(lo<hi){const m=(lo+hi+1)>>1;if(cum[m]<=s)lo=m;else hi=m-1}return lo};
+  const at=(arr,s)=>{const i=idxAt(s);if(i>=n-1)return arr[n-1];const t=(s-cum[i])/Math.max(1,cum[i+1]-cum[i]);return arr[i]+(arr[i+1]-arr[i])*t};
+  const posAt=s=>{s=Math.max(0,Math.min(LEN,s));const i=idxAt(s);if(i>=n-1)return pts[n-1];const t=(s-cum[i])/Math.max(1,cum[i+1]-cum[i]);return [pts[i][0]+(pts[i+1][0]-pts[i][0])*t,pts[i][1]+(pts[i+1][1]-pts[i][1])*t]};
+  if(!(await loadLeaflet())){md.replaceWith(el('p','mut','Mapa wymaga internetu (OpenStreetMap).'))}
+  else{SIM.map=L.map(md,{zoomControl:true});L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(SIM.map);L.polyline(pts,{color:'#3d8bfd',weight:5,opacity:.8}).addTo(SIM.map);
+    for(const c of r.cameras||[])if(c.type!==3)L.circleMarker(pts[c.idx],{radius:7,color:'#fff',weight:2,fillColor:'#e03131',fillOpacity:1}).bindTooltip(c.type===2?'odcinkowy '+c.limit:'fotoradar '+c.limit).addTo(SIM.map);
+    SIM.mk=L.circleMarker(pts[0],{radius:9,color:'#fff',weight:3,fillColor:'#f76707',fillOpacity:1}).addTo(SIM.map);SIM.map.setView(pts[0],15)}
+  const cams=r.cameras||[],turns=(r.turns||[]).filter(t=>t.type!==0&&t.type!==11);
+  let secEnd=-1,secStartT=0,secStartS=0,secLim=0,last=performance.now(),lastPan=0;
+  const ctx=cv.getContext('2d');
+  function step(dt){if(S.arrived)return;if(S.stopUntil){if(S.t>=S.stopUntil){S.stopUntil=0;S.stopDone=true;S.s+=1}return}
+    for(let left=dt;left>1e-6;){const h=Math.min(0.1,left);left-=h;
+      if(stopAt>=0&&!S.stopDone&&S.s<stopAt&&stopAt-S.s<4){S.s=stopAt;S.v=0;S.stopUntil=S.t+40;break}
+      if(LEN-S.s<3){S.s=LEN;S.v=0;S.arrived=true;break}
+      const vt=Math.max(1.5,at(cap,S.s)+(S.stopDone&&Math.abs(S.s-stopAt)<5?3:0));S.v=S.v<vt?Math.min(vt,S.v+1.8*h):Math.max(vt,S.v-3.3*h);S.s+=S.v*h;if(stopAt>=0&&!S.stopDone&&S.s>stopAt)S.s=stopAt}
+    const tgt=Math.atan(S.v*S.v*at(cur,S.s)/9.81)*180/Math.PI;S.lean+=(tgt-S.lean)*Math.min(1,dt/0.6)}
+  function view(){const s=S.s,i=idxAt(s),kmh=S.v*3.6,o={};
+    o.limit=0;for(const l of lims){if(l.idx<=i)o.limit=l.kmh;else break}
+    o.turn=null;o.turn2=null;for(const t of turns){if(t.idx<=i&&t.type!==12)continue;const d=cum[t.idx]-s;if(!o.turn)o.turn=Object.assign({d},t);else{o.turn2=Object.assign({d},t);break}}
+    o.cam=null;if(secEnd>=0){if(i>=secEnd)secEnd=-1;else o.cam={sec:true,limit:secLim,left:cum[secEnd]-s,avg:S.t-secStartT>2?(s-secStartS)/(S.t-secStartT)*3.6:kmh}}
+    if(!o.cam)for(const c of cams){if(c.idx<=i){if(c.type===2&&c.idx+1>=i&&secEnd<0){secEnd=(cams.find(e=>e.type===3&&e.idx>c.idx)||{idx:n-1}).idx;secStartT=S.t;secStartS=s;secLim=c.limit}continue}if(c.type===3)continue;const d=cum[c.idx]-s;if(d<=1000)o.cam={sec:false,type:c.type,limit:c.limit,d};break}
+    const a=Math.abs(S.lean);if(a>=10&&kmh>15){if(!S.inCorner){S.inCorner=true;S.leanMax=0}if(a>Math.abs(S.leanMax))S.leanMax=S.lean;S.calm=0}else if(S.inCorner&&a<8){if(!S.calm)S.calm=S.t;if(S.t-S.calm>=1.5){S.inCorner=false;if(Math.abs(S.leanMax)>=20){S.leanRes=S.leanMax;S.leanShow=S.t+4}}}
+    o.wp=null;let no=0;for(const w of wps){no++;if(w.idx>i+1||(w.kind===2&&w.idx>=i)){o.wp={no,d:cum[w.idx]-s,name:w.name};break}}
+    o.v=S.arrived?'cel':o.cam?'cam':(o.turn&&(o.turn.d<=500||(kmh>5&&o.turn.d/(kmh/3.6)<=30)))?'turn':S.t<S.leanShow?'lean':'map';
+    return o}
+  function draw(o){const W=320,H=240,kmh=Math.round(S.v*3.6);ctx.fillStyle='#101418';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#1f2a36';ctx.fillRect(0,0,W,26);ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.textBaseline='middle';ctx.textAlign='left';
+    const d=new Date();ctx.fillText(String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'),6,13);ctx.textAlign='right';ctx.fillText(kmh+' km/h',120,13);
+    ctx.font='13px sans-serif';const prog=o.wp&&o.wp.no<wps.length?'P'+o.wp.no+' '+fdist(o.wp.d)+' · cel '+fdist(LEN-S.s):'cel '+fdist(LEN-S.s);ctx.fillText(prog,W-6,13);
+    const my=26,mh=178;ctx.textAlign='center';
+    if(o.v==='turn'){const t=o.turn;ctx.fillStyle='#fff';ctx.font='bold 110px sans-serif';ctx.textAlign='left';ctx.fillText(arrow(t.type),14,my+mh/2);ctx.textAlign='right';ctx.font='bold 44px sans-serif';ctx.fillText(fdist(t.d),W-12,my+60);ctx.font='17px sans-serif';ctx.fillText((t.type===8&&t.exit?t.exit+'. zjazd · ':'')+(t.text||TTX[t.type]||''),W-12,my+108);if(o.turn2&&o.turn2.d-t.d<700){ctx.fillStyle='#9aa7b4';ctx.font='15px sans-serif';ctx.fillText('potem '+arrow(o.turn2.type)+' za '+fdist(o.turn2.d-t.d),W-12,my+140)}}
+    else if(o.v==='cam'){const c=o.cam;ctx.fillStyle='#e03131';ctx.fillRect(0,my,W,mh);ctx.fillStyle='#fff';ctx.font='bold 20px sans-serif';ctx.fillText(c.sec?'ODCINKOWY POMIAR':(c.type===2?'ODCINEK ZA':'FOTORADAR'),W/2,my+26);
+      ctx.beginPath();ctx.arc(70,my+100,42,0,7);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=8;ctx.strokeStyle='#c92a2a';ctx.stroke();ctx.fillStyle='#000';ctx.font='bold 34px sans-serif';ctx.fillText(c.limit||'?',70,my+102);
+      ctx.fillStyle='#fff';ctx.textAlign='right';ctx.font='bold 38px sans-serif';if(c.sec){ctx.fillText('śr. '+Math.round(c.avg),W-14,my+88);ctx.font='16px sans-serif';ctx.fillText('do końca '+fdist(c.left),W-14,my+128)}else ctx.fillText(fdist(c.d),W-14,my+100)}
+    else if(o.v==='lean'){ctx.fillStyle='#fff';ctx.font='bold 64px sans-serif';ctx.fillText(Math.round(Math.abs(S.leanRes))+'°',W/2,my+75);ctx.fillStyle='#9aa7b4';ctx.font='18px sans-serif';ctx.fillText('zakręt '+(S.leanRes<0?'w lewo':'w prawo'),W/2,my+125)}
+    else if(o.v==='cel'){ctx.fillStyle='#fff';ctx.font='bold 26px sans-serif';ctx.fillText('Jesteś na miejscu',W/2,my+80);ctx.fillStyle='#9aa7b4';ctx.font='15px sans-serif';ctx.fillText(r.name||'',W/2,my+115)}
+    else{ctx.fillStyle='#9aa7b4';ctx.font='15px sans-serif';ctx.fillText(S.stopUntil?'postój – ekran pokaże strony postoju':'mapa (jak na mapie obok)',W/2,my+80);ctx.fillStyle='#fff';ctx.font='bold 28px sans-serif';ctx.fillText('przechył '+Math.round(Math.abs(S.lean))+'°',W/2,my+120)}
+    const y0=H-36;ctx.fillStyle='#1f2a36';ctx.fillRect(0,y0,W,36);
+    if(o.limit){ctx.beginPath();ctx.arc(22,y0+18,15,0,7);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=4;ctx.strokeStyle='#c92a2a';ctx.stroke();ctx.fillStyle='#000';ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText(o.limit,22,y0+19)}
+    if(o.turn){ctx.fillStyle='#fff';ctx.textAlign='left';ctx.font='bold 26px sans-serif';ctx.fillText(arrow(o.turn.type),48,y0+18);ctx.font='bold 15px sans-serif';ctx.fillText(fdist(o.turn.d),82,y0+11);ctx.font='12px sans-serif';ctx.fillText((o.turn.text||TTX[o.turn.type]||'').slice(0,26),82,y0+27)}
+    if(o.cam){ctx.beginPath();ctx.arc(W-20,y0+18,11,0,7);ctx.fillStyle='#e03131';ctx.fill()}
+    ctx.fillStyle='#f59f00';ctx.fillRect(W-110,y0-24,104,20);ctx.fillStyle='#000';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.fillText('SYMULACJA ×'+SIM.k,W-58,y0-14)}
+  SIM.timer=setInterval(()=>{if(!SIM.card||!document.body.contains(SIM.card)){simStop();return}const now=performance.now();const dt=Math.min(1,(now-last)/1000);last=now;if(SIM.pause)return;const k=dt*SIM.k;S.t+=k;step(k);const o=view();draw(o);
+    if(SIM.mk){const p=posAt(S.s);SIM.mk.setLatLng(p);if(now-lastPan>700){lastPan=now;SIM.map.panTo(p,{animate:true,duration:.6})}}},100);
+  k.scrollIntoView({behavior:'smooth',block:'start'})}
 
 /* ---- ustawienia */
 async function setHome(h){try{const j=await post('api/nav/home',{home:h});NV.data.settings.home=j.home;if(SF.home)SF.home.textContent=j.home?(j.home.name+' · '+j.home.lat.toFixed(4)+', '+j.home.lon.toFixed(4)):'nie ustawiony';if(NV.map&&j.home){if(NV.homeMk)NV.homeMk.remove();NV.homeMk=L.circleMarker([j.home.lat,j.home.lon],{radius:7,color:'#fff',fillColor:'#7950f2',fillOpacity:1}).bindTooltip('dom').addTo(NV.map)}}catch(e){alert(e.message)}}
