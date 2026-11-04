@@ -11,9 +11,26 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 - Klucz i adresy do wpisania w skrzynce: zakładka **Ustawienia** w panelu dodatku.
 - Zdarzenie `nt1100_nowa_jazda` (z podsumowaniem i problemami jazdy) do własnych automatyzacji.
 
+## Układ panelu (od 1.5.0)
+
+Cztery zakładki na dole ekranu:
+
+- **Jazdy**: lista jazd i **Statystyki** (przełącznik u góry).
+- **Trasy**: mapa na cały ekran z wysuwanym panelem (pociągnij uchwyt albo stuknij go:
+  pół ekranu → cały → sama mapa). Wyszukiwarka nad mapą, gdy motocykl jest w trasie,
+  u góry pasek „W trasie”.
+- **Motocykl**: stan skrzynki, ekranu i silnika tras, przebieg i serwis, parking, skan,
+  wersje oprogramowania.
+- **Ustawienia**: wszystkie ustawienia w zwijanych grupach, razem z ustawieniami nawigacji.
+
+**Mapa** jest wektorowa, w barwach dodatku (ciemna albo jasna według motywu HA), z cieniowaniem
+gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował własne kafelki, mapa
+pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
+dla przeglądarki ze zwykłej mapy OpenStreetMap.
+
 ## Wersje oprogramowania
 
-Zakładka **Stan** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
+Zakładka **Motocykl** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
 ekran i silnik tras: zainstalowaną wersję, najnowszą i co zrobić, gdy jest nowsza (żółta kropka,
 u góry strony znaczek „nowa wersja”). Aktualizujesz tylko dodatek: skrzynka pobiera swoją wersję
 sama w domowym Wi-Fi, a ekran z Menu → Sprawdź wersję → Aktualizuj.
@@ -42,7 +59,7 @@ Bez MQTT najważniejsze czujniki `sensor.nt1100_*` są ustawiane bezpośrednio (
 - **Pogoda na trasie**: Open-Meteo (historia, bez konta) dla startu, co ok. 30 min i końca.
 - **Przebieg i serwis**: stan licznika wpisany raz, dalej liczony z jazd; pozycje serwisowe.
 
-## Nawigacja (zakładka „Nawigacja”)
+## Nawigacja (zakładka „Trasy”)
 
 Planowanie tras dla ekranu nawigacji na kierownicy. Trasy liczy silnik tras w kontenerze
 Proxmox (katalog `silnik-tras/` w repozytorium, instrukcja w jego README); bez niego działa
@@ -57,14 +74,14 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Krętość po swojemu**: w ustawieniach nawigacji suwaki każdego wariantu (unikaj głównych,
   szukaj zakrętów, dłuższa trasa) i progi opisu krętości w °/km (prosta / lekko kręta /
   kręta / bardzo kręta; dotyczą tras i jazd).
-- **Mój plan**: przy 3 i więcej punktach między punktami wybierasz wariant odcinka (np. dojazd
-  szybko, potem bardzo kręto). Dodatek liczy każdy odcinek osobno i skleja je w dodatkową
-  trasę „Mój plan”; objazd z ekranu zachowuje wariant pozostałych odcinków.
-- **Mapa po policzeniu jest zablokowana**: na telefonie jeden palec przewija stronę, dwoma
-  palcami powiększasz; kliknięcie nie dodaje punktów. 🔒 w rogu odblokowuje edycję,
-  ⤢ wraca do widoku całej trasy, ⛶ otwiera mapę na pełnym ekranie (przesuwanie jednym palcem,
-  strona pod spodem stoi; ✕ albo gest „wstecz” zamyka). Gest „wstecz” w aplikacji HA nie
-  wyrzuca z zakładki Nawigacja.
+- **Mój plan**: przy 3 i więcej punktach między każdymi dwoma punktami jest przycisk krętości
+  odcinka; stuknięcie otwiera wybór (najszybciej / lekko kręto / kręto / bardzo kręto / jak cała
+  trasa), a odcinki na mapie mają kolor wybranego wariantu (np. dojazd szybko, potem bardzo kręto). Dodatek liczy każdy odcinek osobno i skleja je w dodatkową
+  trasę „Mój plan” (pierwsza karta, z paskiem udziału wariantów); objazd z ekranu zachowuje wariant pozostałych odcinków.
+- **Mapa po policzeniu jest zablokowana** dla punktów: przesuwasz i powiększasz ją normalnie,
+  ale kliknięcie nie dodaje punktów, a punktów nie da się przeciągnąć. 🔒 w rogu odblokowuje
+  edycję, ⤢ wraca do widoku całej trasy, ⛶ chowa panel (sama mapa). Gest „wstecz” w aplikacji HA
+  nie wyrzuca z zakładki Trasy.
 - **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
   Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
 - **GPX dla kolegi**: przycisk „GPX” przy policzonym wariancie (zapisuje trasę bez wysyłania
@@ -99,7 +116,7 @@ mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze ur
 ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło `nt1100ekran`); na stronie
 `http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu
 (`http://IP-HA:8098`), adres spoza domu i klucz. Dodatek pokazuje ekran w zakładce
-Nawigacja (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
+Motocykl (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
 (`ekran.bin`, w domu, przy ładowaniu). Na postoju ekran ma strony Stan / Pogoda / Jazda / Menu
 (jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); przytrzymanie ekranu
 1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km / Tankowanie / Jedzenie”.
@@ -131,7 +148,7 @@ dojechaniu do celu. Mapa na karcie jest potrzebna tylko do tła mapy, nazw dróg
 
 **Usypianie i bateria** (ekran od 1.0.3): ekran gaśnie 3 min po tym, jak skrzynka przestanie nadawać (30 min przy ładowaniu), albo po 10 min postoju bez ruchu. Wcześniej przez 10 s pokazuje „Wyłączam się”, a dotknięcie to odwołuje. Nie gaśnie w trakcie pobierania ani w trybie demo. Budzi się dotykiem, po podłączeniu ładowania i sam po włączeniu motocykla (co 30 s nasłuchuje skrzynki, po 6 h co 2 min). Ikonka baterii ma błyskawicę przy ładowaniu (ładowanie jest rozpoznawane z napięcia). Poniżej 15% ekran pokazuje „Słaba bateria”, a poniżej 3,4 V wyłącza się.
 
-**Symulacja w przeglądarce** (dodatek od 1.4.5): w zakładce Nawigacja → Zapisane trasy
+**Symulacja w przeglądarce** (dodatek od 1.4.5): w zakładce Trasy → Zapisane trasy
 przycisk „Dodaj trasę demo” zapisuje tę samą trasę Bieruń – Pszczyna (z fotoradarem,
 odcinkowym pomiarem i postojem; „Na ekran” wysyła ją na ekran). Przycisk „Symulacja” przy
 każdej trasie odtwarza przejazd na mapie i obok pokazuje uproszczony podgląd ekranu
