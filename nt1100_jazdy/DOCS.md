@@ -11,6 +11,13 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 - Klucz i adresy do wpisania w skrzynce: zakładka **Ustawienia** w panelu dodatku.
 - Zdarzenie `nt1100_nowa_jazda` (z podsumowaniem i problemami jazdy) do własnych automatyzacji.
 
+## Wersje oprogramowania
+
+Zakładka **Stan** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
+ekran i silnik tras: zainstalowaną wersję, najnowszą i co zrobić, gdy jest nowsza (żółta kropka,
+u góry strony znaczek „nowa wersja”). Aktualizujesz tylko dodatek: skrzynka pobiera swoją wersję
+sama w domowym Wi-Fi, a ekran z Menu → Sprawdź wersję → Aktualizuj.
+
 ## Urządzenie NT1100 (MQTT)
 
 Gdy w Home Assistant działa broker MQTT (dodatek Mosquitto), dodatek sam pobiera jego adres
@@ -47,8 +54,22 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Warianty**: najszybciej / lekko kręto / kręto / bardzo kręto liczone obok siebie
   (km, czas, krętość, fotoradary, deszcz na trasie); omijanie dróg gruntowych, płatnych,
   autostrad i promów; trasa okrężna o zadanej długości.
+- **Krętość po swojemu**: w ustawieniach nawigacji suwaki każdego wariantu (unikaj głównych,
+  szukaj zakrętów, dłuższa trasa) i progi opisu krętości w °/km (prosta / lekko kręta /
+  kręta / bardzo kręta; dotyczą tras i jazd).
+- **Mój plan**: przy 3 i więcej punktach między punktami wybierasz wariant odcinka (np. dojazd
+  szybko, potem bardzo kręto). Dodatek liczy każdy odcinek osobno i skleja je w dodatkową
+  trasę „Mój plan”; objazd z ekranu zachowuje wariant pozostałych odcinków.
+- **Mapa po policzeniu jest zablokowana**: na telefonie jeden palec przewija stronę, dwoma
+  palcami powiększasz; kliknięcie nie dodaje punktów. 🔒 w rogu odblokowuje edycję,
+  ⤢ wraca do widoku całej trasy, ⛶ otwiera mapę na pełnym ekranie (przesuwanie jednym palcem,
+  strona pod spodem stoi; ✕ albo gest „wstecz” zamyka). Gest „wstecz” w aplikacji HA nie
+  wyrzuca z zakładki Nawigacja.
 - **Wyślij na ekran**: trasa trafia na ekran przy najbliższym połączeniu (dom albo hotspot).
   Zapisane trasy można pokazać, ustawić na ekran, pobrać jako GPX albo usunąć.
+- **GPX dla kolegi**: przycisk „GPX” przy policzonym wariancie (zapisuje trasę bez wysyłania
+  na ekran) albo przy zapisanej trasie. Na telefonie otwiera się arkusz udostępniania
+  (Wiadomości, WhatsApp, Pliki), na komputerze plik się pobiera.
 - **Skrót iPhone’a „Wyślij na motocykl”**: udostępnij miejsce z Map do skrótu, który
   otwiera adres `ADRES-SPOZA-DOMU/api/nav/goto?klucz=KLUCZ&text=LINK` (klucz i adres
   w zakładce Ustawienia). Trasa liczy się z pozycji motocykla domyślnym wariantem.
