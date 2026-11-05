@@ -221,6 +221,7 @@ async function search(){let q=P.q.value.trim();if(!q)return;const sk=/^(pomi[nń
 /* ---- mapa */
 async function initMap(){const div=document.getElementById('navmap');if(!div)return;const ok=await loadLeaflet();if(!ok){div.replaceWith(el('p','mut','Mapa wymaga internetu (OpenStreetMap).'));return}
   try{NV.map=L.map(div,{zoomControl:!(L.Browser.touch&&(navigator.maxTouchPoints||0)>0)});baseLayer(NV.map);
+    if(window.ResizeObserver)new ResizeObserver(()=>{if(!NV.map)return;NV.map.invalidateSize(false);if(NV.pendingFit)safeFit(NV.pendingFit)}).observe(div);
     const S=NV.data.settings,c=NV.pts[0]||S.home||{lat:52.1,lon:19.4};NV.map.setView([c.lat,c.lon],NV.pts.length?10:6);div.classList.add('add');
     lockControl();
     NV.map.on('click',async e=>{if(NV.mode==='skip'){NV.mode='add';NV.map.getContainer().classList.remove('add');const r={lat:e.latlng.lat,lon:e.latlng.lng,name:'zaznaczone miejsce'};addSkip(r);
@@ -240,7 +241,7 @@ function lockMap(on){NV.locked=!!on;const m=NV.map;if(!m)return;
   if(NV.lockBtn){NV.lockBtn.textContent=NV.locked?'🔒':'🔓';NV.lockBtn.title=NV.locked?'Mapa zablokowana – dotknij, by edytować punkty':'Mapa do edycji – dotknij, by zablokować'}}
 function lockControl(){const C=L.Control.extend({options:{position:'topright'},onAdd(){const d=L.DomUtil.create('div','nlock');L.DomEvent.disableClickPropagation(d);
     const b=L.DomUtil.create('button','',d);b.type='button';b.onclick=()=>lockMap(!NV.locked);NV.lockBtn=b;
-    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)NV.map.fitBounds(NV.fit,fitPad());else fitAll()};
+    const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>{if(NV.fit)safeFit(NV.fit);else fitAll()};
     const fs=L.DomUtil.create('button','',d);fs.type='button';fs.textContent='⛶';fs.title='Pełny ekran mapy';fs.onclick=()=>fullMap(!NV.full);NV.fullBtn=fs;return d}});
   new C().addTo(NV.map);lockMap(NV.locked)}
 // Pełny ekran mapy: mapa na cały ekran, przesuwanie jednym palcem, strona
@@ -259,8 +260,14 @@ function navGuard(){if(GUARD)return;GUARD=true;try{history.pushState({nt1100:'na
     if(NV.full)fullMap(false);else toast('Zostajesz w Nawigacji – do Home Assistanta wrócisz menu z boku.');
     try{history.pushState({nt1100:'nav'},'')}catch(e){}})}
 function fitPad(){const wide=innerWidth>=900;return wide?{paddingTopLeft:[450,30],paddingBottomRight:[30,30]}:{paddingTopLeft:[24,70],paddingBottomRight:[24,Math.min(sheetPx(),(document.getElementById('nwrap')||{}).clientHeight*.5||300)+16]}}
-function fitRoute(b){NV.fit=b;NV.map.fitBounds(b,fitPad());lockMap(true)}
-function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}NV.map.fitBounds(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])),fitPad())}
+/* Dopasowanie widoku odporne na mapę, która ma jeszcze zerowy rozmiar (strona otwarta w tle,
+   klawiatura iPhone'a, przełączanie zakładek): Leaflet liczyłby wtedy zoom NaN („Invalid LatLng”). */
+function safeFit(b){const m=NV.map;if(!m||!b||!b.isValid())return;m.invalidateSize(false);const s=m.getSize();
+  if(s.x<60||s.y<60){NV.pendingFit=b;return}NV.pendingFit=null;let p=fitPad();
+  const fits=pp=>s.x-pp.paddingTopLeft[0]-pp.paddingBottomRight[0]>40&&s.y-pp.paddingTopLeft[1]-pp.paddingBottomRight[1]>40;
+  if(!fits(p))p={paddingTopLeft:[10,10],paddingBottomRight:[10,10]};try{m.fitBounds(b,p)}catch(e){try{m.fitBounds(b)}catch(x){}}}
+function fitRoute(b){NV.fit=b;safeFit(b);lockMap(true)}
+function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}safeFit(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])))}
 function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];setTimeout(drawLegs,0);NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent=''}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
 function showRoute(r){clearPlan();if(!NV.map||!r.pts)return;const ll=r.pts.map(p=>[p[0],p[1]]);const l=L.polyline(ll,{color:VCOL[r.variant]||'#3d8bfd',weight:5,opacity:.85}).addTo(NV.map);NV.lines.push(l);fitRoute(l.getBounds());if(r.id)alongFor('id='+r.id,r.name||'trasa',ll);
   if(r.waypoints)for(const w of r.waypoints){if(!w.name||w.name==='cel'||w.name==='start')continue}NV.shown=r.id}
