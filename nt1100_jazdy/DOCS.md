@@ -1,7 +1,7 @@
 # NT1100 Jazdy
 
-Jazdy ze skrzynki telemetrycznej NT1100 w Home Assistant: ta sama strona co w skrzynce
-(panel „NT1100 Jazdy” w menu bocznym, także w aplikacji HA), urządzenie **NT1100**
+Jazdy ze skrzynki telemetrycznej NT1100 w Home Assistant: panel „NT1100 Jazdy” w menu bocznym
+(także w aplikacji HA; strona skrzynki ma tylko listę jazd i jej ustawienia), urządzenie **NT1100**
 z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każdej jeździe.
 
 - Pliki jazd: folder `share/nt1100/rides` (Samba: udział „share”), razem z kopią
@@ -17,16 +17,31 @@ Cztery zakładki na dole ekranu:
 
 - **Jazdy**: lista jazd i **Statystyki** (przełącznik u góry).
 - **Trasy**: mapa na cały ekran z wysuwanym panelem (pociągnij uchwyt albo stuknij go:
-  pół ekranu → cały → sama mapa). Wyszukiwarka nad mapą, gdy motocykl jest w trasie,
-  u góry pasek „W trasie”.
+  pół ekranu → cały → sama mapa). Wyszukiwarka nad mapą, a gdy motocykl jedzie albo stoi
+  ponad 2 km od domu, u góry pasek „W trasie”.
 - **Motocykl**: stan skrzynki, ekranu i silnika tras, przebieg i serwis, parking, skan,
   wersje oprogramowania.
 - **Ustawienia**: wszystkie ustawienia w zwijanych grupach, razem z ustawieniami nawigacji.
 
-**Mapa** jest wektorowa, w barwach dodatku (ciemna albo jasna według motywu HA), z cieniowaniem
+**Mapa** jest wektorowa, w barwach dodatku (ciemna albo jasna według motywu panelu), z cieniowaniem
 gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował własne kafelki, mapa
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
+
+## Zmiany w 1.5.15 (wygląd)
+
+- Panel nazywa się wszędzie „NT1100 Jazdy”. Plakietka u góry pokazuje, kiedy skrzynka ostatnio się odezwała
+  i jej baterię (żółta po 3 dniach ciszy). Trzy kafelki podsumowania w jednym rzędzie.
+- Karta jazdy: nazwa albo „skąd → dokąd”, trzy duże liczby (dystans, czas, największy przechył) i jedna szara linia.
+  Liczby z przecinkiem. Numer przejazdu tylko w szczegółach.
+- Szczegóły jazdy: cztery duże liczby w dwóch rzędach.
+- Motocykl: serwis od najbliższego terminu, z paskiem zużycia (żółty od 75%, czerwony po terminie) i małym „✓ Zrobione”.
+  Karta „Ekran i mapa” w tym samym układzie co reszta zakładki.
+- Trasy: pasek „W trasie” tylko w jeździe albo daleko od domu (wcześniej wisiał zawsze). Gdy mapa się nie wczyta,
+  komunikat jest na środku mapy z przyciskiem „Spróbuj jeszcze raz”.
+- Motyw domyślnie „jak w telefonie” (ręczny wybór w Ustawieniach → Wygląd zostaje).
+- Pole „adres_spoza_domu” w konfiguracji jest domyślnie puste. Jeśli w Ustawieniach panelu adres spoza domu
+  jest pusty, wpisz go w Home Assistant: Ustawienia → Dodatki → NT1100 Jazdy → Konfiguracja.
 
 ## Zmiany w 1.5.14
 
@@ -101,7 +116,7 @@ wczytywanie plików GPX (np. z Kurvigera).
   trasy zapisuje miejsce. Nad punktami trasy są przyciski ulubionych (i domu) – dotknięcie dodaje je
   do trasy; na mapie żółte kropki. Zmiana nazwy, kolejność i usuwanie: Ustawienia nawigacji →
   Planowanie i dom. Skrót iPhone’a „jedź do” rozumie samą nazwę, np. `text=Praca`.
-- **Pomiń miejscowość**: przy wyniku wyszukiwania przycisk „Pomiń” (albo wpisz „pomiń Meta”),
+- **Pomiń miejscowość**: przy wyniku wyszukiwania przycisk „Pomiń” (albo wpisz „pomiń Wadowice”),
   albo „+ pomiń miejscowość” i dotknij mapy. Trasa omija koło wokół miejscowości (czerwone
   przerywane na mapie); dotknięcie ✕ usuwa. Objazdy z ekranu też je omijają.
 - **Trasa okrężna jednym dotknięciem**: 50 / 100 / 150 / 200 km albo 30 min / 1 h / 1,5 h / 2 h / 3 h
@@ -186,7 +201,7 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 **Demo trasy** (ekran od 1.0.2): ekran jedzie trasę sam, bez skrzynki i bez wychodzenia
 z domu. Bez skrzynki dotknij „Demo trasy” pod napisem „Szukam skrzynki...” (albo na postoju:
 strona Menu → „Demo trasy”). Jedzie trasę, która jest na ekranie, a gdy jej nie ma, wbudowaną
-trasę Start – Meta (22 km). „Motocykl” trzyma limity, zwalnia przed zakrętami (pochył
+trasę próbną (22 km). „Motocykl” trzyma limity, zwalnia przed zakrętami (pochył
 do ok. 23°), raz zjeżdża ok. 230 m w bok („wróć na trasę”) i stoi 50 s na pierwszym punkcie po
 drodze (pojawiają się strony postoju). Na mapie widać plakietkę DEMO; dotknięcie w trakcie
 jazdy przełącza tempo ×1 / ×4. Przytrzymanie 1,5 s: menu z „Szybciej ×4”, „Koniec demo”,
@@ -196,7 +211,7 @@ dojechaniu do celu. Mapa na karcie jest potrzebna tylko do tła mapy, nazw dróg
 **Usypianie i bateria** (ekran od 1.0.3): ekran gaśnie 3 min po tym, jak skrzynka przestanie nadawać (30 min przy ładowaniu), albo po 10 min postoju bez ruchu. Wcześniej przez 10 s pokazuje „Wyłączam się”, a dotknięcie to odwołuje. Nie gaśnie w trakcie pobierania ani w trybie demo. Budzi się dotykiem, po podłączeniu ładowania i sam po włączeniu motocykla (co 30 s nasłuchuje skrzynki, po 6 h co 2 min). Ikonka baterii ma błyskawicę przy ładowaniu (ładowanie jest rozpoznawane z napięcia). Poniżej 15% ekran pokazuje „Słaba bateria”, a poniżej 3,4 V wyłącza się.
 
 **Symulacja w przeglądarce** (dodatek od 1.4.5): w zakładce Trasy → Zapisane trasy
-przycisk „Dodaj trasę demo” zapisuje tę samą trasę Start – Meta (z fotoradarem,
+przycisk „Dodaj trasę demo” zapisuje tę samą trasę próbną (z fotoradarem,
 odcinkowym pomiarem i postojem; „Na ekran” wysyła ją na ekran). Przycisk „Symulacja” przy
 każdej trasie odtwarza przejazd na mapie i obok pokazuje uproszczony podgląd ekranu
 (skręty, fotoradary, limit, wynik zakrętu), w tempie ×1 / ×4 / ×10.
@@ -204,7 +219,8 @@ każdej trasie odtwarza przejazd na mapie i obok pokazuje uproszczony podgląd e
 ## Konfiguracja dodatku
 
 - **powiadomienie**: (starsze) usługa powiadomień bez `notify.`; wybór w panelu ma pierwszeństwo.
-- **adres_spoza_domu**: adres dodatku przez Cloudflare (tylko do wyświetlenia na stronie).
+- **adres_spoza_domu**: adres dodatku przez Cloudflare (np. `https://nt1100.twojadomena.pl`); pokazywany w Ustawieniach
+  i używany w linkach do tras GPX poza domem. Domyślnie pusty.
 - **klucz**: zostaw puste; dodatek wygeneruje klucz sam.
 - **mqtt_host / mqtt_port / mqtt_user / mqtt_password**: zostaw puste, by użyć brokera z Home Assistant.
   Własny użytkownik: wpisz tylko `mqtt_user` i `mqtt_password`.

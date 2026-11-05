@@ -622,6 +622,13 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/api/nav/nearby?kinds=10")
         j = json.loads(body)
         self.assertEqual((j["mode"], j["pos"]["src"]), ("trasa", "ekran"))
+        # pasek „w trasie” na stronie: prędkość i odległość od domu (jest tylko z ustawionym domem)
+        self.assertEqual(j["pos"]["speed"], 0)
+        home = nv.settings()["home"]
+        if home:
+            self.assertGreaterEqual(j["pos"]["home_m"], 0)
+        else:
+            self.assertNotIn("home_m", j["pos"])
         self.assertEqual(j["points"][0]["name"], "Orlen")
         self.assertAlmostEqual(j["points"][0]["dist_km"], 1.5, delta=0.1)
         # „Jedź tam”: postój dodany jako punkt po drodze bieżącej trasy
@@ -647,6 +654,7 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/api/nav/route?id=%d&full=1" % rid)
         r = json.loads(body)
         self.assertEqual(r["source"], "demo")
+        self.assertNotIn("Bieru", json.dumps(r, ensure_ascii=False))  # bez nazw miejscowości z okolicy domu
         self.assertEqual(len(r["pts"]), len(r["cum"]))
         self.assertGreater(r["cum"][-1], 20000)
         self.assertTrue(any(c["type"] == 2 for c in r["cameras"]))
