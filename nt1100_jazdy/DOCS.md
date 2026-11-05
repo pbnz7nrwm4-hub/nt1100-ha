@@ -28,6 +28,19 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.17 (ekran 5")
+
+- Dodatek obsługuje nowy ekran 5" (oprogramowanie 2.x) obok obecnego 2,8". Każdy ekran dostaje
+  tylko swoją aktualizację.
+- **Brama i garaż**: Ustawienia → Planowanie i dom → pola „Brama” i „Garaż” (encja `cover.…`,
+  `button.…`, `switch.…` albo `lock.…`). Ekran 5" pokazuje ich stan na zakładce Dom, a w jeździe
+  blisko domu (poniżej 300 m i 15 km/h) dwa duże przyciski. Przycisk działa jak pilot: brama w ruchu
+  = stop.
+- **Inna trasa na postoju**: ekran 5" dostaje listę 8 ostatnich tras. W domu kopiuje je na kartę,
+  więc w trasie można przełączyć się na inną także bez internetu.
+- **Do domu**: ekran 5" prosi dodatek o trasę do domu z miejsca, w którym stoi. Bez internetu wraca
+  po przejechanej drodze.
+
 ## Zmiany w 1.5.16 (ekran 1.1.3)
 
 Dodatek wiezie nowe oprogramowanie ekranu 1.1.3. Ekran zaproponuje je sam (w domu, przy ładowaniu)
