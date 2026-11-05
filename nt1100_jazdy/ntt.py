@@ -163,7 +163,7 @@ def _read(path, background=False):
         nid, lat, lon, kind, limit, name, pair = struct.unpack_from("<IiiBBHH", buf, pos)
         pos += 18
         points.append(Point(nid, lat / 1e6, lon / 1e6, kind, limit, s(name), pair))
-    bg = {"waters": [], "rivers": [], "places": []}
+    bg = {"waters": [], "rivers": [], "places": [], "terrain": []}
     if background and hflags & 1:
         nw, nr, npl = struct.unpack_from("<III", buf, pos)
         pos += 12
@@ -176,6 +176,13 @@ def _read(path, background=False):
             lat, lon, kind, rank, name = struct.unpack_from("<iiBBH", buf, pos)
             pos += 12
             bg["places"].append((lat / 1e6, lon / 1e6, kind, rank, s(name)))
+        if hflags & 2:  # teren (mapa w stylu B): (rodzaj, punkty); rodzaj | 0x80 = polana
+            (nt,) = struct.unpack_from("<I", buf, pos)
+            pos += 4
+            for _ in range(nt):
+                kind, npts = struct.unpack_from("<BH", buf, pos)
+                pts, pos = _coords(buf, pos + 3, npts)
+                bg["terrain"].append((kind, pts))
     return ways, points, bg
 
 

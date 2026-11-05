@@ -54,8 +54,11 @@ skrypt pisze ile i podpowiada `pct resize <numer kontenera> rootfs +10G` (na ho�
 - `nt1100-mapa.service` – serwer na porcie 8988: `www/mapa` (kwadraty 0,1° × 0,1°
   w formacie ekranu i `manifest.json`), `kafelki.pmtiles` (mapa do przeglądarki, podawana
   jako kafelki `/kafelki/Z/X/Y.pbf`) i `www/dem` (wysokości do cieniowania gór).
-- cron co miesiąc (2. dnia o 3:15): `aktualizuj.sh` pobiera świeże dane OSM, buduje
-  mapę i graf od nowa. Ręcznie: `/opt/nt1100-trasy/bin/aktualizuj.sh`.
+- cron co miesiąc (2. dnia o 3:15): `aktualizuj.sh` pobiera nowe skrypty kontenera
+  z repozytorium (gałąź `main`; wyłączenie: `SAMOAKTUALIZACJA=0` w `obszar.env`), świeże dane OSM
+  i buduje mapę i graf od nowa. Mapa na ekran jest przebudowywana także bez nowych danych, gdy
+  zbudowała ją starsza wersja `build_map.py` (`build_map.py --wersja` ↔ `"wersja"` w `manifest.json`).
+  Ręcznie: `/opt/nt1100-trasy/bin/aktualizuj.sh`.
 
 Dziennik: `journalctl -u nt1100-trasy -f`, `cat /var/log/nt1100-trasy.log`.
 

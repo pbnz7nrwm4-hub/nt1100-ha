@@ -44,6 +44,57 @@ trap 'koniec false "przerwane z błędem (dziennik: /var/log/nt1100-trasy.log)";
 trap 'koniec false "przerwane"; systemctl start nt1100-trasy.service nt1100-mapa.service || true; exit 130' INT TERM HUP
 mkdir -p "$KAT/www"
 
+# Skrypty kontenera z repozytorium (gałąź main): poprawki budowy mapy dochodzą same, bez ponownej
+# instalacji. Wyłączenie: SAMOAKTUALIZACJA=0 w obszar.env. Ustawień (obszar.env, config.yml) nie rusza.
+REPO_TAR="https://github.com/pbnz7nrwm4-hub/nt1100-ha/archive/refs/heads/main.tar.gz"
+aktualizuj_skrypty() {
+  local tmp zmiany="" plik
+  tmp=$(mktemp -d)
+  if ! curl -L --fail -sS -m 120 -o "$tmp/repo.tgz" "$REPO_TAR" \
+     || ! tar -xzf "$tmp/repo.tgz" -C "$tmp" --strip-components=2 --wildcards '*/silnik-tras/*' \
+     || ! bash -n "$tmp/aktualizuj.sh" || ! python3 -m py_compile "$tmp/build_map.py" "$tmp/mapa-serwer.py"; then
+    echo "$(date '+%F %T') skrypty z repozytorium niedostępne, zostają obecne"
+    rm -rf "$tmp"; return 0
+  fi
+  for plik in build_map.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py; do
+    [ -s "$tmp/$plik" ] || continue
+    if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
+      cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"
+      zmiany="$zmiany $plik"
+    fi
+  done
+  chmod +x "$KAT/bin/aktualizuj.sh" "$KAT/bin/kafelki.sh"
+  rm -rf "$tmp"
+  [ -z "$zmiany" ] && return 0
+  echo "$(date '+%F %T') nowe skrypty:$zmiany"
+  case "$zmiany" in *mapa-serwer.py*) systemctl restart nt1100-mapa.service || true ;; esac
+  case "$zmiany" in *aktualizuj.sh*) exec env NT1100_SKRYPTY=1 "$KAT/bin/aktualizuj.sh" "$@" ;; esac
+}
+if [ "${SAMOAKTUALIZACJA:-1}" != 0 ] && [ -z "${NT1100_SKRYPTY:-}" ]; then
+  etap "aktualizacja skryptów" 1
+  aktualizuj_skrypty "$@"
+fi
+
+# Mapa na ekran zbudowana starszym build_map.py (np. bez warstwy terenu) jest przebudowywana,
+# nawet gdy dane OSM się nie zmieniły.
+mapa_aktualna() {
+  local jest chce
+  chce=$(python3 "$KAT/bin/build_map.py" --wersja 2>/dev/null || echo 0)
+  jest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("wersja", 0))' \
+         "$KAT/www/mapa/manifest.json" 2>/dev/null || echo 0)
+  [ "$jest" -ge "$chce" ] 2>/dev/null
+}
+buduj_mape() {
+  etap "mapa na ekran" 2
+  rm -rf "$KAT/www/mapa.nowa"
+  python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.nowa"
+  rm -rf "$KAT/www/mapa.stara"
+  [ -d "$KAT/www/mapa" ] && mv "$KAT/www/mapa" "$KAT/www/mapa.stara"
+  mv "$KAT/www/mapa.nowa" "$KAT/www/mapa"
+  rm -rf "$KAT/www/mapa.stara"
+  systemctl start nt1100-mapa.service
+}
+
 etap "pobieranie danych OSM" 1
 echo "$(date '+%F %T') pobieranie $URL"
 curl -L --fail -sS -z "$PBF" -o "$PBF.nowy" "$URL" || { echo "pobieranie nieudane"; koniec false "pobieranie danych OSM nieudane"; exit 1; }
@@ -53,6 +104,10 @@ if [ ! -s "$PBF.nowy" ]; then
   if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ]; then
     # graf i mapa na kartę są; dobuduj tylko to, czego brakuje (np. po aktualizacji do 1.5.0)
     systemctl start nt1100-mapa.service
+    if ! mapa_aktualna; then
+      echo "$(date '+%F %T') mapa na ekran w starszym formacie – przebudowa"
+      buduj_mape
+    fi
     if [ ! -s "$KAT/www/kafelki.pmtiles" ]; then
       etap "mapa do przeglądarki (trasy nie liczą się)" 3
       systemctl stop nt1100-trasy.service || true
@@ -68,14 +123,7 @@ else
   mv "$PBF.nowy" "$PBF"
 fi
 
-etap "mapa na ekran" 2
-rm -rf "$KAT/www/mapa.nowa"
-python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.nowa"
-rm -rf "$KAT/www/mapa.stara"
-[ -d "$KAT/www/mapa" ] && mv "$KAT/www/mapa" "$KAT/www/mapa.stara"
-mv "$KAT/www/mapa.nowa" "$KAT/www/mapa"
-rm -rf "$KAT/www/mapa.stara"
-systemctl start nt1100-mapa.service
+buduj_mape
 
 # Planetiler i import GraphHoppera potrzebują dużo pamięci: silnik tras stoi na czas budowy.
 etap "mapa do przeglądarki (trasy nie liczą się)" 3

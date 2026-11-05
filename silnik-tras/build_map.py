@@ -7,6 +7,7 @@ skrzyżowania) oraz punkty (fotoradary, odcinkowe pomiary, stacje, POI).
 Ten sam format czyta dodatek Home Assistant (nav.py) i ekran.
 
 użycie: build_map.py WEJSCIE.osm.pbf KATALOG_WYJSCIOWY [--bbox S,W,N,E]
+        build_map.py --wersja       (wersja zawartości mapy, dla aktualizuj.sh)
 
 Potrzebny jest program `osmium` (pakiet osmium-tool) i `sort` z coreutils.
 Pamięć: ok. 1–2 GB dla Polski; czas: kilka–kilkanaście minut.
@@ -28,9 +29,14 @@ Format kwadratu (little-endian):
   rzeki: u8 rodzaj (1 = rzeka, 2 = kanał) u16 nazwa u16 n_pkt, punkty jak wyżej
   miejscowości: i32 lat1e6 i32 lon1e6 u8 rodzaj (1 miasto, 2 miasteczko, 3 wieś)
          u8 ranga (0–255, większa = ważniejsza, z liczby mieszkańców) u16 nazwa
-Starsze czytniki kończą na punktach i ignorują resztę pliku.
+  (od wersji mapy 2, gdy bajt 5 ma też bit 1 = 1) za tłem część „teren” do mapy w stylu B:
+  u32 n_terenów, potem: u8 rodzaj u16 n_pkt i32 lat1e6 i32 lon1e6, varint zygzak (dlat, dlon)
+         rodzaj: 1 las, 2 łąka/park/trawa, 4 osiedle, 5 przemysł/handel, 7 mokradło, 8 cmentarz, 9 boisko/sport;
+         rodzaj | 0x80 = polana (dziura w lesie, rysowana kolorem tła po lasach). Pola uprawne = tło.
+         Część „tło” jest wtedy zawsze zapisana (choćby z zerami).
+Starsze czytniki kończą na punktach (albo na tle) i ignorują resztę pliku.
 
-manifest.json: {"format":1,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...], ...}
+manifest.json: {"format":1,"wersja":2,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...], ...}
 crc32 jak w zlib (binascii.crc32), dziesiętnie.
 """
 import binascii
@@ -44,6 +50,9 @@ import sys
 import time
 
 FORMAT = 1
+# Wersja zawartości mapy: aktualizuj.sh przebudowuje kwadraty, gdy kontener ma starszą
+# (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B).
+MAP_VERSION = 2
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -57,6 +66,7 @@ ROAD_FILTER = ",".join(CLASSES)
 SKIP_SERVICE = {"parking_aisle", "driveway", "emergency_access"}
 
 H_EXTRA = 1  # bajt 5 nagłówka: plik ma część „tło” (woda, rzeki, miejscowości)
+H_TERRAIN = 2  # bajt 5 nagłówka: za tłem jest część „teren” (lasy, łąki, osiedla...)
 W_WATER, W_ISLAND = 1, 2
 R_RIVER, R_CANAL = 1, 2
 PL_CITY, PL_TOWN, PL_VILLAGE = 1, 2, 3
@@ -65,6 +75,25 @@ WATER_FILTER = ["a/natural=water", "a/landuse=reservoir", "w/waterway=river,cana
 WATER_MIN_M2 = 20000      # mniejsze stawy pomijamy
 WATER_TOL = 0.00008       # uproszczenie konturu, ok. 6–9 m
 CLIP_MARGIN = 0.002       # zapas przycięcia wokół kwadratu (ok. 200 m)
+
+# Teren do mapy w stylu B (lasy z drzewkami, łąki, osiedla). Pola uprawne nie: to kolor tła.
+T_FOREST, T_GRASS, T_HOMES, T_INDUSTRY, T_WETLAND, T_CEMETERY, T_SPORT = 1, 2, 4, 5, 7, 8, 9
+T_HOLE = 0x80
+TERRAIN_TAGS = (
+    ("landuse", {"forest": T_FOREST, "meadow": T_GRASS, "grass": T_GRASS, "village_green": T_GRASS,
+                 "recreation_ground": T_GRASS, "allotments": T_GRASS, "residential": T_HOMES,
+                 "industrial": T_INDUSTRY, "commercial": T_INDUSTRY, "retail": T_INDUSTRY, "railway": T_INDUSTRY,
+                 "garages": T_INDUSTRY, "cemetery": T_CEMETERY}),
+    ("natural", {"wood": T_FOREST, "grassland": T_GRASS, "heath": T_GRASS, "scrub": T_GRASS,
+                 "wetland": T_WETLAND}),
+    ("leisure", {"park": T_GRASS, "pitch": T_SPORT, "sports_centre": T_SPORT, "golf_course": T_GRASS}),
+)
+TERRAIN_FILTER = ["a/%s=%s" % (k, ",".join(sorted(v))) for k, v in TERRAIN_TAGS]
+TERRAIN_MIN_M2 = {T_FOREST: 15000, T_GRASS: 15000, T_HOMES: 15000, T_INDUSTRY: 15000, T_WETLAND: 15000,
+                  T_CEMETERY: 5000, T_SPORT: 5000}
+SPILL_PARTS = 200000      # co tyle kawałków terenu zapis na dysk (ok. 50–100 MB pamięci)
+HOLE_MIN_M2 = 15000       # polany mniejsze niż 1,5 ha pomijamy
+TERRAIN_TOL = 0.0001      # uproszczenie konturu, ok. 7–11 m
 
 F_ONEWAY, F_UNPAVED, F_TOLL, F_ROUNDABOUT, F_FERRY, F_TUNNEL, F_BRIDGE, F_LIT = 1, 2, 4, 8, 16, 32, 64, 128
 
@@ -143,6 +172,8 @@ class Cell:
         self.nrivers = 0
         self.places = bytearray()
         self.nplaces = 0
+        self.terrain = bytearray()
+        self.nterrain = 0
 
     def string(self, s):
         if not s:
@@ -194,6 +225,28 @@ class Cell:
         self.rivers += struct.pack("<BHH", kind, self.string(name), len(pts)) + self._coords(pts)
         self.nrivers += 1
 
+    def add_terrain(self, kind, ring):
+        if len(ring) < 3 or len(ring) > 0xFFFF:
+            return
+        self.terrain += struct.pack("<BH", kind, len(ring)) + self._coords(ring)
+        self.nterrain += 1
+
+    def spill_terrain(self, folder):
+        """Teren całej Polski nie mieści się w pamięci kontenera: odkłada go na dysk."""
+        if not self.terrain:
+            return
+        self.terrain_file = os.path.join(folder, "t_%d_%d.bin" % self.key)
+        with open(self.terrain_file, "ab") as f:
+            f.write(self.terrain)
+        self.terrain = bytearray()
+
+    def terrain_bytes(self):
+        path = getattr(self, "terrain_file", None)
+        if not path:
+            return bytes(self.terrain)
+        with open(path, "rb") as f:
+            return f.read() + bytes(self.terrain)
+
     def add_place(self, lat, lon, kind, rank, name):
         self.places += struct.pack("<iiBBH", int(round(lat * 1e6)), int(round(lon * 1e6)), kind, rank,
                                    self.string(name))
@@ -205,12 +258,15 @@ class Cell:
         self.npoints += 1
 
     def data(self):
-        extra = self.nwaters or self.nrivers or self.nplaces
-        head = struct.pack("<4sBBhhIIII", b"NTT1", FORMAT, H_EXTRA if extra else 0, self.key[0], self.key[1],
+        extra = self.nwaters or self.nrivers or self.nplaces or self.nterrain
+        hflags = (H_EXTRA if extra else 0) | (H_TERRAIN if self.nterrain else 0)
+        head = struct.pack("<4sBBhhIIII", b"NTT1", FORMAT, hflags, self.key[0], self.key[1],
                            self.nways, self.npoints, len(self.offsets), len(self.string_bytes))
         out = head + struct.pack("<%dI" % len(self.offsets), *self.offsets) + self.string_bytes + self.ways + self.points
         if extra:
             out += struct.pack("<III", self.nwaters, self.nrivers, self.nplaces) + self.waters + self.rivers + self.places
+        if self.nterrain:
+            out += struct.pack("<I", self.nterrain) + self.terrain_bytes()
         return bytes(out)
 
     def write(self, path):
@@ -370,6 +426,80 @@ def add_background(src, work, cell):
                                 cell(key).add_water(W_WATER if ri == 0 else W_ISLAND, name if ri == 0 else "", part)
                     nw += 1
     print("tło: wód %d, rzek %d, miejscowości %d (%.0f s)" % (nw, nr, npl, time.time() - t0), flush=True)
+
+
+def terrain_kind(tags):
+    for key, kinds in TERRAIN_TAGS:
+        k = kinds.get(tags.get(key))
+        if k:
+            return k
+    return 0
+
+
+def add_ring(cell, kind, pts):
+    """Uproszczony wielokąt przycięty do każdego kwadratu, przez który przechodzi."""
+    pts = simplify(pts + pts[:1], TERRAIN_TOL)[:-1]
+    if len(pts) < 3:
+        return 0
+    lats = [p[0] for p in pts]
+    lons = [p[1] for p in pts]
+    n = 0
+    for key in box_cells(min(lats), min(lons), max(lats), max(lons)):
+        part = clip_ring(pts, *cell_box(key))
+        if len(part) >= 3:
+            cell(key).add_terrain(kind, part)
+            n += 1
+    return n
+
+
+def add_terrain(src, work, cell, cells):
+    """Lasy, łąki, osiedla, przemysł, mokradła, cmentarze (mapa w stylu B)."""
+    t0 = time.time()
+    tpbf = os.path.join(work, "teren.pbf")
+    run(["osmium", "tags-filter", src] + TERRAIN_FILTER + ["-o", tpbf, "--overwrite"])
+    # indeks węzłów na dysku: mało pamięci także dla całej Polski (silnik tras w tym czasie działa)
+    idx = os.path.join(work, "teren.idx")
+    na = nh = nparts = spilled = 0
+    with subprocess.Popen(["osmium", "export", tpbf, "-f", "geojsonseq", "--geometry-types=polygon",
+                           "-i", "sparse_file_array," + idx], stdout=subprocess.PIPE, text=True,
+                          bufsize=1 << 20) as exp:
+        for line in exp.stdout:
+            line = line.lstrip("\x1e")
+            if not line.startswith("{"):
+                continue
+            f = json.loads(line)
+            geom, tags = f.get("geometry") or {}, f.get("properties") or {}
+            gt = geom.get("type")
+            if gt not in ("Polygon", "MultiPolygon"):
+                continue
+            kind = terrain_kind(tags)
+            if not kind:
+                continue
+            polys = [geom["coordinates"]] if gt == "Polygon" else geom["coordinates"]
+            for poly in polys:
+                for ri, ring in enumerate(poly):
+                    if ri > 0 and kind != T_FOREST:
+                        break  # dziury tylko w lasach (polany)
+                    pts = [(c[1], c[0]) for c in ring[:-1]]
+                    if len(pts) < 3:
+                        continue
+                    area = ring_area_m2(pts)
+                    if area < (HOLE_MIN_M2 if ri else TERRAIN_MIN_M2[kind]):
+                        continue
+                    nparts += add_ring(cell, (kind | T_HOLE) if ri else kind, pts)
+                    if ri:
+                        nh += 1
+                na += 1
+            if nparts - spilled > SPILL_PARTS:
+                for c in cells.values():
+                    c.spill_terrain(work)
+                spilled = nparts
+    if exp.returncode:
+        raise subprocess.CalledProcessError(exp.returncode, "osmium export (teren)")
+    if os.path.exists(idx):
+        os.remove(idx)
+    print("teren: obszarów %d, polan %d, kawałków w kwadratach %d (%.0f s)" % (na, nh, nparts, time.time() - t0),
+          flush=True)
 
 
 def run(cmd, **kw):
@@ -611,8 +741,9 @@ def build(pbf, out, bbox=None):
             cell(cell_of(lat, lon)).add_point(nid, lat, lon, kind, limit, "", pair)
             npoints += 1
 
-    # 4. tło dla ekranu: woda, rzeki, miejscowości
+    # 4. tło dla ekranu: woda, rzeki, miejscowości; teren do mapy w stylu B
     add_background(src, work, cell)
+    add_terrain(src, work, cell, cells)
 
     # 5. zapis
     files = []
@@ -625,7 +756,7 @@ def build(pbf, out, bbox=None):
         files.append([name, n, crc])
         total += n
     manifest = {
-        "format": FORMAT, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
+        "format": FORMAT, "wersja": MAP_VERSION, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
         "source": os.path.basename(pbf), "ways": nways, "points": npoints, "bytes": total,
         "bbox": [min(lats) / CELL, min(lons) / CELL, (max(lats) + 1) / CELL, (max(lons) + 1) / CELL] if cells else None,
         "files": files,
@@ -641,6 +772,9 @@ def build(pbf, out, bbox=None):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--wersja":
+        print(MAP_VERSION)
+        return
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(2)
