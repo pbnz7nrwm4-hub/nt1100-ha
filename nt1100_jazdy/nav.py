@@ -239,10 +239,15 @@ def parse_gpx(data):
     pts = []
     wpts = []
     rte_turns = []
-    for el in root.iter():
-        t = tag(el)
-        if t == "name" and not name and tag_parent(root, el) in ("trk", "rte", "metadata", "gpx"):
-            name = (el.text or "").strip()
+    # nazwa trasy: <name> bezpośrednio w trk/rte/metadata/gpx (nie nazwy punktów)
+    for parent in root.iter():
+        if tag(parent) in ("gpx", "metadata", "trk", "rte"):
+            for el in parent:
+                if tag(el) == "name" and (el.text or "").strip():
+                    name = (el.text or "").strip()
+                    break
+        if name:
+            break
     for trk in [e for e in root.iter() if tag(e) == "trk"]:
         for p in trk.iter():
             if tag(p) == "trkpt":
@@ -273,13 +278,6 @@ def parse_gpx(data):
     if len(pts) > 200000:
         raise ValueError("za dużo punktów w GPX")
     return {"name": name[:40], "pts": pts, "wpts": wpts, "rte_turns": rte_turns}
-
-
-def tag_parent(root, el):
-    for p in root.iter():
-        if el in list(p):
-            return p.tag.split("}")[-1]
-    return ""
 
 
 # Skręty w zapisie OsmAnd (TurnType): z nimi OsmAnd prowadzi głosowo po naszej trasie
@@ -795,7 +793,8 @@ class Nav:
             di = int(round(70 - 0.65 * self.settings()["curvy"][variant]["dluzej"]))
         return {"priority": pr, "distance_influence": di}
 
-    def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None, skip=None, seed=None):
+    def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None, skip=None, seed=None,
+                 avoid_segment=None):
         s = self.settings()
         if not s["engine_url"]:
             raise RuntimeError("brak adresu silnika tras w ustawieniach")
@@ -803,10 +802,10 @@ class Nav:
                 "instructions": True, "points_encoded": False, "calc_points": True, "elevation": False,
                 "details": ["time", "max_speed", "road_class", "surface"], "ch.disable": True,
                 "custom_model": self.gh_custom_model(variant, avoid)}
-        seg = getattr(self, "_avoid_segment", None)
+        seg = avoid_segment
         if seg and len(seg) >= 2:
             # objazd: pas 60 m wokół omijanego odcinka jako obszar zakazany
-            sm = seg[::max(1, len(seg) // 40)]
+            sm = list(seg[::max(1, len(seg) // 40)])
             if sm[-1] != seg[-1]:
                 sm.append(seg[-1])
             left, right = [], []
@@ -865,14 +864,15 @@ class Nav:
         return {"pts": pts, "times": [int(t) for t in times], "instr": instr, "dist_m": path.get("distance", 0),
                 "time_s": path.get("time", 0) / 1000.0, "snapped": path.get("snapped_waypoints"), "limits": limits}
 
-    def gh_mix(self, points, legs, avoid, heading=None, skip=None):
+    def gh_mix(self, points, legs, avoid, heading=None, skip=None, avoid_segment=None):
         """Trasa z odcinków liczonych osobno, każdy swoim wariantem
         (legs[i] = wariant odcinka points[i] → points[i+1]), sklejona w jedną."""
         if len(legs) != len(points) - 1:
             raise RuntimeError("zła liczba odcinków")
         pairs = [((points[i]["lat"], points[i]["lon"]), (points[i + 1]["lat"], points[i + 1]["lon"])) for i in range(len(legs))]
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(legs)))) as ex:
-            futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None, skip)
+            futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None, skip, None,
+                              avoid_segment)
                     for i, (pr, lv) in enumerate(zip(pairs, legs))]
             parts = [f.result() for f in futs]
         pts, times, instr, limits = [], [], [], []
@@ -895,11 +895,14 @@ class Nav:
                 "limits": limits, "leg_m": [int(p["dist_m"]) for p in parts]}
 
     def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
-             legs=None, skip=None, round_trip_min=None):
+             legs=None, skip=None, round_trip_min=None, avoid_segment=None):
         """Warianty tras przez punkty [{lat, lon, name}]; zwraca listę tras
         (bez zapisu). Pierwszy punkt = start. legs = wariant każdego odcinka
         (dodaje wariant „mix”, czyli „Mój plan”). skip = [{lat, lon, r, name}]
-        miejscowości do pominięcia. round_trip_min = trasa okrężna na czas."""
+        miejscowości do pominięcia. round_trip_min = trasa okrężna na czas.
+        avoid_segment = odcinek trasy [(lat, lon)] do ominięcia (objazd korka albo
+        „objazd X km” z ekranu); podawany jawnie, bo planowania z ekranu, strony
+        i pilnowania korków mogą iść naraz w osobnych wątkach."""
         s = self.settings()
         skip = list(skip or [])
         if round_trip_km or round_trip_min:
@@ -915,19 +918,21 @@ class Nav:
         def one(v):
             rt_km = round_trip_km
             if v == MIX[0]:
-                r = self.gh_mix(points, legs, avoid, heading, skip)
+                r = self.gh_mix(points, legs, avoid, heading, skip, avoid_segment)
             elif round_trip_min:
                 # na czas: długość z typowej średniej wariantu, potem poprawka o różnicę czasu
                 rt_km = max(10.0, round_trip_min / 60.0 * RT_KMH.get(v, 50))
                 r = None
                 for _ in range(3):
-                    r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, rt_km, heading, skip, seed)
+                    r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, rt_km, heading, skip, seed,
+                                      avoid_segment)
                     got = r["time_s"] / 60.0 if r["time_s"] else None
                     if not got or abs(got - round_trip_min) <= max(5, 0.12 * round_trip_min):
                         break
                     rt_km = max(10.0, min(1500.0, rt_km * round_trip_min / got))
             else:
-                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading, skip, seed)
+                r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading, skip, seed,
+                                  avoid_segment)
             wps = []
             for k, p in enumerate(points[1:] if not (round_trip_km or round_trip_min) else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
@@ -992,10 +997,13 @@ class Nav:
 
     def route_from_gpx(self, data, name=""):
         g = parse_gpx(data)
-        wps = [{"lat": w["lat"], "lon": w["lon"], "name": w["name"]} for w in g["wpts"]]
-        # punkty GPX bliżej niż 100 m od linii to punkty po drodze
-        wps = [w for w in wps if nearest_index(g["pts"], (w["lat"], w["lon"]))[1] < 100]
-        wps.sort(key=lambda w: nearest_index(g["pts"], (w["lat"], w["lon"]))[0])
+        # punkty GPX bliżej niż 100 m od linii to punkty po drodze (w kolejności na trasie)
+        near = []
+        for w in g["wpts"]:
+            i, d = nearest_index(g["pts"], (w["lat"], w["lon"]))
+            if d is not None and d < 100:
+                near.append((i, {"lat": w["lat"], "lon": w["lon"], "name": w["name"]}))
+        wps = [w for _, w in sorted(near, key=lambda x: x[0])]
         route = self.build_route(g["pts"], name or g["name"], "gpx", None, wps)
         return route
 
@@ -1019,9 +1027,9 @@ class Nav:
             while j < len(pts) - 1 and route["cum"][j] - route["cum"][i] < avoid_km * 1000:
                 j += 1
             points.append({"lat": pts[j][0], "lon": pts[j][1], "name": "za objazdem"})
-            self._avoid_segment = pts[i + 2:j - 2] if j - i > 6 else []
+            avoid_segment = pts[i + 2:j - 2] if j - i > 6 else []
         else:
-            self._avoid_segment = []
+            avoid_segment = []
         for w in remaining:
             p = pts[w["idx"]]
             points.append({"lat": p[0], "lon": p[1], "name": w.get("name") or ""})
@@ -1036,8 +1044,7 @@ class Nav:
                 tail = [tail[0]] + tail
             legs = tail if len(tail) == n else [self.settings()["go_variant"]] * n
         routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs,
-                                   skip=route.get("skip"))
-        self._avoid_segment = []
+                                   skip=route.get("skip"), avoid_segment=avoid_segment)
         if not routes:
             raise RuntimeError(errors.get(variant) or "silnik nie policzył objazdu")
         new = routes[0]
@@ -1302,7 +1309,10 @@ class Nav:
             total += delay
         incidents.sort(key=lambda x: x["idx"])
         out = {"delay_s": total, "incidents": incidents[:10], "t": int(time.time())}
-        self.traffic_cache[key] = (time.time(), out)
+        now = time.time()
+        for k in [k for k, v in self.traffic_cache.items() if now - v[0] > 600]:
+            self.traffic_cache.pop(k, None)
+        self.traffic_cache[key] = (now, out)
         return out
 
     # ---- zgodność jazdy z planem
@@ -1340,16 +1350,15 @@ class Nav:
                 "events": self.screen_events(t_start, t_end)}
 
     def route_at(self, t):
-        """Trasa bieżąca w chwili t (dziennik zmian w stanie)."""
+        """Trasa bieżąca w chwili t (dziennik zmian w stanie). Bez wpisu sprzed t
+        nie ma planu: jazda sprzed zaplanowania trasy nie jest z nią porównywana
+        (wcześniej dostawała bieżącą trasę i „zgodność 0%”)."""
         hist = self.state.get("current_history") or []
         best = None
         for h in hist:
             if h["t"] <= t and (best is None or h["t"] >= best["t"]):
                 best = h
-        if best:
-            return best["rid"]
-        idx = self.index()
-        return idx.get("current")
+        return best["rid"] if best else None
 
     def note_current(self, rid):
         hist = (self.state.get("current_history") or [])[-200:]
@@ -1578,6 +1587,15 @@ def curviness(pts, cum, levels=None):
     return {"deg_km": int(per_km), "level": curvy_name(per_km, levels)}
 
 
+def utf8_cut(text, max_bytes):
+    """Tekst w UTF-8 obcięty do max_bytes bez przecinania polskiej litery
+    (ucięty w połowie znak ekran rysował jako krzaczek)."""
+    b = (text or "").encode("utf-8")
+    if len(b) <= max_bytes:
+        return b
+    return b[:max_bytes].decode("utf-8", "ignore").encode("utf-8")
+
+
 def pack_ntr(route):
     """Paczka binarna dla ekranu (patrz nagłówek nav.py / firmware ekranu)."""
     pts, cum, times = route["pts"], route["cum"], route.get("times") or [0] * len(route["pts"])
@@ -1586,7 +1604,7 @@ def pack_ntr(route):
     cams = route.get("cameras") or []
     wx = route.get("weather") or []
     wps = route.get("waypoints") or []
-    name = (route.get("name") or "").encode("utf-8")[:39]
+    name = utf8_cut(route.get("name"), 39)
     out = bytearray(struct.pack("<4sBBHIIIHHHHH40s", b"NTR1", VERSION_NTR, 0, len(wps), int(route.get("id") or 0),
                                 int(route.get("version") or 0), len(pts), len(turns), len(limits), len(cams), len(wx), 0,
                                 name))
@@ -1594,7 +1612,7 @@ def pack_ntr(route):
         out += struct.pack("<iiIH", int(round(p[0] * 1e6)), int(round(p[1] * 1e6)), int(cum[i]),
                            min(65535, int(times[i] / 10)))
     for t in turns:
-        out += struct.pack("<IBBH32s", t["idx"], t["type"], t.get("exit", 0), 0, (t.get("text") or "").encode("utf-8")[:31])
+        out += struct.pack("<IBBH32s", t["idx"], t["type"], t.get("exit", 0), 0, utf8_cut(t.get("text"), 31))
     for l in limits:
         out += struct.pack("<IBBH", l["idx"], l["kmh"], 0, 0)
     for c in cams:
@@ -1604,5 +1622,5 @@ def pack_ntr(route):
         out += struct.pack("<IIbBBB", w["idx"], int(w.get("t") or 0), int(round(temp)) if temp is not None else -128,
                            int(w.get("rain_prob") or 0), int(w.get("code") or 0), min(255, int(w.get("wind") or 0)))
     for w in wps:
-        out += struct.pack("<IBBH32s", w["idx"], w.get("kind", 1), 0, 0, (w.get("name") or "").encode("utf-8")[:31])
+        out += struct.pack("<IBBH32s", w["idx"], w.get("kind", 1), 0, 0, utf8_cut(w.get("name"), 31))
     return bytes(out)
