@@ -212,6 +212,52 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(t, 2)
 
 
+    def test_pack_ntr_utf8_cut(self):
+        """Długie polskie nazwy obcięte bez przecinania litery (ekran rysował krzaczek)."""
+        self.assertEqual(nav.utf8_cut("ąąą", 5), "ąą".encode())
+        self.assertEqual(nav.utf8_cut("abc", 5), b"abc")
+        self.assertEqual(nav.utf8_cut(None, 5), b"")
+        pts = nav.densify(l_shape(), 30)
+        name = "Przełęcz Salmopolska → Szczyrk → Żywiec"  # 44 bajty+
+        route = {"id": 1, "version": 1, "name": name, "pts": pts, "cum": nav.cum_dist(pts),
+                 "turns": [{"idx": 3, "type": nav.T_RIGHT, "exit": 0, "text": "ulica Źródlana–Łąkowa–Ściegiennego"}],
+                 "waypoints": [{"idx": len(pts) - 1, "name": "Schronisko na Hali Łabowskiej ąę", "kind": 2}]}
+        b = nav.pack_ntr(route)
+        head = struct.calcsize("<4sBBHIIIHHHHH40s")
+        raw = struct.unpack_from("<4sBBHIIIHHHHH40s", b, 0)[-1].rstrip(b"\0")
+        self.assertTrue(name.startswith(raw.decode("utf-8")))  # poprawny UTF-8, bez ucinania litery
+        t = struct.unpack_from("<IBBH32s", b, head + 14 * len(pts))[-1].rstrip(b"\0")
+        t.decode("utf-8")
+        w = struct.unpack_from("<IBBH32s", b, len(b) - 40)[-1].rstrip(b"\0")
+        w.decode("utf-8")
+
+    def test_gpx_name_and_many_waypoints_fast(self):
+        """Nazwa trasy z trk, nie z punktów; duży plik z wieloma nazwami liczy się szybko."""
+        pts = line(50.0, 19.9, 0, 40000, 2.0)
+        wpts = "".join('<wpt lat="%.6f" lon="19.9"><name>p%d</name></wpt>' % (50.0 + i * 1e-4, i) for i in range(2000))
+        seg = "".join('<trkpt lat="%.6f" lon="%.6f"><name>pkt</name></trkpt>' % p for p in pts)
+        data = ('<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">%s'
+                '<trk><name>Długa</name><trkseg>%s</trkseg></trk></gpx>' % (wpts, seg)).encode()
+        t = time.time()
+        g = nav.parse_gpx(data)
+        self.assertLess(time.time() - t, 5)
+        self.assertEqual(g["name"], "Długa")
+        self.assertEqual(len(g["pts"]), len(pts))
+
+    def test_route_at_needs_history(self):
+        """Jazda sprzed zaplanowania trasy nie dostaje „zgodności” z bieżącą trasą."""
+        d = tempfile.mkdtemp(prefix="nt1100-ra-")
+        try:
+            n = nav.Nav(os.path.join(d, "s"), d, lambda: {})
+            self.assertIsNone(n.route_at(time.time()))
+            n.save_state(current_history=[{"t": 1000, "rid": 4}, {"t": 2000, "rid": 5}])
+            self.assertIsNone(n.route_at(999))
+            self.assertEqual(n.route_at(1500), 4)
+            self.assertEqual(n.route_at(5000), 5)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class TileTest(unittest.TestCase):
     def test_write_and_read_cell(self):
         cell = build_map.Cell((500, 199))
@@ -428,6 +474,29 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(len(last["points"]), 2)
         code, body, _ = self.req(self.iu + "/api/nav/ping", headers={"X-Klucz": KEY})
         self.assertEqual(json.loads(body)["route"]["version"], s["version"])
+        # „objazd 1 km”: odcinek do ominięcia idzie do silnika jako obszar, a następne planowanie już go nie ma
+        code, s = self.jpost(self.iu + "/api/nav/reroute", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0, "avoid_km": 1},
+                             {"X-Klucz": KEY})
+        self.assertEqual(code, 200, s)
+        feats = (FakeGraphHopper.calls[-1]["custom_model"].get("areas") or {}).get("features") or []
+        self.assertIn("objazd", [f["id"] for f in feats])
+        self.jpost(self.pu + "/api/nav/plan", {"points": [{"lat": 50.0, "lon": 19.9}, {"lat": 50.009, "lon": 19.914}],
+                                               "variants": ["szybko"], "weather": False})
+        self.assertNotIn("areas", FakeGraphHopper.calls[-1]["custom_model"])
+        self.assertFalse(hasattr(srv.navapi.NAV, "_avoid_segment"))
+        # bez klucza treść nie jest czytana; za duża treść = 413
+        import http.client
+        port = int(self.iu.rsplit(":", 1)[1])
+        for key, want in (("zly", 401), (KEY, 413)):
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            c.putrequest("POST", "/api/nav/log")
+            c.putheader("X-Klucz", key)
+            c.putheader("Content-Length", "2000000")  # zapowiedziana treść, wysłane tylko 10 B
+            c.endheaders(b"x" * 10)
+            r = c.getresponse()
+            self.assertEqual(r.status, want)
+            self.assertEqual(r.getheader("Connection"), "close")
+            c.close()
         # expired token
         code, s = self.jpost(self.pu + "/api/nav/send", {"token": "nie-ma", "variant": "kreto"})
         self.assertEqual(code, 410)

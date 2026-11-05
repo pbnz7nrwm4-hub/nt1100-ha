@@ -230,12 +230,9 @@ def drive_check(now=None):
     end = route["pts"][-1]
     if len(points) < 2 or (points[-1]["lat"], points[-1]["lon"]) != (end[0], end[1]):
         points.append({"lat": end[0], "lon": end[1], "name": "cel"})
-    NAV._avoid_segment = route["pts"][k0:k1 + 1] if k1 - k0 >= 1 else []
-    try:
-        routes, errors = NAV.plan(points, ["szybko"], route.get("avoid") or NAV.settings()["avoid"],
-                                  ("objazd: " + d["name"])[:40], skip=route.get("skip"))
-    finally:
-        NAV._avoid_segment = []
+    jam = route["pts"][k0:k1 + 1] if k1 - k0 >= 1 else []
+    routes, errors = NAV.plan(points, ["szybko"], route.get("avoid") or NAV.settings()["avoid"],
+                              ("objazd: " + d["name"])[:40], skip=route.get("skip"), avoid_segment=jam)
     rest_s = route.get("time_s", 0) * (1 - route["cum"][i] / max(1.0, route["dist_m"])) + delay
     alert = {"rid": rid, "abs_km": route["cum"][first["idx"]] / 1000.0, "delay_s": delay, "t": int(now)}
     if routes:

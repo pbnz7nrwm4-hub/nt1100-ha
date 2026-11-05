@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.13"
+VERSION = "1.5.14"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -325,13 +325,19 @@ def curviness(pts):
 _CURVY = {}
 
 
-def curvy_of(n):
+def curvy_levels():
+    """Progi opisu krętości z ustawień nawigacji (None = domyślne)."""
+    return (settings().get("nav") or {}).get("curvy_levels") or None
+
+
+def curvy_of(n, levels=False):
     """Curviness of a ride; the description follows the thresholds set in the
-    Nawigacja settings (the cached value keeps only the numbers)."""
+    Nawigacja settings (the cached value keeps only the numbers). levels:
+    progi już odczytane (lista jazd czyta je raz, nie dla każdej jazdy)."""
     v = _curvy_of(n)
     if v and v.get("deg_km") is not None:
-        lv = (settings().get("nav") or {}).get("curvy_levels")
-        v = dict(v, rating=navapi.nav.curvy_name(v["deg_km"], lv if lv else None))
+        lv = curvy_levels() if levels is False else levels
+        v = dict(v, rating=navapi.nav.curvy_name(v["deg_km"], lv))
     return v
 
 
@@ -1178,7 +1184,7 @@ def records_line(n, s):
             hits.append("%s (%s)" % (label, f(v)))
     cv = curvy_of(n)
     if cv and cv.get("deg_km") is not None:
-        prev = [(curvy_of(m) or {}).get("deg_km") for m, _ in others]
+        prev = [(_curvy_of(m) or {}).get("deg_km") for m, _ in others]
         prev = [p for p in prev if p is not None]
         if prev and cv["deg_km"] > max(prev):
             hits.append("najbardziej kręta trasa")
@@ -1406,6 +1412,10 @@ class Base(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
+        if self.close_connection:
+            # treść zapytania nie została przeczytana do końca: klient ma nie wysyłać
+            # następnego zapytania tym połączeniem
+            self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -1519,13 +1529,22 @@ class Ingest(Base):
     def do_POST(self):
         path, q = self.query()
         if path.startswith("/api/nav/"):
-            body = self.read_body(1024 * 1024)
+            # klucz najpierw: bez niego treści nie czytamy (port jest widoczny z internetu)
+            if not navapi.screen_authorized(self, q):
+                self.close_connection = True
+                return self.send(401, {"ok": False, "error": "zly klucz"})
+            try:
+                body = self.read_body(1024 * 1024)
+            except ValueError as e:
+                self.close_connection = True
+                return self.send(413, {"ok": False, "error": str(e)})
             navapi.screen_post(self, path, q, body)
             return
         if path != "/api/ingest":
             return self.send(404, {"ok": False, "error": "brak"})
         if not self.authorized():
             log("Odrzucono wysylke: zly klucz (", self.client_address[0], ")")
+            self.close_connection = True  # treść zapytania nieprzeczytana
             return self.send(401, {"ok": False, "error": "zly klucz"})
         try:
             box_n = int(q.get("n", ""))
@@ -1538,6 +1557,7 @@ class Ingest(Base):
                     or not (0 <= size <= limit):
                 raise ValueError
         except ValueError:
+            self.close_connection = True
             return self.send(400, {"ok": False, "error": "zle parametry"})
         late = late_ride(box_n, ride_id) if ext in LATE_EXTS else None
         stage = os.path.join(INCOMING, "%d-%s" % (box_n, ride_id))
@@ -1552,6 +1572,7 @@ class Ingest(Base):
                     c = zlib.crc32(chunk, c)
         except ValueError as e:
             os.remove(tmp)
+            self.close_connection = True  # reszta treści została w połączeniu
             return self.send(413, {"ok": False, "error": str(e)})
         if got != size or (c & 0xFFFFFFFF) != crc:
             os.remove(tmp)
@@ -1661,6 +1682,7 @@ class Page(Base):
         except FileNotFoundError:
             names = []
         files = {}
+        levels = curvy_levels()
         for name in names:
             m = re.fullmatch(r"(\d+)\.([a-z]+)", name)
             if m:
@@ -1686,7 +1708,7 @@ class Page(Base):
                     r["problems"] = pr
             if "trk" in files[n]:
                 try:
-                    cv = curvy_of(n)
+                    cv = curvy_of(n, levels)
                     if cv:
                         r["curvy"] = cv
                 except Exception as e:
@@ -1760,7 +1782,11 @@ class Page(Base):
         if not self.allowed():
             return
         path, q = self.query()
-        body = self.read_body(8 * 1024 * 1024 if path == "/api/nav/gpx" else 65536)
+        try:
+            body = self.read_body(8 * 1024 * 1024 if path == "/api/nav/gpx" else 65536)
+        except ValueError:
+            self.close_connection = True
+            return self.send(413, "za duży plik", "text/plain")
         if navapi.page_post(self, path, q, body):
             return
         if path == "/api/settings":
