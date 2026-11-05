@@ -28,6 +28,15 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.14
+
+- Jazda sprzed zaplanowania trasy nie pokazuje już „Trasa planowana … zgodność 0%”.
+- Długie polskie nazwy tras i ulic na ekranie nie kończą się krzaczkiem.
+- Objazd korka i „Objazd 1 km” z ekranu nie wpływają na trasę planowaną w tej samej chwili w panelu.
+- Szybsze wczytywanie dużych plików GPX i listy jazd; port dla skrzynki odrzuca zapytania bez klucza
+  zanim przeczyta ich treść.
+- Pełna dokumentacja w repozytorium: katalog `docs/` (architektura, instalacja od zera, problemy, wydanie).
+
 ## Wersje oprogramowania
 
 Zakładka **Motocykl** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
