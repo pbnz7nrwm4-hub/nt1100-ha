@@ -807,6 +807,8 @@ def page_post(h, path, q, body):
 # ---------------------------------------------------------------- ekran (port 8098)
 
 def screen_firmware_offer():
+    if SRV is None:  # nawigacja jeszcze nie wystartowała
+        return None
     j = SRV.read_json(os.path.join(SRV.FIRMWARE, "ekran.json"), {})
     path = os.path.join(SRV.FIRMWARE, "ekran.bin")
     if not j.get("version") or not os.path.exists(path):
