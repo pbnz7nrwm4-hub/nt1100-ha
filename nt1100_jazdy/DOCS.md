@@ -28,6 +28,17 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.17 (teren w mapie na ekran)
+
+Dotyczy kontenera silnika tras; ekran i dodatek działają jak dotąd.
+
+- Kwadraty mapy na ekran dostają warstwę terenu: lasy (z polanami), łąki i parki, osiedla, przemysł,
+  mokradła, cmentarze i boiska. Z niej nowy ekran rysuje mapę w stylu B (pochylona, z drzewkami).
+  Obecny ekran tę część pomija. Pola uprawne nie są zapisywane (to tło mapy).
+- `aktualizuj.sh` sam pobiera nowe skrypty kontenera z repozytorium (gałąź `main`) i przebudowuje mapę
+  na ekran, gdy powstała starszą wersją budowy, także gdy dane OSM się nie zmieniły.
+  Wyłączenie: `SAMOAKTUALIZACJA=0` w `/opt/nt1100-trasy/obszar.env`.
+
 ## Zmiany w 1.5.16 (ekran 1.1.3)
 
 Dodatek wiezie nowe oprogramowanie ekranu 1.1.3. Ekran zaproponuje je sam (w domu, przy ładowaniu)

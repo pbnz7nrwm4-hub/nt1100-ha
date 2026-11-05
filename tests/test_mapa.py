@@ -38,13 +38,40 @@ OSM = """<?xml version='1.0' encoding='UTF-8'?>
  <node id="44" version="1" lat="50.002" lon="19.991"/>
  <node id="50" version="1" lat="50.040" lon="19.940"><tag k="place" v="town"/><tag k="name" v="Testowo"/><tag k="population" v="12000"/></node>
  <node id="51" version="1" lat="50.060" lon="19.960"><tag k="place" v="hamlet"/><tag k="name" v="Przysiółek"/></node>
+ <node id="61" version="1" lat="50.060" lon="19.910"/>
+ <node id="62" version="1" lat="50.060" lon="19.930"/>
+ <node id="63" version="1" lat="50.075" lon="19.930"/>
+ <node id="64" version="1" lat="50.075" lon="19.910"/>
+ <node id="65" version="1" lat="50.065" lon="19.915"/>
+ <node id="66" version="1" lat="50.065" lon="19.925"/>
+ <node id="67" version="1" lat="50.070" lon="19.925"/>
+ <node id="68" version="1" lat="50.070" lon="19.915"/>
+ <node id="71" version="1" lat="50.080" lon="19.950"/>
+ <node id="72" version="1" lat="50.080" lon="19.951"/>
+ <node id="73" version="1" lat="50.081" lon="19.951"/>
+ <node id="74" version="1" lat="50.081" lon="19.950"/>
+ <node id="81" version="1" lat="50.085" lon="19.960"/>
+ <node id="82" version="1" lat="50.085" lon="19.975"/>
+ <node id="83" version="1" lat="50.095" lon="19.975"/>
+ <node id="84" version="1" lat="50.095" lon="19.960"/>
+ <node id="85" version="1" lat="50.050" lon="20.020"/>
+ <node id="86" version="1" lat="50.050" lon="20.040"/>
+ <node id="87" version="1" lat="50.060" lon="20.040"/>
+ <node id="88" version="1" lat="50.060" lon="20.020"/>
  <way id="100" version="1"><nd ref="1"/><nd ref="2"/><tag k="highway" v="primary"/><tag k="name" v="Główna"/></way>
  <way id="101" version="1"><nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="14"/><nd ref="11"/></way>
  <way id="102" version="1"><nd ref="21"/><nd ref="22"/><nd ref="23"/><nd ref="24"/><nd ref="21"/></way>
  <way id="103" version="1"><nd ref="31"/><nd ref="32"/><nd ref="33"/><tag k="waterway" v="river"/><tag k="name" v="Rzeka"/></way>
  <way id="104" version="1"><nd ref="41"/><nd ref="42"/><nd ref="43"/><nd ref="44"/><nd ref="41"/><tag k="natural" v="water"/></way>
+ <way id="110" version="1"><nd ref="61"/><nd ref="62"/><nd ref="63"/><nd ref="64"/><nd ref="61"/></way>
+ <way id="111" version="1"><nd ref="65"/><nd ref="66"/><nd ref="67"/><nd ref="68"/><nd ref="65"/></way>
+ <way id="112" version="1"><nd ref="71"/><nd ref="72"/><nd ref="73"/><nd ref="74"/><nd ref="71"/><tag k="natural" v="wood"/></way>
+ <way id="113" version="1"><nd ref="81"/><nd ref="82"/><nd ref="83"/><nd ref="84"/><nd ref="81"/><tag k="landuse" v="residential"/></way>
+ <way id="114" version="1"><nd ref="85"/><nd ref="86"/><nd ref="87"/><nd ref="88"/><nd ref="85"/><tag k="landuse" v="farmland"/></way>
  <relation id="200" version="1"><member type="way" ref="101" role="outer"/><member type="way" ref="102" role="inner"/>
   <tag k="type" v="multipolygon"/><tag k="natural" v="water"/><tag k="name" v="Jezioro"/></relation>
+ <relation id="210" version="1"><member type="way" ref="110" role="outer"/><member type="way" ref="111" role="inner"/>
+  <tag k="type" v="multipolygon"/><tag k="landuse" v="forest"/></relation>
 </osm>
 """
 
@@ -78,8 +105,20 @@ class BuildMapBackgroundTest(unittest.TestCase):
             self.assertIn("c_500_198.ntt", files)
             bg2 = ntt.read_background(os.path.join(out, "c_500_198.ntt"))
             self.assertEqual(len(bg2["rivers"]), 1)
-            # the first byte of flags tells new readers about the extra part
-            self.assertEqual(open(os.path.join(out, "c_500_199.ntt"), "rb").read()[5], 1)
+            # the first byte of flags tells new readers about the extra parts (1 = background, 2 = terrain)
+            self.assertEqual(open(os.path.join(out, "c_500_199.ntt"), "rb").read()[5], 3)
+            # terrain (map style B): forest with a clearing, homes; tiny wood and farmland left out
+            ter = sorted((k, len(p)) for k, p in bg["terrain"])
+            self.assertEqual([k for k, _ in ter], [1, 4, 1 | 0x80])
+            forest = [p for k, p in bg["terrain"] if k == 1][0]
+            self.assertAlmostEqual(min(q[0] for q in forest), 50.06, places=5)
+            self.assertAlmostEqual(max(q[1] for q in forest), 19.93, places=5)
+            # roads-only cell east of 20.0: no farmland, so no terrain flag
+            self.assertNotIn("c_500_200.ntt", files)
+            self.assertEqual(m["wersja"], build_map.MAP_VERSION)
+            self.assertEqual(subprocess.run([sys.executable, os.path.join(HERE, "..", "silnik-tras", "build_map.py"),
+                                             "--wersja"], capture_output=True, text=True).stdout.strip(),
+                             str(build_map.MAP_VERSION))
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
