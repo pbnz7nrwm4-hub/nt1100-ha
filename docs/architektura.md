@@ -73,5 +73,5 @@
 - `.ntr` – trasa dla ekranu (binarnie, little-endian): nagłówek `NTR1` + punkty, skręty,
   limity, fotoradary, pogoda, punkty po drodze; teksty w UTF-8 obcinane bez przecinania liter
   (`nav.pack_ntr`).
-- `.ntt` – kwadrat mapy 0,1° × 0,1° (drogi, limity, fotoradary, POI, tło); `manifest.json`
+- `.ntt` – kwadrat mapy 0,1° × 0,1° (drogi, limity, fotoradary, POI, tło, teren); `manifest.json`
   ma rozmiar i CRC każdego kwadratu, więc ekran pobiera tylko zmienione.
