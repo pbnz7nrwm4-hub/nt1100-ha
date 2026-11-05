@@ -385,7 +385,12 @@ def bike_position(q_lat=None, q_lon=None):
     """Pozycja do decyzji w trasie: ekran (do 30 min), inaczej podana z telefonu."""
     sc = NAV.screen_position()
     if sc and time.time() - sc.get("t", 0) < 1800:
-        return {"lat": sc["lat"], "lon": sc["lon"], "src": "ekran", "age_s": int(time.time() - sc.get("t", 0))}
+        out = {"lat": sc["lat"], "lon": sc["lon"], "src": "ekran", "age_s": int(time.time() - sc.get("t", 0)),
+               "speed": sc.get("speed") or 0}
+        home = NAV.settings().get("home")
+        if home:
+            out["home_m"] = int(nav.ntt.dist_m((sc["lat"], sc["lon"]), (home["lat"], home["lon"])))
+        return out
     if q_lat is not None and q_lon is not None:
         return {"lat": q_lat, "lon": q_lon, "src": "telefon", "age_s": 0}
     return None
@@ -395,7 +400,7 @@ DEMO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-trasa
 
 
 def demo_route():
-    """Trasa demo (Bieruń – Pszczyna, 22 km) z fotoradarem, odcinkowym pomiarem
+    """Trasa demo (22 km) z fotoradarem, odcinkowym pomiarem
     i postojem; czasy pogody są względne, tu przesunięte na teraz."""
     with open(DEMO_PATH, encoding="utf-8") as f:
         r = json.load(f)
