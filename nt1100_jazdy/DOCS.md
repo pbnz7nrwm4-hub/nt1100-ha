@@ -28,6 +28,19 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.16 (ekran 1.1.3)
+
+Dodatek wiezie nowe oprogramowanie ekranu 1.1.3. Ekran zaproponuje je sam (w domu, przy ładowaniu)
+albo w Menu → „Sprawdź wersję” → „Aktualizuj 1.1.3”.
+
+- Dolny pasek mówi słowami, co dalej: „w prawo: Wschodnia”, „rondo, 2. zjazd”, „meta: …”, „punkt: …”,
+  a przy dalekim manewrze dodaje „· za 12 km”.
+- Bez sygnału ze skrzynki pasek pokazuje tylko „brak pozycji” (nie stary manewr ani ograniczenie).
+- Menu na postoju: jeden rozmiar napisów, „Restart” i „Usuń trasę” na czerwono. Trasa znika dopiero
+  po przytrzymaniu „Usuń trasę” przez 2 s (zwykłe dotknięcie tylko o tym przypomina).
+- Ustawienia Wi-Fi ekranu: hasło sieci „NT1100-Ekran” jest nowe przy każdym otwarciu (pokazuje je ekran),
+  a zapisane hasła i klucz nie wracają na stronę – puste pole oznacza „zostaw jak jest”.
+
 ## Zmiany w 1.5.15 (wygląd)
 
 - Panel nazywa się wszędzie „NT1100 Jazdy”. Plakietka u góry pokazuje, kiedy skrzynka ostatnio się odezwała
@@ -169,12 +182,13 @@ wczytywanie plików GPX (np. z Kurvigera).
 
 Ekran na kierownicy dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
 mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze uruchomienie:
-ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło `nt1100ekran`); na stronie
+ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło pokazuje sam ekran; od ekranu 1.1.3 przy każdym
+uruchomieniu ustawień jest nowe, 8 cyfr, wcześniej stałe `nt1100ekran`); na stronie
 `http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu
 (`http://IP-HA:8098`), adres spoza domu i klucz. Dodatek pokazuje ekran w zakładce
 Motocykl (ostatnia pozycja, bateria, wersja) i sam oferuje mu nowsze oprogramowanie
 (`ekran.bin`, w domu, przy ładowaniu). Na postoju ekran ma strony Stan / Pogoda / Jazda / Menu
-(jasność, pobranie mapy, aktualizacja, Wi-Fi, usunięcie trasy); przytrzymanie ekranu
+(jasność, pobranie mapy, aktualizacja, Wi-Fi, restart, usunięcie trasy – od 1.1.3 dopiero po przytrzymaniu 2 s); przytrzymanie ekranu
 1,5 s otwiera menu „Objazd 5 km / Pomiń punkt / Objazd 1 km / Tankowanie / Jedzenie”.
 
 **Tankowanie / Jedzenie** (ekran od 1.0.1): ekran sam, z mapy na karcie, znajduje 3 najbliższe
@@ -194,7 +208,7 @@ Ekran od 1.0.7 jest domyślnie ciemny (jak makieta); w ustawieniach ekranu „Wy
 
 **Bateria ekranu (ekran 1.0.11).** W zakładce Stan jest wiersz „bateria ekranu”: procent, napięcie i „ładuje się”, a bez podłączonego akumulatora „brak akumulatora”.
 
-**Menu ekranu (ekran 1.1.2).** „Sprawdź wersję” pokazuje na przycisku „Sprawdzam...”, potem „Masz najnowszą”, „Brak Wi-Fi” albo „Brak odpowiedzi”; gdy jest nowsza wersja, przycisk zmienia się na podświetlone „Aktualizuj X”. „Ustawienia Wi-Fi” uruchamiają ekran ponownie prosto w stronę ustawień.
+**Menu ekranu (ekran 1.1.2, układ od 1.1.3).** „Sprawdź wersję” pokazuje na przycisku „Sprawdzam...”, potem „Masz najnowszą”, „Brak Wi-Fi” albo „Brak odpowiedzi”; gdy jest nowsza wersja, przycisk zmienia się na podświetlone „Aktualizuj X”. „Ustawienia Wi-Fi” uruchamiają ekran ponownie prosto w stronę ustawień.
 
 **Mapa z tłem (ekran 1.1.0).** Ekran rysuje pod drogami wody (jeziora, zbiorniki, z wyspami), rzeki i kanały, a na mapie nazwy miejscowości (przy oddaleniu tylko większe). Aktualizując mapę, pobiera tylko kwadraty, które się zmieniły (porównuje rozmiar i sumę kontrolną), w wersji skompresowanej, a kwadraty spoza mapy usuwa. Mapa skopiowana na kartę z ZIP-a jest przyjmowana bez ponownego pobierania.
 
