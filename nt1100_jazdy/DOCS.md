@@ -29,6 +29,16 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.28 (krętość tras: bez skrzyżowań, mocniejsze „kręto”)
+- °/km zaplanowanej trasy nie liczy już skrętów na skrzyżowaniach (±40 m od skrętu z silnika tras),
+  więc trasa przez miasto nie wygląda na krętą tylko dlatego, że skręca na wielu rogach.
+- Gdy dwa warianty wychodzą tą samą drogą (różnica poniżej 0,3 km i 1 min), pokazuje się jedna
+  karta, np. „Kręto = Bardzo kręto”, zamiast dwóch takich samych.
+- Wariant „kręto” mocniej szuka zakrętów (suwak „zakręty” domyślnie 80 zamiast 60). Pomiar na
+  6 trasach z domu: kręto jest teraz zawsze między „lekko” a „bardzo kręto”. Własne ustawienia
+  suwaków zapisane w panelu zostają bez zmian.
+- Narzędzie `narzedzia/kretosc_diag.py` liczy te same trasy w każdym wariancie i porównuje krętość.
+
 ## Zmiany w 1.5.27 (serwis w dodatku Pojazdy)
 
 Gdy zainstalowany jest dodatek **Pojazdy** (to samo repozytorium), serwis motocykla prowadzi on: terminy

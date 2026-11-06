@@ -129,6 +129,19 @@ class GeometryTest(unittest.TestCase):
         c = nav.curviness(wind, nav.cum_dist(wind))
         self.assertEqual(c["level"], "bardzo kręta")
 
+    def test_curviness_skips_junction_turns(self):
+        # skręt w prawo na skrzyżowaniu (z silnika tras) nie podnosi krętości trasy
+        pts = nav.densify(l_shape(), 30)
+        cum = nav.cum_dist(pts)
+        full = nav.curviness(pts, cum)
+        j = min(range(len(cum)), key=lambda i: abs(cum[i] - 1000))
+        no_junction = nav.curviness(pts, cum, turns=[{"idx": j, "type": nav.T_RIGHT}])
+        self.assertLess(no_junction["deg_km"], full["deg_km"])
+        self.assertEqual(no_junction["level"], "prosta")
+        # łagodne „lekko w prawo” zostaje policzone
+        slight = nav.curviness(pts, cum, turns=[{"idx": j, "type": nav.T_SLIGHT_R}])
+        self.assertEqual(slight["deg_km"], full["deg_km"])
+
     def test_search_without_language(self):
         # Photon odrzuca lang=pl; zapytanie ma iść bez parametru języka.
         seen = []
@@ -523,8 +536,8 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(pri['"road_class == MOTORWAY"'], "1.0")      # glowne 0: motorways not avoided
         self.assertEqual(pri['"curvature > 0.97"'], "0.35")           # zakrety 100: straight roads penalised
         self.assertEqual(cm["distance_influence"], 5)                 # dluzej 100
-        # the description follows the thresholds (L-shaped test route: 90° turn over 2 km)
-        self.assertEqual(j["routes"][0]["curvy"]["level"], "bardzo kręta")
+        # the only 90° turn of the L-shaped test route is a junction from the engine -> not a bend (1.5.28)
+        self.assertEqual(j["routes"][0]["curvy"]["level"], "prosta")
         # legs: each section with its own variant -> extra "mix" route glued from two engine requests
         FakeGraphHopper.calls = []
         code, j = self.jpost(self.pu + "/api/nav/plan", {"points": pts, "variants": ["szybko"], "legs": ["szybko", "bardzo"],

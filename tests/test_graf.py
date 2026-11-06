@@ -187,7 +187,7 @@ class GraphTest(unittest.TestCase):
             p = graf.params(variant, ["autostrady", "platne"], self.curvy)
             self.assertEqual(p["di"], cm["distance_influence"])
         e = graf.Edge(None, 1000, 60, 4, 0, 0, 100, 250, 1, 0, 1, True)
-        self.assertAlmostEqual(graf.priority(e, graf.params("kreto", (), self.curvy)), 0.61, places=3)
+        self.assertAlmostEqual(graf.priority(e, graf.params("kreto", (), self.curvy)), 1 - 0.65 * 0.8, places=3)  # kręto: zakręty 80 (1.5.28)
         self.assertAlmostEqual(graf.priority(e, graf.params("bardzo", (), self.curvy)), 0.35 * 0.8, places=3)
 
 

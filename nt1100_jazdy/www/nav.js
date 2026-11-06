@@ -490,8 +490,12 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
   const bnds=[];const cards=[];
   j.routes.forEach((r,i)=>{const ll=r.pts.map(p=>[p[0],p[1]]);const l=L.polyline(ll,{color:VCOL[r.variant]||'#888',weight:4,opacity:.75}).addTo(NV.map);l.on('click',()=>pick(i));NV.lines.push(l);bnds.push(...ll)});
   const pick=i=>{const r=j.routes[i];NV.sel=i;cards.forEach(c=>{const on=c._i===i;c.classList.toggle('on',on);c.style.borderColor=on?(VCOL[j.routes[c._i].variant]||''):'';c.querySelector('.ac').hidden=!on});NV.lines.forEach((x,k)=>x.setStyle({opacity:k===i?1:.35,weight:k===i?7:3}));NV.lines[i].bringToFront();alongFor('token='+j.token+'&variant='+r.variant,VN(r.variant),r.pts.map(p=>[p[0],p[1]]))};
-  for(const i of order){const r=j.routes[i];const d=el('div','ncard');d._i=i;const vn=VN(r.variant);
-    const h=el('div','h');const t=el('b');const sw=el('i');sw.style.background=VCOL[r.variant]||'#888';t.append(sw,vn);const tm=el('span','ntm');tm.append(el('b',null,dur(r.min)),el('small',null,r.km+' km'));h.append(t,tm);d.append(h);
+  const seen=[];
+  for(const i of order){const r=j.routes[i];const vn=VN(r.variant);
+    // 1.5.28: dwa warianty tą samą drogą = jedna karta „Kręto = Bardzo kręto”
+    const twin=seen.find(x=>Math.abs(x.r.km-r.km)<0.3&&Math.abs(x.r.min-r.min)<=1);if(twin){twin.t.append(' = '+vn);NV.lines[i].setStyle({opacity:0});continue}
+    const d=el('div','ncard');d._i=i;
+    const h=el('div','h');const t=el('b');const sw=el('i');sw.style.background=VCOL[r.variant]||'#888';t.append(sw,vn);seen.push({r,t});const tm=el('span','ntm');tm.append(el('b',null,dur(r.min)),el('small',null,r.km+' km'));h.append(t,tm);d.append(h);
     if(r.legs&&r.legs.length){const bar=el('div','lb');const lm=r.leg_m&&r.leg_m.length===r.legs.length?r.leg_m:r.legs.map(()=>1);r.legs.forEach((v,k)=>{const s=el('span');s.style.flex=String(Math.max(1,lm[k]));s.style.background=VCOL[v]||'#888';bar.append(s)});d.append(bar);
       const per={};r.legs.forEach((v,k)=>{per[v]=(per[v]||0)+(r.leg_m?r.leg_m[k]:0)});d.append(el('small','mut',Object.keys(per).map(v=>(SHORT[v]||v)+(r.leg_m?' '+km(per[v]):'')).join(' · ')))}
     const rain=r.weather&&r.weather.length?Math.max(...r.weather.map(w=>w.rain_prob||0)):null;const temps=r.weather&&r.weather.length?r.weather.map(w=>w.temp).filter(x=>x!==null&&x!==undefined):[];
