@@ -38,6 +38,13 @@ class StronaTest(unittest.TestCase):
                     f.write(js)
                 self.check(p)
 
+    def test_moj_plan_w_kolorach_odcinkow(self):
+        with open(os.path.join(WWW, "nav.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("function legLine(", js)
+        self.assertIn("function legCuts(", js)
+        self.assertGreaterEqual(js.count("legLine(r,ll)"), 2)  # wynik planowania i zapisana trasa
+
     def test_wyszukiwarka_i_pinezki(self):
         with open(os.path.join(WWW, "nav.js"), encoding="utf-8") as f:
             js = f.read()
