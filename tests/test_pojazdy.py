@@ -200,6 +200,34 @@ class KorektaBaterii(unittest.TestCase):
         t3 = [dict(t[0], soc=0), dict(t[1], soc=100)]
         self.assertEqual(ob.odcinki(t3, l[:1], "2026-11-01", (13.2, 0.88))[0]["kwh"], 5.0)
 
+    def test_zakres_zuzycia(self):
+        # spadek baterii o 13,2 kWh: bez korekty 20 kWh, z korektą 35 kWh -> zakres 20..35 na 400 km
+        t = [dict(tank("2026-11-01 10:00", 1000, 10, 6), soc=100),
+             dict(tank("2026-11-10 10:00", 1400, 10, 6), soc=0)]
+        l = [{"poczatek": "2026-11-03 22:00", "kwh": 20.0, "koszt": 10.0}]
+        o = ob.odcinki(t, l, "2026-11-01", (13.2, 0.88))[0]
+        self.assertEqual((o["kwh_min"], o["kwh_max"]), (20.0, 35.0))
+        sr = ob.srednie([o])
+        self.assertAlmostEqual(sr["kwh100_od"], 5.0, places=1)
+        self.assertAlmostEqual(sr["kwh100_do"], 8.75, places=1)
+        self.assertAlmostEqual(sr["kwh100"], 8.75, places=1)
+        # przyrost baterii: korekta zmniejsza, zakres odwrotnie
+        t3 = [dict(t[0], soc=0), dict(t[1], soc=50)]
+        o3 = ob.odcinki(t3, l, "2026-11-01", (13.2, 0.88))[0]
+        self.assertLess(o3["kwh_min"], o3["kwh_max"])
+        self.assertEqual(o3["kwh_max"], 20.0)
+
+    def test_pomiar_baterii_na_sucho(self):
+        p = {"bateria_kwh": 13.8}
+        l = [{"zrodlo": "auto", "kwh": 7.0, "soc_od": 20, "soc_do": 70},
+             {"zrodlo": "auto", "kwh": 3.0, "soc_od": 50, "soc_do": 55},       # za mały przyrost – pomijana
+             {"zrodlo": "ekran_auta", "kwh": 50.0, "soc_od": 0, "soc_do": 100},  # nie z pomiaru
+             {"zrodlo": "auto", "kwh": 7.0, "soc_od": 10, "soc_do": 60, "wykluczone": 1}]
+        m = srv.pomiar_baterii(p, l)
+        self.assertEqual(m["sesji"], 1)
+        self.assertAlmostEqual(m["kwh_na_100"], 14.0, places=1)
+        self.assertAlmostEqual(m["ustawienie_kwh_na_100"], 13.8 / srv.SPRAWNOSC_LADOWANIA, places=1)
+
     def test_baza_ma_kolumne_soc(self):
         import baza
         db = baza.Baza(os.path.join(TMP, "soc.db"))

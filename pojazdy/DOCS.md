@@ -3,6 +3,15 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.3.0
+
+- **Zużycie prądu jako zakres.** Przy odcinkach z korektą o baterię panel pokazuje np. „9–12 kWh/100 km”: dolna i górna
+  wartość to wynik bez korekty i z korektą przy pojemności brutto. Prawda leży pomiędzy (pojemność użyteczna jest mniejsza
+  od brutto, a prąd z silnika i hamowania nie pochodzi z gniazdka). Gdy różnica jest mniejsza niż 0,5, pokazuje się jedna liczba.
+- **Pojemność z pomiaru (na sucho).** W statystykach pojawia się „Z gniazdka na 100 % baterii”: kWh z gniazdka na 100 %
+  wskaźnika, liczone z ładowań z zapisanym procentem przed i po (przyrost co najmniej 10 punktów, bez wpisów z ekranu auta).
+  Obok wartość z ustawień (pojemność ÷ sprawność). Do obliczeń na razie wchodzi ustawienie; po kilku sesjach porównamy i zdecydujemy.
+
 ## Zmiany w 1.2.0
 
 - **Prąd w odcinku poprawiany o stan baterii.** Zużycie prądu liczy się od pełnego do pełnego baku. Jeśli
