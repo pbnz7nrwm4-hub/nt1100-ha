@@ -211,6 +211,7 @@ async function vStat(){$("#tytul").textContent="Statystyki";
   h+=`</div>`;
   const kat=Object.entries(d.kategorie||{});if(kat.length)h+=`<div class="card"><b class="sm">Inne koszty</b>${kat.sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="kv"><span>${esc(k)}</span><span>${zl(v,2)}</span></div>`).join("")}</div>`;
   if(ev&&s.kwh100==null&&d.odcinki.length)h+=`<div class="note">Zużycie prądu policzę od pierwszego baku zatankowanego do pełna po ${dzien(d.prad_od||"")}: wtedy HA ma już wszystkie ładowania między tankowaniami. Wcześniejsze baki liczą tylko paliwo.</div>`;
+  if(ev&&d.odcinki.some(o=>o.skorygowano))h+=`<div class="note">Część baków skorygowana o stan baterii przy tankowaniu (zaczęte z naładowaną, skończone z rozładowaną i odwrotnie).</div>`;
   if(!d.odcinki.length)h+=`<div class="note">Spalanie liczę metodą „od pełnego do pełnego”, jak Fuelio: potrzebne są co najmniej dwa tankowania do pełna z przebiegiem.</div>`}
  $("#main").innerHTML=h;
  document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=()=>{S.sOkres=b.dataset.ok;zapamietaj();vStat()});
@@ -281,16 +282,18 @@ async function arkuszTankowanie(x){x=x||{};let pid=x.pojazd_id||(S.hPoj?+S.hPoj:
  ${pole("kwota","Kwota (zł)",x.kwota,{type:"number",im:"decimal",ph:"liczy się sama"})}
  <label class="tog"><input type="checkbox" id="pelny" ${x.pelny===0?"":"checked"}>Do pełna</label>
  <label class="tog"><input type="checkbox" id="pominiete" ${x.pominiete?"checked":""}>Pominąłem poprzednie tankowanie</label>
+ <div id="psoc">${pole("soc","Bateria w chwili tankowania (%)",x.soc,{type:"number",im:"decimal",ph:"puste = odczytam z HA"})}</div>
  ${pole("stacja","Stacja (opcjonalnie)",x.stacja,{list:"stacje"})}<datalist id="stacje"></datalist>
  ${pole("notatka","Notatka",x.notatka)}
  <div id="uw"></div>
  <div class="note">Wpisz dwie z trzech: litry, cena, kwota. Trzecia liczy się sama.</div>${usunBtn("tankowania",x.id)}`,
- async v=>{const d={pojazd_id:pid,data:val(v,"data").replace("T"," "),przebieg:val(v,"przebieg"),litry:val(v,"litry"),cena_l:val(v,"cena_l"),kwota:val(v,"kwota"),pelny:val(v,"pelny"),pominiete:val(v,"pominiete"),stacja:val(v,"stacja"),notatka:val(v,"notatka")};
+ async v=>{const d={pojazd_id:pid,data:val(v,"data").replace("T"," "),przebieg:val(v,"przebieg"),litry:val(v,"litry"),cena_l:val(v,"cena_l"),kwota:val(v,"kwota"),pelny:val(v,"pelny"),pominiete:val(v,"pominiete"),soc:val(v,"soc"),stacja:val(v,"stacja"),notatka:val(v,"notatka")};
   if(!d.przebieg){toast("Wpisz przebieg");return false}
   const r=await post("tankowania"+(x.id?"/"+x.id:""),d);toast(r.uwaga||"Zapisane")},podepnijUsun);
  const przelicz=()=>{const l=+val(v,"litry"),c=+val(v,"cena_l"),k=v.querySelector("#kwota");if(l&&c&&document.activeElement!==k)k.placeholder=nf(l*c,2)+" (liczy się sama)"};
  ["litry","cena_l"].forEach(i=>v.querySelector("#"+i).addEventListener("input",przelicz));
  async function podp(){const p=await api("podpowiedzi?pojazd="+pid);
+  const pj=S.pojazdy.find(q=>q.id==pid)||{};v.querySelector("#psoc").style.display=(pj.rodzaj==="phev"||pj.rodzaj==="ev")?"":"none";
   if(!x.id){if(!val(v,"data"))v.querySelector("#data").value=p.teraz;const c=v.querySelector("#cena_l");if(!x.cena_l)c.value=p.cena_l??"";const s=v.querySelector("#stacja");if(!x.stacja)s.value=p.stacja||"";
    const pr=v.querySelector("#przebieg");if(p.telemetria!=null){pr.value=Math.round(p.telemetria);pr.classList.add("hint")}else{pr.value="";pr.classList.remove("hint")}}
   v.querySelector("#phint").textContent=[p.telemetria!=null?"Z telemetrii: "+nf(p.telemetria,0)+" km (popraw, jeśli licznik pokazuje inaczej).":"",p.ostatnio_km!=null?"Ostatnio "+nf(p.ostatnio_km,0)+" km.":""].filter(Boolean).join(" ");

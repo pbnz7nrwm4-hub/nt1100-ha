@@ -3,6 +3,19 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.2.0
+
+- **Prąd w odcinku poprawiany o stan baterii.** Zużycie prądu liczy się od pełnego do pełnego baku. Jeśli
+  bak zaczęto z pełną baterią, a skończono z pustą, samo ładowanie z gniazdka zaniżałoby zużycie (i odwrotnie).
+  Dodatek zapisuje przy tankowaniu stan baterii (%) – sam, z historii HA (`sensor.eclipse_bateria`), albo
+  wpisany ręcznie w polu „Bateria w chwili tankowania”. Gdy oba tankowania odcinka go mają, kWh zmniejsza się
+  o przyrost energii w baterii (÷ 88 % sprawności ładowania), a przy spadku zwiększa. Takie odcinki mają
+  znaczek „skorygowano o stan baterii”.
+- Dla tankowań z Fuelio (sama data) przyjmowane jest południe; przy większej różnicy popraw godzinę lub
+  wpisz % ręcznie. Działa od 1.11.2026 (wcześniej HA nie zapisywał procentu).
+- Uwaga: gdy silnik doładował baterię w czasie jazdy, jej przyrost nie pochodzi z gniazdka – taki odcinek
+  wychodzi z prądem lekko zaniżonym (benzyna tego doładowania jest już w litrach).
+
 ## Zmiany w 1.1.0
 
 - **Ładowania z ekranu auta**: historię z ekranu Mitsubishi (Poziom ładowania → historia długo-

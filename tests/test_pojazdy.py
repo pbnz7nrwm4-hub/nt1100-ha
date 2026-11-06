@@ -182,6 +182,44 @@ class Fuelio(unittest.TestCase):
         self.assertEqual(back[0]["koszty"][0]["kategoria"], "Opony")
 
 
+class KorektaBaterii(unittest.TestCase):
+    def test_przyrost_i_spadek(self):
+        t = [dict(tank("2026-11-01 10:00", 1000, 10, 6), soc=100),
+             dict(tank("2026-11-10 10:00", 1400, 10, 6), soc=0)]
+        l = [{"poczatek": "2026-11-03 22:00", "kwh": 20.0, "koszt": 10.0}]
+        o = ob.odcinki(t, l, "2026-11-01", (13.2, 0.88))
+        # bateria spadła o 13,2 kWh -> do zużycia dochodzi 15 kWh z gniazdka
+        self.assertAlmostEqual(o[0]["kwh"], 35.0, places=1)
+        self.assertTrue(o[0]["skorygowano"])
+        self.assertAlmostEqual(o[0]["koszt_pradu"], 10.0 * 35.0 / 20.0, places=1)
+        # bez stanu baterii albo bez korekty – jak dotąd
+        self.assertAlmostEqual(ob.odcinki(t, l, "2026-11-01")[0]["kwh"], 20.0)
+        t2 = [dict(t[0], soc=None), t[1]]
+        self.assertNotIn("skorygowano", ob.odcinki(t2, l, "2026-11-01", (13.2, 0.88))[0])
+        # przyrost baterii większy niż ładowanie nie daje ujemnego zużycia
+        t3 = [dict(t[0], soc=0), dict(t[1], soc=100)]
+        self.assertEqual(ob.odcinki(t3, l[:1], "2026-11-01", (13.2, 0.88))[0]["kwh"], 5.0)
+
+    def test_baza_ma_kolumne_soc(self):
+        import baza
+        db = baza.Baza(os.path.join(TMP, "soc.db"))
+        r = db.dodaj("tankowania", {"pojazd_id": 1, "data": "2026-11-02 10:00", "przebieg": 1, "litry": 1, "soc": 55.0})
+        self.assertEqual(db.jeden("tankowania", r)["soc"], 55.0)
+        db.db.close()
+        # stara baza bez kolumny dostaje ją przy starcie
+        import sqlite3
+        st = os.path.join(TMP, "stara.db")
+        c = sqlite3.connect(st)
+        c.execute("CREATE TABLE tankowania (id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, data TEXT NOT NULL, przebieg REAL,"
+                  " litry REAL, cena_l REAL, kwota REAL, pelny INTEGER DEFAULT 1, pominiete INTEGER DEFAULT 0,"
+                  " stacja TEXT, notatka TEXT, fuelio_typ TEXT, zrodlo TEXT DEFAULT 'recznie', uid TEXT UNIQUE)")
+        c.commit()
+        c.close()
+        db2 = baza.Baza(st)
+        self.assertIn("soc", [x[1] for x in db2.db.execute("PRAGMA table_info(tankowania)")])
+        db2.db.close()
+
+
 class LadowaniaZAuta(unittest.TestCase):
     CSV = b"od,do,kwh_bateria,notatka\n2026-06-01,2026-06-30,150,czerwiec\n2026-07-05,2026-07-05,9.5,\nzle,,x,\n"
 
@@ -281,6 +319,25 @@ class Serwer(unittest.TestCase):
         ids = [c[0] for c in srv.czujniki()]
         self.assertIn("sensor.pojazdy_eclipse_zuzycie_pradu", ids)
         self.assertIn("sensor.pojazdy_nt1100_terminy", ids)
+
+    def test_soc_z_historii(self):
+        ecl = [p for p in self.req("api/pojazdy") if p["klucz"] == "eclipse"][0]["id"]
+        i = srv.DB.dodaj("tankowania", {"pojazd_id": ecl, "data": "2026-11-03 18:00", "przebieg": 77000, "litry": 5, "cena_l": 6})
+        j = srv.DB.dodaj("tankowania", {"pojazd_id": ecl, "data": "2026-11-04", "przebieg": 77100, "litry": 5, "cena_l": 6})
+        stare = srv.ha_historia
+        # 18:00 lokalnie = 17:00 UTC (listopad); data bez godziny = 12:00 lokalnie = 11:00 UTC
+        srv.ha_historia = lambda e, od, do: {"sensor.eclipse_bateria": [
+            {"state": "40", "last_changed": "2026-11-03T16:00:00+00:00"},
+            {"state": "unavailable", "last_changed": "2026-11-03T16:30:00+00:00"},
+            {"state": "90", "last_changed": "2026-11-04T08:00:00+00:00"}]}
+        try:
+            srv.uzupelnij_soc()
+        finally:
+            srv.ha_historia = stare
+        self.assertEqual(srv.DB.jeden("tankowania", i)["soc"], 40.0)
+        self.assertEqual(srv.DB.jeden("tankowania", j)["soc"], 90.0)
+        srv.DB.usun("tankowania", i)
+        srv.DB.usun("tankowania", j)
 
     def test_tylko_przez_ingress(self):
         old = set(srv.PEERS)
