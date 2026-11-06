@@ -60,9 +60,27 @@ def osm():
     way(33, [k, e2], highway="residential")
     rels.append((300, [("way", 30, "from"), ("node", j, "via"), ("way", 31, "to")],
                  {"type": "restriction", "restriction": "no_straight_on"}))
+    # adresy: miasto z ulicami, dwie wsie o tej samej nazwie daleko od siebie, wieś bez ulic, budynek
+    addr = []
+
+    def address(p, **tags):
+        addr.append((node(p), tags))
+    address((50.050, 19.960), **{"addr:city": "Łąkowo", "addr:street": "Główna", "addr:housenumber": "10",
+                                 "addr:postcode": "43-150"})
+    address((50.051, 19.961), **{"addr:city": "Łąkowo", "addr:street": "Główna", "addr:housenumber": "2"})
+    address((50.052, 19.962), **{"addr:city": "Łąkowo", "addr:street": "Główna", "addr:housenumber": "2a"})
+    address((50.053, 19.963), **{"addr:city": "Łąkowo", "addr:street": "Polna", "addr:housenumber": "1"})
+    address((50.060, 19.970), **{"addr:city": "Nowa Wieś", "addr:street": "Leśna", "addr:housenumber": "5"})
+    address((50.160, 20.270), **{"addr:city": "Nowa Wieś", "addr:street": "Leśna", "addr:housenumber": "5"})
+    address((50.161, 20.271), **{"addr:city": "Nowa Wieś", "addr:street": "Leśna", "addr:housenumber": "7"})
+    address((50.100, 20.000), **{"addr:place": "Wola", "addr:housenumber": "12"})
+    b = [node((50.0540, 19.9640)), node((50.0540, 19.9650)), node((50.0550, 19.9650)), node((50.0550, 19.9640))]
+    way(90, b + [b[0]], building="house", **{"addr:city": "Łąkowo", "addr:street": "Polna", "addr:housenumber": "3"})
     out = ["<?xml version='1.0' encoding='UTF-8'?>", '<osm version="0.6" generator="test">']
+    tagged = dict(addr)
     for i in sorted(nodes):
-        out.append(' <node id="%d" version="1" lat="%.6f" lon="%.6f"/>' % (i, nodes[i][0], nodes[i][1]))
+        tags = "".join('<tag k="%s" v="%s"/>' % kv for kv in tagged.get(i, {}).items())
+        out.append(' <node id="%d" version="1" lat="%.6f" lon="%.6f">%s</node>' % (i, nodes[i][0], nodes[i][1], tags))
     for wid, ids, tags in ways:
         out.append(' <way id="%d" version="1">%s%s</way>' % (
             wid, "".join('<nd ref="%d"/>' % i for i in ids),
@@ -109,7 +127,7 @@ class GraphTest(unittest.TestCase):
 
     def test_manifest_lists_graph_files(self):
         m = json.load(open(os.path.join(self.out, "manifest.json")))
-        self.assertEqual(m["wersja"], 3)
+        self.assertEqual(m["wersja"], 4)
         names = [f[0] for f in m["graph"]["cells"]]
         self.assertTrue(names and all(n.startswith("g_") and n.endswith(".ntg") for n in names))
         self.assertTrue(all(n.endswith(".ntt") for n, _, _ in m["files"]))
@@ -164,6 +182,55 @@ class GraphTest(unittest.TestCase):
         e = graf.Edge(None, 1000, 60, 4, 0, 0, 100, 250, 1, 0, 1, True)
         self.assertAlmostEqual(graf.priority(e, graf.params("kreto", (), self.curvy)), 0.61, places=3)
         self.assertAlmostEqual(graf.priority(e, graf.params("bardzo", (), self.curvy)), 0.35 * 0.8, places=3)
+
+
+@unittest.skipUnless(shutil.which("osmium"), "brak programu osmium (osmium-tool)")
+class AddressTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        GraphTest.setUpClass.__func__(cls)
+        import adresy
+        cls.a = adresy.Addresses(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_manifest_and_index(self):
+        m = json.load(open(os.path.join(self.out, "manifest.json")))
+        names = [f[0] for f in m["addr"]["cells"]]
+        self.assertIn("a_index.nta", names)
+        self.assertEqual(m["addr"]["bytes"], sum(f[1] for f in m["addr"]["cells"]))
+        towns = sorted((t["name"], t["count"]) for t in self.a.index())
+        self.assertEqual(towns, [("Nowa Wieś", 1), ("Nowa Wieś", 2), ("Wola", 1), ("Łąkowo", 5)])
+
+    def test_find_without_polish_letters(self):
+        r = self.a.find("lakowo", "glowna", "2A")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["name"], "Główna 2a, Łąkowo")
+        self.assertAlmostEqual(r["lat"], 50.052, places=5)
+        r = self.a.find("Łąk", "Gł")
+        self.assertEqual(r["numbers"], ["2", "2a", "10"])
+        r = self.a.find("łąkowo")
+        self.assertEqual(r["postcode"], "43-150")
+        self.assertEqual(r["streets"], ["Główna", "Polna"])
+
+    def test_building_and_village_without_street(self):
+        r = self.a.find("Łąkowo", "Polna", "3")
+        self.assertAlmostEqual(r["lat"], 50.0545, places=3)
+        r = self.a.find("wola", "", "12")
+        self.assertEqual((r["ok"], r["name"]), (True, "Wola 12"))
+
+    def test_same_name_far_apart_nearest_first(self):
+        r = self.a.find("Nowa Wieś", "Leśna", "7", near=(50.16, 20.27))
+        self.assertTrue(r["ok"])
+        r = self.a.find("Nowa Wieś", "Leśna", "7", near=(50.06, 19.97))
+        self.assertFalse(r["ok"])                       # bliższa Nowa Wieś nie ma numeru 7
+        self.assertEqual(r["numbers"], ["5"])
+
+    def test_missing(self):
+        self.assertFalse(self.a.find("Xyz")["ok"])
+        self.assertFalse(self.a.find("Łąkowo", "Kwiatowa")["ok"])
 
 
 if __name__ == "__main__":

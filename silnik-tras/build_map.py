@@ -53,7 +53,20 @@ krawędź = kawałek drogi między dwoma kolejnymi skrzyżowaniami, w kierunku, 
   zakazy skrętu (13 B): u32 węzeł (w tym kwadracie) u32 droga_z u32 droga_do u8 rodzaj
          (1 = zakaz wjazdu z drogi_z w drogę_do, 2 = z drogi_z wolno tylko w drogę_do)
 
-manifest.json: {"format":1,"wersja":3,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
+Od wersji mapy 4 są też adresy (wybór celu offline): a_<lat10>_<lon10>.nta – miejscowości, których
+środek leży w tym kwadracie, z ulicami i numerami; a_index.nta – spis wszystkich miejscowości.
+Napis = u8 długość + UTF-8. Miejscowość = addr:city albo addr:place; te same nazwy dalej niż ok. 20 km
+od siebie to osobne miejscowości. Nazwa „złożona” = małe litery bez polskich znaków (szukanie bez ogonków).
+  a_*.nta: "NTA1" u8 wersja=1 u8 0 i16 lat10 i16 lon10 u32 n_miejscowości, potem miejscowości:
+         napis nazwa, napis kod_pocztowy, i32 lat1e6 i32 lon1e6 (środek), u32 n_ulic, ulice (po nazwie
+         złożonej): napis nazwa ("" = numery bez ulicy, addr:place), u32 n_numerów, numery (rosnąco):
+         napis numer, i32 lat1e6, i32 lon1e6
+  a_index.nta: "NTAI" u8 wersja=1 u8 0 u32 n, wpisy (po nazwie złożonej, większe wcześniej):
+         napis nazwa_złożona, napis nazwa, napis kod_pocztowy, i32 lat1e6 i32 lon1e6, u32 n_adresów,
+         i16 lat10 i16 lon10 (plik a_*), u32 przesunięcie miejscowości w tym pliku
+  W manifeście: "addr": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]} (z a_index.nta).
+
+manifest.json: {"format":1,"wersja":4,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
 "graph": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]}, ...}
 (lista grafu nazywa się „cells”, nie „files”, bo proste czytniki JSON na ekranie szukają pierwszego „files”).
 crc32 jak w zlib (binascii.crc32), dziesiętnie.
@@ -71,8 +84,8 @@ import time
 FORMAT = 1
 # Wersja zawartości mapy: aktualizuj.sh przebudowuje kwadraty, gdy kontener ma starszą
 # (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B);
-# 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie.
-MAP_VERSION = 3
+# 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie; 4 = + adresy (a_*.nta).
+MAP_VERSION = 4
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -137,6 +150,10 @@ EDGE_REC = struct.Struct("<bbIHBBBBBBIHH")     # krawędź w pliku .ntg (22 B)
 NODE_REC = struct.Struct("<iiII")
 RESTR_REC = struct.Struct("<IIIB")
 GRAPH_HEAD = struct.Struct("<4sBBhhIIII")
+
+ADDR_FORMAT = 1
+ADDR_GRID = 0.2   # miejscowości o tej samej nazwie w stykających się oczkach 0,2° to jedna miejscowość
+PL_FOLD = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
 
 # Rodzaje punktów.
 P_CAMERA, P_SECTION_START, P_SECTION_END = 1, 2, 3
@@ -725,6 +742,171 @@ def build_graph(edges_tmp, restrictions, out):
     return {"format": GRAPH_FORMAT, "bytes": total, "cells": files}
 
 
+def fold(s):
+    """Nazwa do szukania: małe litery, bez polskich znaków i myślników."""
+    return " ".join((s or "").translate(PL_FOLD).lower().replace("-", " ").split())
+
+
+def bstr(s):
+    b = (s or "").encode("utf-8")[:255]
+    while b:
+        try:
+            b.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            b = b[:-1]
+    return bytes([len(b)]) + b
+
+
+def number_key(n):
+    digits = ""
+    for ch in n:
+        if ch.isdigit():
+            digits += ch
+        else:
+            break
+    return (int(digits) if digits else 1 << 30, n.lower())
+
+
+def feature_point(geom):
+    t, c = geom.get("type"), geom.get("coordinates")
+    if not c:
+        return None
+    if t == "Point":
+        pts = [c]
+    elif t == "LineString":
+        pts = c
+    elif t == "Polygon":
+        pts = c[0]
+    elif t == "MultiPolygon":
+        pts = c[0][0]
+    else:
+        return None
+    if not pts:
+        return None
+    return sum(p[1] for p in pts) / len(pts), sum(p[0] for p in pts) / len(pts)
+
+
+def add_addresses(src, work, out):
+    """Adresy (addr:housenumber) pogrupowane w miejscowości, ulice i numery; zwraca część manifestu."""
+    t0 = time.time()
+    apbf = os.path.join(work, "adresy.pbf")
+    run(["osmium", "tags-filter", src, "nwr/addr:housenumber", "-o", apbf, "--overwrite"])
+    lines = os.path.join(work, "adresy.txt")
+    n = 0
+    with open(lines, "w") as lf, subprocess.Popen(["osmium", "export", apbf, "-f", "geojsonseq"],
+                                                  stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as p:
+        for line in p.stdout:
+            line = line.lstrip("\x1e")
+            if not line.startswith("{"):
+                continue
+            f = json.loads(line)
+            tags = f.get("properties") or {}
+            num = (tags.get("addr:housenumber") or "").strip()
+            city = (tags.get("addr:city") or tags.get("addr:place") or "").strip()
+            if not num or not city:
+                continue
+            street = (tags.get("addr:street") or "").strip()
+            if not street and tags.get("addr:place") and tags.get("addr:place") != city:
+                street = tags["addr:place"].strip()   # przysiółek z numerami w granicach miasta/gminy
+            pt = feature_point(f.get("geometry") or {})
+            if not pt:
+                continue
+            clean = [x.replace("\t", " ").replace("\n", " ") for x in
+                     (fold(city), city, street, num, (tags.get("addr:postcode") or "").strip())]
+            lf.write("\t".join(clean + [str(int(round(pt[0] * 1e6))), str(int(round(pt[1] * 1e6)))]) + "\n")
+            n += 1
+    srt = lines + ".sort"
+    run(["sort", "-t", "\t", "-k1,1", "-S", "25%", "-T", work, "-o", srt, lines], env=dict(os.environ, LC_ALL="C"))
+    os.remove(lines)
+    cells = collections.defaultdict(lambda: [bytearray(), 0])
+    index = []
+
+    def flush(group):
+        # skupiska: ta sama nazwa w stykających się oczkach 0,2°
+        grid = collections.defaultdict(list)
+        for r in group:
+            grid[(math.floor(r[5] / 1e6 / ADDR_GRID), math.floor(r[6] / 1e6 / ADDR_GRID))].append(r)
+        seen = set()
+        for start in grid:
+            if start in seen:
+                continue
+            comp, todo = [], [start]
+            seen.add(start)
+            while todo:
+                k = todo.pop()
+                comp.extend(grid[k])
+                for dl in (-1, 0, 1):
+                    for do in (-1, 0, 1):
+                        nk = (k[0] + dl, k[1] + do)
+                        if nk in grid and nk not in seen:
+                            seen.add(nk)
+                            todo.append(nk)
+            town(comp)
+
+    def town(rows):
+        name = collections.Counter(r[1] for r in rows).most_common(1)[0][0]
+        pcs = collections.Counter(r[4] for r in rows if r[4])
+        pc = pcs.most_common(1)[0][0] if pcs else ""
+        lat = int(sum(r[5] for r in rows) / len(rows))
+        lon = int(sum(r[6] for r in rows) / len(rows))
+        streets = collections.defaultdict(dict)
+        for r in rows:
+            streets[r[2]].setdefault(r[3], (r[5], r[6]))
+        count = sum(len(v) for v in streets.values())   # bez powtórzeń (budynek bywa linią i obszarem)
+        key = (math.floor(lat / 1e5), math.floor(lon / 1e5))
+        c = cells[key]
+        off = len(c[0])
+        rec = bytearray(bstr(name) + bstr(pc) + struct.pack("<iiI", lat, lon, len(streets)))
+        for st in sorted(streets, key=lambda x: (fold(x), x)):
+            nums = streets[st]
+            rec += bstr(st) + struct.pack("<I", len(nums))
+            for num in sorted(nums, key=number_key):
+                rec += bstr(num) + struct.pack("<ii", *nums[num])
+        c[0] += rec
+        c[1] += 1
+        index.append((fold(name), -count, name, pc, lat, lon, count, key, off))
+
+    cur, group = None, []
+    with open(srt) as f:
+        for line in f:
+            a = line.rstrip("\n").split("\t")
+            if len(a) != 7:
+                continue
+            row = (a[0], a[1], a[2], a[3], a[4], int(a[5]), int(a[6]))
+            if row[0] != cur:
+                if group:
+                    flush(group)
+                cur, group = row[0], []
+            group.append(row)
+    if group:
+        flush(group)
+    os.remove(srt)
+    files = []
+    total = 0
+    for key in sorted(cells):
+        data = struct.pack("<4sBBhhI", b"NTA1", ADDR_FORMAT, 0, key[0], key[1], cells[key][1])
+        base = len(data)
+        data += bytes(cells[key][0])
+        name = "a_%d_%d.nta" % key
+        with open(os.path.join(out, name), "wb") as f:
+            f.write(data)
+        files.append([name, len(data), binascii.crc32(data)])
+        total += len(data)
+        cells[key][0] = base  # przesunięcie miejscowości liczone od początku pliku
+    index.sort()
+    data = bytearray(struct.pack("<4sBBI", b"NTAI", ADDR_FORMAT, 0, len(index)))
+    for f_, _, name, pc, lat, lon, cnt, key, off in index:
+        data += bstr(f_) + bstr(name) + bstr(pc) + struct.pack("<iiIhhI", lat, lon, cnt, key[0], key[1],
+                                                                off + cells[key][0])
+    with open(os.path.join(out, "a_index.nta"), "wb") as f:
+        f.write(data)
+    files.append(["a_index.nta", len(data), binascii.crc32(bytes(data))])
+    total += len(data)
+    print("adresy: %d, miejscowości %d, %.1f MB (%.0f s)" % (n, len(index), total / 1e6, time.time() - t0), flush=True)
+    return {"format": ADDR_FORMAT, "bytes": total, "cells": files}
+
+
 def build(pbf, out, bbox=None):
     t0 = time.time()
     os.makedirs(out, exist_ok=True)
@@ -974,14 +1156,17 @@ def build(pbf, out, bbox=None):
         total += n
     cells.clear()
 
-    # 6. graf tras do nawigacji offline (pliki g_*.ntg)
+    # 6. adresy do wyboru celu offline (pliki a_*.nta)
+    addr = add_addresses(src, work, out)
+
+    # 7. graf tras do nawigacji offline (pliki g_*.ntg)
     graph = build_graph(edges_tmp, restrictions, out)
     print("graf tras: %d krawędzi, %d zakazów skrętu" % (nedges, len(restrictions)), flush=True)
     manifest = {
         "format": FORMAT, "wersja": MAP_VERSION, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
         "source": os.path.basename(pbf), "ways": nways, "points": npoints, "bytes": total,
         "bbox": [min(lats) / CELL, min(lons) / CELL, (max(lats) + 1) / CELL, (max(lons) + 1) / CELL] if cells else None,
-        "files": files, "graph": graph,
+        "files": files, "graph": graph, "addr": addr,
     }
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f)

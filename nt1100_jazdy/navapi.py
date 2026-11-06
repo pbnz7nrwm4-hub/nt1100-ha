@@ -5,12 +5,14 @@ Strona (Ingress, bez klucza):
        /api/nav/poi?bbox, /api/nav/along?id|token&variant&kinds&max (POI wzdłuż trasy),
        /api/nav/nearby?kinds&lat&lon (miejsca przed motocyklem), /api/nav/resolve?text, /api/nav/settings,
        /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent,
-       /api/nav/offline?from=lat,lon&to=lat,lon&variant&avoid (trasa tak, jak policzy ją ekran bez internetu)
+       /api/nav/offline?from=lat,lon&to=lat,lon&variant&avoid (trasa tak, jak policzy ją ekran bez internetu),
+       /api/nav/adres?miasto&ulica&nr&lat&lon (adres ze spisu na karcie, jak na ekranie)
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
        /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/drive (jazda autem: korki), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
-  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz i graf .ntg.gz),
-       /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
+  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz, graf .ntg.gz, adresy .nta.gz),
+       /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS),
+       /api/nav/search?q&lat&lon (szukanie celu przez hotspot)
   POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę)
 """
 import json
@@ -440,10 +442,11 @@ def route_summary(r, with_pts=True, full=False):
     return out
 
 
-def goto(text, variant=None, name=None):
-    """Cel z tekstu/linku: trasa z pozycji motocykla (albo domu) i oznaczenie
-    jako bieżąca dla ekranu."""
-    place = fav_place(text) or NAV.resolve_place(text)
+def goto(text, variant=None, name=None, dest=None, avoid=None):
+    """Cel z tekstu/linku (albo gotowy punkt dest = {lat, lon, name}, np. adres wybrany na ekranie
+    z karty): trasa z pozycji motocykla (albo domu) i oznaczenie jako bieżąca dla ekranu.
+    avoid = lista omijania z ekranu (domyślnie z ustawień)."""
+    place = dest if dest else (fav_place(text) or NAV.resolve_place(text))
     if not place:
         raise ValueError("nie rozpoznałem miejsca w: %s" % (text or "")[:60])
     start = start_point()
@@ -451,8 +454,9 @@ def goto(text, variant=None, name=None):
         raise ValueError("nie znam pozycji motocykla ani domu (ustaw dom w zakładce Nawigacja)")
     s = NAV.settings()
     v = variant or s["go_variant"]
+    av = [a for a in avoid if a in graf.AVOID] if isinstance(avoid, list) else s["avoid"]
     routes, errors = NAV.plan([start, {"lat": place["lat"], "lon": place["lon"], "name": place["name"]}], [v],
-                              s["avoid"], name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True)
+                              av, name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True)
     if not routes:
         raise ValueError(errors.get(v) or "silnik tras nie odpowiedział")
     rid = NAV.store_route(routes[0], True)
@@ -623,6 +627,14 @@ def page_get(h, path, q):
             out = NAV.nearby(pos["lat"], pos["lon"], kinds)
             out["pos"] = pos
             return h.send(200, out) or True
+        if path == "/api/nav/adres":
+            # adres tak, jak znajdzie go ekran bez internetu (spis z karty)
+            if not NAV.addresses.available():
+                return h.send(200, {"ok": False, "error": "mapa bez adresów (potrzebna mapa w wersji 4)"}) or True
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+            near = (lat, lon) if lat is not None and lon is not None else None
+            return h.send(200, NAV.addresses.find(q.get("miasto") or "", q.get("ulica") or "", q.get("nr") or "",
+                                                  near)) or True
         if path == "/api/nav/offline":
             # trasa tak, jak policzy ją ekran bez internetu (graf z karty), do porównania z silnikiem
             try:
@@ -1035,7 +1047,7 @@ def screen_get(h, path, q):
             if not m:
                 return h.send(404, {"ok": False, "error": "brak mapy"}) or True
             return h.send(200, m) or True
-        if path.startswith("/api/nav/mapa/") and (path.endswith(".ntt.gz") or path.endswith(".ntg.gz")):
+        if path.startswith("/api/nav/mapa/") and path[-7:] in (".ntt.gz", ".ntg.gz", ".nta.gz"):
             p = NAV.map_gz(path.rsplit("/", 1)[1][:-3])
             if not p:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True
@@ -1045,6 +1057,17 @@ def screen_get(h, path, q):
             if not p:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True
             return h.send_path(p, "application/octet-stream") or True
+        if path == "/api/nav/search":
+            # ekran 5" przez hotspot: szukanie celu w internecie (adresy, firmy, miejsca) i w ulubionych
+            qq = (q.get("q") or "").strip()
+            if len(qq) < 2:
+                return h.send(200, {"results": []}) or True
+            fav = fav_place(qq)
+            res = NAV.search(qq, SRV.num(q.get("lat")), SRV.num(q.get("lon")), 6)
+            out = ([dict(fav, label=fav["name"], type="ulubione")] if fav else []) + \
+                [{"name": r["name"][:40], "label": r["label"][:80], "lat": r["lat"], "lon": r["lon"]} for r in res
+                 if r.get("lat") is not None]
+            return h.send(200, {"results": out}) or True
         if path == "/api/nav/traffic":
             rid = int(SRV.num(q.get("id")) or 0)
             lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
@@ -1116,7 +1139,12 @@ def screen_post(h, path, q, body):
             if lat is not None and lon is not None and (lat or lon):
                 # ekran 5" „Do domu”: start z jego pozycji teraz
                 NAV.screen_seen(lat, lon, 0, SRV.num(j.get("heading")) or 0, {"t_seen": int(time.time())})
-            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"))
+            dest = None
+            dlat, dlon = SRV.num(j.get("dest_lat")), SRV.num(j.get("dest_lon"))
+            if dlat is not None and dlon is not None:
+                # ekran 5": cel wybrany na ekranie (adres z karty, ulubione), te same ustawienia co offline
+                dest = {"lat": dlat, "lon": dlon, "name": str(j.get("dest_name") or "")[:40]}
+            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"), dest, j.get("avoid"))
             return h.send(200, {"ok": True, "route": r, "place": place}) or True
         if path == "/api/nav/use":
             # ekran 5": jeździec wybrał na postoju inną trasę z listy

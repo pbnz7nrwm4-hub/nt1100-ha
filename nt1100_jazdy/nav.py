@@ -30,6 +30,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+import adresy
 import graf
 import ntt
 
@@ -45,7 +46,9 @@ GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGH
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
 # pliki mapy z kontenera: kwadraty .ntt i (od mapy 3) graf tras .ntg
-MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg")
+MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta")
+# części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
+MAP_EXTRA = ("graph", "addr")
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
@@ -409,6 +412,7 @@ class Nav:
         self.settings_fn = settings_fn  # -> dict z ustawieniami nawigacji
         self.map = ntt.Map(self.map_dir)
         self.graph = graf.Graph(self.map_dir)
+        self.addresses = adresy.Addresses(self.map_dir)
         self.lock = threading.RLock()
         self.state_path = os.path.join(data, "nawigacja.json")
         self.state = self._read(self.state_path, {})
@@ -1380,6 +1384,7 @@ class Nav:
                 "mb": round(m.get("bytes", 0) / 1e6, 1) if m else 0, "source_url": self.settings()["map_url"],
                 # graf tras do nawigacji offline na ekranie 5" (mapa wersja 3)
                 "graph_files": len(g.get("cells", [])), "graph_mb": round(g.get("bytes", 0) / 1e6, 1),
+                "addr_mb": round(((m or {}).get("addr") or {}).get("bytes", 0) / 1e6, 1),
                 "sync": self.state.get("map_sync")}
 
     def map_sync(self, force=False):
@@ -1405,14 +1410,19 @@ class Nav:
         for f in (local or {}).get("files", []):
             if len(f) >= 3:
                 have[f[0]] = (f[1], f[2])
-        for f in ((local or {}).get("graph") or {}).get("cells", []):
-            if len(f) >= 3:
-                have[f[0]] = (f[1], f[2])
+        for part in MAP_EXTRA:
+            for f in ((local or {}).get(part) or {}).get("cells", []):
+                if len(f) >= 3:
+                    have[f[0]] = (f[1], f[2])
         n = kept = 0
         files = []
-        gfiles = []
-        rgraph = remote.get("graph") if isinstance(remote.get("graph"), dict) else {}
-        for f in list(remote.get("files", [])) + list(rgraph.get("cells", [])):
+        extra = {part: (remote.get(part), []) for part in MAP_EXTRA if isinstance(remote.get(part), dict)}
+        wanted = list(remote.get("files", []))
+        for part, (r, _) in extra.items():
+            wanted += [list(f) + [part] for f in r.get("cells", [])]
+        for f in wanted:
+            part = f[3] if len(f) >= 4 else None
+            f = f[:3]
             name, size = f[0], f[1]
             crc = f[2] if len(f) >= 3 else None
             if not MAP_FILE.fullmatch(name):
@@ -1432,10 +1442,10 @@ class Nav:
                 n += 1
             if crc is None:
                 crc = file_crc(dst)
-            (gfiles if name.endswith(".ntg") else files).append([name, size, crc])
+            (extra[part][1] if part else files).append([name, size, crc])
         remote = dict(remote, files=files)
-        if rgraph:
-            remote["graph"] = dict(rgraph, cells=gfiles)
+        for part, (r, got) in extra.items():
+            remote[part] = dict(r, cells=got)
         self._write(os.path.join(tmp, "manifest.json"), remote)
         with self.map.lock:
             old = self.map_dir + ".stara"
@@ -1499,16 +1509,20 @@ class Nav:
         cen = (home["lat"], home["lon"]) if home else None
 
         def key(f):
-            if f[0] in first:
-                return (first[f[0]], 0)
+            if f[0] == "a_index.nta":
+                return (-1, 0)                       # spis miejscowości najpierw
+            c = "c_" + f[0][2:-4] + ".ntt"             # g_/a_ w kolejności swojego kwadratu mapy
+            if c in first:
+                return (first[c], 0)
             if not cen:
                 return (2, 0)
             a = f[0][2:-4].split("_")
             la, lo = (int(a[0]) + 0.5) / 10, (int(a[1]) + 0.5) / 10
             return (2, (la - cen[0]) ** 2 + ((lo - cen[1]) * math.cos(math.radians(cen[0]))) ** 2)
         out = dict(m, files=sorted(m.get("files", []), key=key), gz=True)
-        if isinstance(m.get("graph"), dict):
-            out["graph"] = dict(m["graph"], cells=sorted(m["graph"].get("cells", []), key=key))
+        for part in MAP_EXTRA:
+            if isinstance(m.get(part), dict):
+                out[part] = dict(m[part], cells=sorted(m[part].get("cells", []), key=key))
         return out
 
     def map_gz(self, name):
@@ -1550,7 +1564,7 @@ class Nav:
         try:
             tmp = self.zip_path() + ".tmp"
             with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-                for f in m.get("files", []) + ((m.get("graph") or {}).get("cells") or []):
+                for f in m.get("files", []) + [c for part in MAP_EXTRA for c in ((m.get(part) or {}).get("cells") or [])]:
                     p = os.path.join(self.map_dir, f[0])
                     if os.path.exists(p):
                         z.write(p, "mapa/" + f[0])
