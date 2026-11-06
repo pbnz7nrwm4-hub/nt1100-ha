@@ -84,7 +84,8 @@
 - `.thm` – ten sam układ, rzadziej (miniatura, mapa wszystkich tras).
 - `.ntr` – trasa dla ekranu (binarnie, little-endian): nagłówek `NTR1` + punkty, skręty,
   limity, fotoradary, pogoda, punkty po drodze; teksty w UTF-8 obcinane bez przecinania liter
-  (`nav.pack_ntr`).
+  (`nav.pack_ntr`). Od 1.5.32 bajt po wersji w nagłówku = wariant trasy, a bajt po `kind` przystanku = wariant
+  odcinka kończącego się na tym przystanku (`nav.VARIANT_CODE`: 1 szybko, 2 lekko, 3 kręto, 4 bardzo, 5 Mój plan; 0 = brak).
 - `.nta` – adresy: `a_index.nta` (spis miejscowości) i `a_*.nta` (ulice i numery miejscowości,
   których środek leży w kwadracie); opis bajtów na górze `silnik-tras/build_map.py`. W `manifest.json`
   pod `"addr": {"cells": [...]}`. Tam też `a_poi.nta` (od mapy w wersji 5): nazwane miejsca całej mapy
