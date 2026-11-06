@@ -11,6 +11,47 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 - Klucz i adresy do wpisania w skrzynce: zakładka **Ustawienia** w panelu dodatku.
 - Zdarzenie `nt1100_nowa_jazda` (z podsumowaniem i problemami jazdy) do własnych automatyzacji.
 
+## Przed wyjazdem, w trasie, po powrocie, gdy coś padnie
+
+**Przed wyjazdem (w domu, w Wi-Fi)**
+1. Panel → Motocykl → „Wersje oprogramowania”: wszystkie kropki zielone (dodatek, skrzynka, ekran).
+2. Trasy → zaplanuj i „Wyślij na ekran”; ekran pobiera trasę i mapę w domowym Wi-Fi.
+3. Bateria ekranu (NP-F) naładowana; iPhone połączony z ekranem (Bluetooth).
+4. Zapas na wszelki wypadek: w OsmAnd na iPhonie pobrana mapa Polski, a trasa jako GPX („🚗 Jadę (OsmAnd)” albo link z powiadomienia).
+
+**W trasie**
+- Bez internetu ekran prowadzi wgraną trasą, pokazuje limity, fotoradary i stacje z mapy na karcie,
+  wraca na trasę z bliska i prowadzi „Do domu” po przejechanej drodze.
+- Nowa trasa, objazd z domu, korki, ceny paliw i pogoda na bieżąco – tylko z hotspotem iPhone'a
+  (w ustawieniach ekranu wpisany hotspot i adres spoza domu).
+- Skrzynka zapisuje jazdę na kartę; wyśle ją przez hotspot albo po powrocie do domu.
+
+**Po powrocie**
+- Jazdy przychodzą same po wjeździe w domowe Wi-Fi; powiadomienie po jeździe w telefonie.
+- Ekran w domu sam pobiera nowsze oprogramowanie i mapę (przy ładowaniu).
+
+**Gdy coś padnie**
+
+| Co | Co się dzieje | Co zrobić |
+|---|---|---|
+| Brak internetu w trasie | ekran prowadzi wgraną trasą; nowej trasy nie policzy | jedź wgraną trasą albo przełącz na OsmAnd |
+| Brak prądu albo internetu w domu | planer i odbiór jazd czekają; motocykl jedzie normalnie | nic – skrzynka wyśle zaległe jazdy sama |
+| Padnie zasilanie motocykla | ekran działa na baterii; skrzynka kończy zapis | ładuj baterię ekranu przed wyjazdem |
+| Awaria ekranu | brak nawigacji na kierownicy | OsmAnd na iPhonie z GPX trasy |
+| Awaria skrzynki | ekran prowadzi na własnym GPS; jazda się nie zapisze | po powrocie sprawdź kartę skrzynki |
+| Planer nie liczy tras | silnik tras w domu wyłączony albo w przebudowie | Motocykl → „Ekran i mapa” pokazuje powód; ekran ma ostatnią mapę |
+| Zginął ekran | na ekranie jest klucz do dodatku | Ustawienia → Połączenie ze skrzynką i ekranem → **Nowy klucz ekranu** i zaznacz „Ekran tylko z własnym kluczem”; skrzynka działa dalej |
+
+Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
+
+## Zmiany w 1.5.35 (porządki i osobny klucz ekranu)
+
+- **Osobny klucz ekranu**: Ustawienia → Połączenie ze skrzynką i ekranem pokazuje „Klucz ekranu”, przycisk
+  „Nowy klucz ekranu” (stary przestaje działać od razu) i „Ekran tylko z własnym kluczem”. Dopóki tego nie
+  zaznaczysz, ekran wchodzi też starym kluczem skrzynki, więc nic nie trzeba zmieniać od razu.
+- Oprogramowania ekranu 2,8" w dodatku już nie ma (zszedł z motocykla); karta wersji porównuje tylko ekran 5".
+- Nowa sekcja „Przed wyjazdem, w trasie, po powrocie, gdy coś padnie” (wyżej).
+
 ## Układ panelu (od 1.5.0)
 
 Cztery zakładki na dole ekranu:
@@ -398,7 +439,7 @@ całkiem po 20 min, a na zasilaniu 12 V po 6 h.
 
 ### Ekran 2,8" (poprzedni)
 
-Zszedł z motocykla (zostaje na ekranie 1.1.3, paczka `ekran`). Opis poniżej dotyczy tylko jego.
+Zszedł z motocykla. Od wersji 1.5.35 dodatek nie ma już jego oprogramowania (paczki `ekran`) i niczego mu nie proponuje; ekran zostaje na 1.1.3. Opis poniżej dotyczy tylko jego.
 
 Ekran 2,8" dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
 mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze uruchomienie:
