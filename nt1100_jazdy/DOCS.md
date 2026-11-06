@@ -44,6 +44,12 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.38 (skrzynka 1.4.7)
+
+- **Postój w domu**: skrzynka na biurku rozpoznaje postój także wtedy, gdy GPS w budynku „skacze” (0–4 km/h),
+  jeśli przez minutę się nie rusza (czujnik ruchu). Strona skrzynki otwiera się sama po 2–3 minutach, a z nią sprawdzanie aktualizacji.
+- **Test auta bez dotyku**: na stronie skrzynki, zakładka Stan, przycisk „Test auta (osobny profil)”. Nie trzeba otwierać obudowy.
+
 ## Zmiany w 1.5.37 (kłódka i pełny ekran na mapach jazd)
 - Mapy w jeździe, w całym wyjeździe i mapa wszystkich tras mają te same przyciski co mapa Tras: 🔒 kłódka (na telefonie
   domyślnie zamknięta: jeden palec przewija stronę, mapę powiększasz dwoma palcami), ⤢ cała trasa, ⛶ pełny ekran mapy.
