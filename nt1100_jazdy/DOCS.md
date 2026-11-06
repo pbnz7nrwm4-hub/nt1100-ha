@@ -44,6 +44,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.37 (kłódka i pełny ekran na mapach jazd)
+- Mapy w jeździe, w całym wyjeździe i mapa wszystkich tras mają te same przyciski co mapa Tras: 🔒 kłódka (na telefonie
+  domyślnie zamknięta: jeden palec przewija stronę, mapę powiększasz dwoma palcami), ⤢ cała trasa, ⛶ pełny ekran mapy.
+
 ## Zmiany w 1.5.36 (skrzynka 1.4.6: jednorazowy test auta)
 
 - Skrzynka dostaje wersję **1.4.6**. Dla motocykla nic się nie zmienia. W ekranie skanu jest nowy przycisk

@@ -28,6 +28,8 @@ class StronaTest(unittest.TestCase):
         # 1.5.29: cały wyjazd ma te same wykresy i odtwarzanie co jedna jazda
         self.assertIn("function rideCharts(", html)
         self.assertIn("player(D,m,pts,xs,map,trk,CH)", html)
+        self.assertIn("function mapCtl(", html)  # 1.5.37: kłódka/⤢/⛶ na mapach jazd
+        self.assertGreaterEqual(html.count("mapCtl(map,"), 2)
         # 1.5.30: widok mapy przed rysowaniem linii (inaczej Leaflet rzuca błąd i zostaje sam szkic)
         mv = html[html.index("function mapView("):]
         self.assertLess(mv.index("map.fitBounds("), mv.index("map._draw(o.mode"))
