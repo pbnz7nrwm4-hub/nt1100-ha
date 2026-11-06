@@ -29,6 +29,10 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.30 (mapa w jeździe i wyjeździe)
+- Naprawiona mapa w pojedynczej jeździe i w całym wyjeździe: od 1.5.26 zamiast mapy z podkładem pokazywał się
+  sam szkic trasy (linia na szarym tle). Teraz jest znowu prawdziwa mapa z kafelkami z kontenera, jak w Trasach.
+
 ## Zmiany w 1.5.29 (cały wyjazd jak pojedyncza jazda)
 - Widok „Cały wyjazd” ma to samo co pojedyncza jazda: odtwarzanie (przechył, prędkość, przeciążenia, suwak),
   wykresy prędkości, wysokości, przechyłu i spalania (czas | dystans), strefy przechyłu i własny wykres.
