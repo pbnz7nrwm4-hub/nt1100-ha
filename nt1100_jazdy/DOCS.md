@@ -29,6 +29,12 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.29 (cały wyjazd jak pojedyncza jazda)
+- Widok „Cały wyjazd” ma to samo co pojedyncza jazda: odtwarzanie (przechył, prędkość, przeciążenia, suwak),
+  wykresy prędkości, wysokości, przechyłu i spalania (czas | dystans), strefy przechyłu i własny wykres.
+- Jazdy wyjazdu idą w nim jedna po drugiej; przerwy między nimi są pominięte, więc odtwarzanie nie stoi na postojach.
+- Pojedyncze jazdy dalej otwierasz z listy „Jazdy w tym wyjeździe”, która jest teraz zaraz pod mapą.
+
 ## Zmiany w 1.5.28 (krętość tras: bez skrzyżowań, mocniejsze „kręto”)
 - °/km zaplanowanej trasy nie liczy już skrętów na skrzyżowaniach (±40 m od skrętu z silnika tras),
   więc trasa przez miasto nie wygląda na krętą tylko dlatego, że skręca na wielu rogach.
