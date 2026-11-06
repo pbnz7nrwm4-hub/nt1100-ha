@@ -340,7 +340,8 @@ async function sQuery(enter){const q0=SQ.inp?SQ.inp.value.trim():'';if(q0.length
   const [a,b]=await Promise.all([J('api/nav/search?q='+encodeURIComponent(q0)+ll).catch(e=>({err:e.message})),slot==='skip'?Promise.resolve({results:[]}):J('api/nav/miejsca?q='+encodeURIComponent(q0)+ll).catch(()=>({results:[]}))]);
   if(my!==SQ.seq||!SQ.body)return;B.textContent='';let n=0;
   const fm=slot==='skip'?[]:favMatch(q0);if(fm.length){const fb=el('div','nsol');B.append(fb);for(const f of fm){n++;sItem(fb,'★',f.name,'ulubione · '+distTxt(f),()=>sPick({lat:f.lat,lon:f.lon,name:f.name}))}}
-  const res=(a&&a.results)||[];if(res.length){if(n)sHead(B,'Adresy i miejscowości');const box=el('div','nsol');B.append(box);
+  // Photon zwraca kilka razy tę samą miejscowość (różne ulice): ta sama nazwa w promieniu 3 km = jeden wynik
+  const res=[];for(const x of (a&&a.results)||[]){if(res.some(y=>y.name===x.name&&Math.hypot((y.lat-x.lat)*110.5,(y.lon-x.lon)*71.5)<3))continue;res.push(x)}if(res.length){if(n)sHead(B,'Adresy i miejscowości');const box=el('div','nsol');B.append(box);
     for(const x of res){n++;const fv=slot==='skip'?null:ib('<span style="font-size:19px;line-height:1">☆</span>','zapisz w ulubionych','nfavb');if(fv)fv.onclick=()=>{closeSearch();saveFav({lat:x.lat,lon:x.lon,name:x.name})};
       sItem(box,TIK[x.type]||'📍',x.name,[x.label&&x.label!==x.name?x.label.replace(x.name+', ',''):'',distTxt(x)].filter(Boolean).join(' · '),()=>sPick(slot==='skip'?x:{lat:x.lat,lon:x.lon,name:x.name,label:x.label}),fv)}}
   const pl=(b&&b.results)||[];if(pl.length){sHead(B,'Miejsca z mapy (działa też bez internetu)');const box=el('div','nsol');B.append(box);
