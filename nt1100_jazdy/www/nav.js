@@ -198,6 +198,8 @@ function statusCard(V){const d=NV.data,k=el('div','card');k.append(el('b',null,'
 /* ---- planer: pola Start / Cel jak w nawigacji (1.5.26) */
 let P={};
 const ICO={search:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
+  up:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M12 5l-6 6M12 5l6 6"/></svg>',
+  down:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M12 19l-6-6M12 19l6-6"/></svg>',
   swap:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 4L3 8M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4"/></svg>',
   x:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -267,6 +269,9 @@ function renderPts(){if(!P.list)return;P.list.textContent='';drawLegs();renderFa
   const row=(kind,i,p,ph)=>{const r=el('div','nfr '+kind);const ic=el('span','nic');if(kind==='v')ic.textContent=String(i);r.append(ic);
     const f=el('button','nfld'+(p?'':' ph'));f.type='button';const t=el('span','t',p?(p.name||coordTxt(p)):ph);f.append(t);if(p)f.title=coordTxt(p);
     f.onclick=()=>openSearch(kind==='s'?'start':kind==='c'?'cel':i);r.append(f);
+    if(p&&kind==='v'){const mv=d=>{const a=NV.pts.slice(),j=i+d;[a[i],a[j]]=[a[j],a[i]];setPts(a);NV.plan?autoPlan():null};
+      if(i>1){const u=ib(ICO.up,'przystanek wyżej');u.onclick=()=>mv(-1);r.append(u)}
+      if(i<N-2){const d=ib(ICO.down,'przystanek niżej');d.onclick=()=>mv(1);r.append(d)}}
     if(p&&kind!=='s'){const x=ib(ICO.x,kind==='c'?'usuń cel':'usuń przystanek');x.onclick=()=>{const a=NV.pts.slice();a.splice(i,1);setPts(a);NV.plan?autoPlan():null};r.append(x)}
     else if(kind==='s'&&!loop&&N>=2){const sw=ib(ICO.swap,'zamień start z celem');sw.onclick=()=>{setPts(NV.pts.slice().reverse());NV.legs.reverse();renderPts();autoPlan()};r.append(sw)}
     return r};
@@ -557,9 +562,9 @@ async function startDrive(id,name){const j=await post('api/nav/drive',{id});NV.d
   if(!j.phone)toast('Ustaw telefon w Ustawienia nawigacji → Jazda autem, żeby dodatek znał pozycję.');
   await shareGpx(id,name);msg(P.msg,'„'+name+'” w OsmAnd; pilnuję korków co '+NV.data.settings.traffic_min+' min i dam znać powiadomieniem','ok')}
 function renderDrive(){if(!P.drv)return;const d=NV.data.drive;P.drv.hidden=!d;P.drv.textContent='';if(!d)return;
-  const tx=el('div','tx');tx.append(el('b',null,'🚗 Pilnuję korków: '+d.name),el('small','mut',d.status||''));
+  const tx=el('div','tx');tx.append(el('b',null,'🚗 Trwa jazda w OsmAnd: '+d.name),el('small','mut','Dodatek pilnuje korków i prowadzi do tej trasy. Nowa trasa jej nie zastąpi, dopóki nie dotkniesz „Zakończ jazdę” albo „🚗 Jadę (OsmAnd)” przy nowej.'),el('small','mut',d.status||''));
   const a=el('div','acts');a.style.margin='0';const g=el('button',null,'GPX');g.onclick=()=>{const id=d.rids[d.rids.length-1];shareGpx(id,d.name).catch(e=>alert(e.message))};
-  const x=el('button','warn','Zakończ');x.onclick=async()=>{try{await post('api/nav/drive',{stop:true});NV.data.drive=null;renderDrive()}catch(e){alert(e.message)}};a.append(g,x);P.drv.append(tx,a)}
+  const x=el('button','warn','Zakończ jazdę');x.onclick=async()=>{try{await post('api/nav/drive',{stop:true});NV.data.drive=null;renderDrive()}catch(e){alert(e.message)}};a.append(g,x);P.drv.append(tx,a)}
 setInterval(async()=>{if(!P.drv||!NV.data||!NV.data.drive||document.hidden)return;try{const j=await J('api/nav/drive');NV.data.drive=j.drive;renderDrive()}catch(e){}},60000);
 
 /* ---- symulacja przejazdu (to samo co „Demo trasy” na ekranie, w przeglądarce) */
