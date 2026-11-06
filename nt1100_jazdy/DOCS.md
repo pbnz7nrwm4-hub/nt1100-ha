@@ -44,6 +44,15 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.36 (skrzynka 1.4.6: jednorazowy test auta)
+
+- Skrzynka dostaje wersję **1.4.6**. Dla motocykla nic się nie zmienia. W ekranie skanu jest nowy przycisk
+  **„Test auta (osobny profil)”**: to jednorazowy sprawdzian, co pokazuje złącze diagnostyczne samochodu.
+- W profilu auto skrzynka nie nagrywa jazd, nie uczy się kalibracji, niczego nie wysyła i nie zmienia ustawień
+  motocykla. Pliki trafiają tylko do folderu `/auto` na karcie i nie pojawiają się w dodatku.
+- Domyślnie skrzynka tylko słucha (nic nie nadaje). Zapytania OBD2 są pod osobnym przyciskiem i wymagają potwierdzenia.
+- Powrót do motocykla: przycisk „Wróć do motocykla”, a skrzynka wraca też sama po 10 uruchomieniach.
+
 ## Zmiany w 1.5.35 (porządki i osobny klucz ekranu)
 
 - **Osobny klucz ekranu**: Ustawienia → Połączenie ze skrzynką i ekranem pokazuje „Klucz ekranu”, przycisk
