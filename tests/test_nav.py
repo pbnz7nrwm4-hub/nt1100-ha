@@ -562,6 +562,35 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/api/nav/routes")
         self.assertEqual(json.loads(body)["current"], j["route"]["id"])
 
+    def test_06b_screen_goto_destination_avoid_and_search(self):
+        """Ekran 5" przez hotspot: cel wybrany na ekranie (adres z karty) z jego wariantem i omijaniem."""
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "home": {"lat": 50.0, "lon": 19.9, "name": "Dom"}})
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.iu + "/api/nav/goto", {"dest_lat": 50.009, "dest_lon": 19.914, "dest_name": "Polna 3",
+                                                         "variant": "szybko", "avoid": ["autostrady", "zle"]},
+                             {"X-Klucz": KEY})
+        self.assertEqual(code, 200, j)
+        self.assertEqual((j["place"]["name"], j["route"]["variant"]), ("Polna 3", "szybko"))
+        prio = json.dumps(FakeGraphHopper.calls[0]["custom_model"]["priority"])
+        self.assertIn("MOTORWAY", prio)
+        self.assertNotIn("toll", prio)                    # omijanie tylko to, co wybrał ekran
+        nv = srv.navapi.NAV
+        old = nv.search
+        nv.search = lambda q, lat=None, lon=None, limit=8: [
+            {"name": "Stacja", "label": "Stacja, Miasto", "lat": 50.1, "lon": 19.2}]
+        try:
+            self.jpost(self.pu + "/api/nav/fav", {"fav": [{"name": "Praca", "lat": 50.2, "lon": 19.3}]})
+            code, body, _ = self.req(self.iu + "/api/nav/search?q=praca", headers={"X-Klucz": KEY})
+            res = json.loads(body)["results"]
+            self.assertEqual([r["name"] for r in res], ["Praca", "Stacja"])
+            code, body, _ = self.req(self.iu + "/api/nav/search?q=s", headers={"X-Klucz": KEY})
+            self.assertEqual(json.loads(body)["results"], [])
+            code, body, _ = self.req(self.iu + "/api/nav/search?q=praca")
+            self.assertEqual(code, 401)
+        finally:
+            nv.search = old
+            self.jpost(self.pu + "/api/nav/fav", {"fav": []})
+
     def test_07_screen_log_and_compliance(self):
         pts = l_shape()
         seg = "".join('<trkpt lat="%.6f" lon="%.6f"></trkpt>' % p for p in pts)
@@ -810,21 +839,30 @@ class NavServerTest(unittest.TestCase):
         with open(tmp, "wb") as f:
             build_map.graph_edges(f, 7, 4, 0, {}, 0, 0, [a, m, b], [(0, 11), (1, 12), (2, 13)])
         graph = build_map.build_graph(tmp, [], out)
+        idx = struct.pack("<4sBBI", b"NTAI", 1, 0, 0)
+        with open(os.path.join(out, "a_index.nta"), "wb") as f:
+            f.write(idx)
+        addr = {"format": 1, "bytes": len(idx), "cells": [["a_index.nta", len(idx), binascii.crc32(idx)]]}
         with open(os.path.join(out, "manifest.json"), "w") as f:
-            json.dump({"format": 1, "wersja": 3, "built": "2026-11-06", "bytes": sum(x[1] for x in files),
-                       "files": files, "graph": graph}, f)
+            json.dump({"format": 1, "wersja": 4, "built": "2026-11-06", "bytes": sum(x[1] for x in files),
+                       "files": files, "graph": graph, "addr": addr}, f)
         ms = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(MS.H, directory=root))
         threading.Thread(target=ms.serve_forever, daemon=True).start()
         try:
             self.jpost(self.pu + "/api/nav/settings", {"map_url": "http://127.0.0.1:%d" % ms.server_address[1]})
             code, j = self.jpost(self.pu + "/api/nav/map/sync", {"force": True})
             self.assertTrue(j["ok"], j)
-            self.assertEqual(j["files"], 4)                       # 2 kwadraty mapy + 2 grafu
+            self.assertEqual(j["files"], 5)                       # 2 kwadraty mapy + 2 grafu + spis adresów
             self.assertTrue(os.path.exists(os.path.join(nv.map_dir, "g_500_199.ntg")))
             code, body, _ = self.req(self.iu + "/api/nav/mapa/manifest.json?klucz=" + KEY)
             mf = json.loads(body)
             self.assertEqual(sorted(f[0] for f in mf["files"]), ["c_500_199.ntt", "c_500_200.ntt"])
             self.assertEqual(sorted(f[0] for f in mf["graph"]["cells"]), ["g_500_199.ntg", "g_500_200.ntg"])
+            self.assertEqual([f[0] for f in mf["addr"]["cells"]], ["a_index.nta"])
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/a_index.nta.gz?klucz=" + KEY)
+            self.assertEqual((code, gzip.decompress(body)), (200, idx))
+            code, body, _ = self.req(self.pu + "/api/nav/adres?miasto=Bierun")
+            self.assertEqual(json.loads(body), {"ok": False, "towns": []})
             raw = open(os.path.join(nv.map_dir, "g_500_199.ntg"), "rb").read()
             code, body, _ = self.req(self.iu + "/api/nav/mapa/g_500_199.ntg.gz?klucz=" + KEY)
             self.assertEqual((code, gzip.decompress(body)), (200, raw))
@@ -853,6 +891,7 @@ class NavServerTest(unittest.TestCase):
                 time.sleep(0.1)
             names = zipfile.ZipFile(io.BytesIO(body)).namelist()
             self.assertIn("mapa/g_500_200.ntg", names)
+            self.assertIn("mapa/a_index.nta", names)
         finally:
             ms.shutdown()
             self.jpost(self.pu + "/api/nav/settings", {"map_url": ""})

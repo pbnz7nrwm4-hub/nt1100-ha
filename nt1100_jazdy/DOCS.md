@@ -28,6 +28,20 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.22 (adresy na karcie, cel z ekranu przez hotspot)
+
+- Kontener dokłada do mapy na kartę **spis adresów** (mapa w wersji 4): miejscowości, ulice i numery
+  z OpenStreetMap. Ekran 5" wybierze z niego cel bez internetu (wpisujesz bez polskich znaków,
+  np. „lakowo”, potem ulicę i numer). Wsie bez ulic (np. „Wola 12”) też są. Dwie miejscowości
+  o tej samej nazwie – najpierw bliższa.
+- Gdy ekran ma internet (hotspot), pyta dodatek, a dodatek silnik tras w domu: cel wybrany na
+  ekranie razem z wariantem i omijaniem, które wybrałeś na ekranie, oraz szukanie w internecie
+  (firmy, miejsca) i w ulubionych. Kontener nie jest wystawiony do internetu; drogą jest dodatek
+  (adres HA spoza domu wpisany w ustawieniach ekranu).
+- Dla sprawdzenia: `/api/nav/adres?miasto=…&ulica=…&nr=…` szuka tak, jak ekran.
+- Kontener sam przebuduje mapę (raz). Program ekranu z wyszukiwaniem adresów przyjdzie w osobnej
+  wersji ekranu.
+
 ## Zmiany w 1.5.21 (graf tras do nawigacji offline)
 
 - Kontener dokłada do mapy na kartę **graf tras** (pliki `g_*.ntg` obok kwadratów mapy, mapa
