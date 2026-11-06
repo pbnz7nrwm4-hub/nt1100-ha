@@ -21,7 +21,7 @@ main{padding:4px 12px 24px;max-width:760px;margin:0 auto}
 .tag.ok{background:color-mix(in srgb,var(--ok) 25%,transparent)}.tag.wait{background:color-mix(in srgb,var(--warn) 25%,transparent)}.tag.bad{background:color-mix(in srgb,var(--bad) 25%,transparent)}
 .tot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.tot div{background:var(--card2);border-radius:10px;padding:10px 12px;min-width:0}.tot b{display:block;font-size:clamp(17px,5vw,22px);font-variant-numeric:tabular-nums;white-space:nowrap}.tot span{font-size:12px;color:var(--mut)}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
-.grid div{background:var(--card2);border-radius:10px;padding:8px 10px}.grid b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.grid div{background:var(--card2);border-radius:10px;padding:8px 10px}.grid b{display:block;font-size:clamp(15px,4.3vw,19px);font-variant-numeric:tabular-nums;white-space:nowrap}
 .grid span{font-size:12px;color:var(--mut)}
 .card>svg{width:100%;height:auto;display:block;background:var(--card2);border-radius:10px}
 #map{height:340px;border-radius:10px;background:var(--card2)}
@@ -51,7 +51,7 @@ nav.tabs button.on{color:var(--acc);border-top-color:var(--acc)}nav.tabs svg{wid
 .b4{margin-top:12px}.b4 b{font-size:24px}.mapd{height:420px;border-radius:10px;background:var(--card2);margin-top:8px}
 .wxr{display:grid;grid-template-columns:30px 46px minmax(0,1fr);gap:2px 8px;align-items:baseline;padding:7px 0;border-top:1px solid var(--line);cursor:pointer}.wxr small{grid-column:3}.wxi{font-size:20px}.wxr b{font-variant-numeric:tabular-nums}
 .svc{display:grid;grid-template-columns:minmax(0,1fr) 76px 86px 40px;gap:6px;margin:6px 0;align-items:center}.svc input{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card2);min-width:0;width:100%}.svc button{padding:8px 0}
-.flt{align-items:center}.flt select{flex:0 0 auto}footer{max-width:760px;margin:0 auto;padding:4px 16px 14px;font-size:12px;color:var(--mut);text-align:center}
+.mseg{margin:8px 0 10px}.rnum span{display:flex;width:22px;height:22px;border-radius:50%;color:#fff;font:700 12px sans-serif;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px #0006}.lgn{display:inline-flex;align-items:center;gap:8px}.lgn i{width:10px;height:10px;border-radius:50%;flex:none}button.tripb{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 50%,var(--line))}.legend[hidden]{display:none}.flt{align-items:center}.flt select{flex:0 0 auto}footer{max-width:760px;margin:0 auto;padding:4px 16px 14px;font-size:12px;color:var(--mut);text-align:center}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head><body>
 <header class="top"><div><h1>NT1100 <em>Jazdy</em></h1><small id="info">wczytywanie...</small></div><div id="pills" class="pills"></div></header>
@@ -166,16 +166,20 @@ function tripName(t){const rs=t.rides,o=rs[rs.length-1],n=rs[0];const a=(o.name|
 function tripCard(t,todo){const rs=t.rides,c=el('div','card trip');const h=el('div','row');h.append(el('span','big','Wyjazd · '+tripName(t)),el('span','tag','jazd: '+rs.length));c.append(h);
 c.append(el('div',null,fmt(t.km,1)+' km · '+dur(t.min)+' w drodze · '+dur(t.total)+' razem · postoje: '+t.stops));
 const th=el('div','th wide');c.append(th);todo.push([t,th]);
-const legs=el('div','legs');for(const r of rs.slice().reverse()){const l=el('div','leg');l.append(el('span',null,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+(r.name||r.auto||'przejazd '+pad(r.n))),el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=e=>{e.stopPropagation();detail(r)};legs.append(l)}c.append(legs);c.onclick=()=>tripDetail(t);return c}
+const legs=el('div','legs');for(const [n,r] of rs.slice().reverse().entries()){const l=el('div','leg');l.append(el('span',null,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+tripRideName(r,n)),el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=e=>{e.stopPropagation();detail(r)};legs.append(l)}c.append(legs);c.onclick=()=>tripDetail(t);return c}
 async function tripDetail(t){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);
 const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);const c=el('div','card');D.append(c);c.append(el('div','big','Wyjazd · '+tripName(t)),el('small',null,when(t.rides[t.rides.length-1].summary)+' · '+t.rides.length+' jazd'));
 const g=el('div','grid');c.append(g);stat(g,fmt(t.km,1),' km','dystans');stat(g,fmt(t.min>0?t.km/(t.min/60):null),' km/h','średnia w ruchu');stat(g,fmt(t.maxv),' km/h','prędkość maks.');
 stat(g,dur(t.min),'','w ruchu');stat(g,dur(t.total-t.min),'','postoje i przerwy');stat(g,dur(t.total),'','łącznie z przerwami');
 stat(g,dur(Math.max(0,t.ride-t.min)),'','postoje z zapłonem');stat(g,dur(Math.max(0,t.total-t.ride)),'','przerwy ('+t.stops+')');stat(g,fmt(t.gain),' m','↑ wznios');
 stat(g,fmt(t.ml),'°','przechył w lewo');stat(g,fmt(t.mr),'°','przechył w prawo');stat(g,fmt(t.loss),' m','↓ spadek');
-const m=el('div','card');D.append(m);m.append(el('p','mut','wczytywanie trasy...'));let pts=[];try{for(const r of t.rides.slice().reverse())if(r.files.trk!==undefined)pts=pts.concat(parse(await text('dl?view=1&f=/rides/'+pad(r.n)+'.trk')));m.textContent='';
-if(pts.length>1){const mk=marks(pts);const mapDiv=el('div');mapDiv.id='map';m.append(mapDiv,legend());const z=zones(pts);if(z)m.after(z);const online=await loadLeaflet();if(online){try{mapView(mapDiv,pts,mk)}catch(e){mapDiv.replaceWith(track(pts,mk))}}else mapDiv.replaceWith(track(pts,mk))}}catch(e){m.textContent='';m.append(el('p','mut','Błąd wczytywania trasy.'))}
-const k=el('div','card');k.append(el('b',null,'Jazdy w tym wyjeździe'));const legs=el('div','legs');for(const r of t.rides.slice().reverse()){const l=el('div','leg');l.append(el('span',null,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+rname(r)),el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=()=>detail(r);legs.append(l)}k.append(legs);D.append(k)}
+const m=el('div','card');D.append(m);m.append(el('b',null,'Cały wyjazd na mapie'),el('p','mut','wczytywanie trasy...'));let pts=[];const bounds=[],RS=t.rides.slice().reverse();try{for(const r of RS)if(r.files.trk!==undefined){bounds.push(pts.length);pts=pts.concat(parse(await text('dl?view=1&f=/rides/'+pad(r.n)+'.trk')))}m.lastChild.remove();
+if(pts.length>1){const mk=marks(pts);const sg=el('div','seg mseg');const bl=el('button',null,'Kolory: przechył'),br=el('button',null,'Kolory: jazdy');sg.append(bl,br);const mapDiv=el('div');mapDiv.id='map';const lg=legend(),rl=el('div','legend');RS.forEach((r,k)=>{const s=el('span');const i=el('i');i.style.background=RIDEC[k%RIDEC.length];s.append(i,(k+1)+'. '+tripRideName(r,k));rl.append(s)});rl.hidden=true;m.append(sg,mapDiv,lg,rl);
+const z=zones(pts);if(z)m.after(z);const online=await loadLeaflet();let map=null;if(online){try{map=mapView(mapDiv,pts,mk,{bounds})}catch(e){mapDiv.replaceWith(track(pts,mk))}}else mapDiv.replaceWith(track(pts,mk));
+const setM=v=>{try{localStorage.setItem('nt-tripcol',v)}catch(e){}bl.classList.toggle('on',v==='lean');br.classList.toggle('on',v==='rides');lg.hidden=v!=='lean';rl.hidden=v!=='rides';if(map&&map._draw)map._draw(v)};bl.onclick=()=>setM('lean');br.onclick=()=>setM('rides');let v0='lean';try{v0=localStorage.getItem('nt-tripcol')||'lean'}catch(e){}setM(v0);if(!map)sg.hidden=true}}catch(e){m.textContent='';m.append(el('p','mut','Błąd wczytywania trasy.'))}
+const k=el('div','card');k.append(el('b',null,'Jazdy w tym wyjeździe'));const legs=el('div','legs');RS.forEach((r,n)=>{const l=el('div','leg');const a=el('span','lgn');const i=el('i');i.style.background=RIDEC[n%RIDEC.length];a.append(i,new Date(r.summary.start).toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})+' · '+tripRideName(r,n));l.append(a,el('span','mut',fmt(r.summary.distance_km,1)+' km · '+dur(r.summary.moving_min)));l.onclick=()=>detail(r);legs.append(l)});k.append(legs);D.append(k)}
+function tripRideName(r,n){return r.name||r.auto||'jazda '+(n+1)}
+function tripOf(r){if(!DATA)return null;return trips().find(t=>t.rides.length>1&&t.rides.includes(r))||null}
 const SER={3:['Prędkość','km/h','#1971c2'],4:['Wysokość','m','#2f9e44'],2:['Przechył','°','#e8590c'],6:['Obroty','','#be4bdb'],7:['Bieg','','#868e96'],8:['Gaz','%','#f59f00'],9:['Temp. silnika','°C','#e03131'],10:['Przysp./hamowanie','g','#0ca678'],11:['Boczne g','g','#7950f2'],12:['Wtrysk (surowo)','','#fd7e14'],14:['Sprzęgło','','#868e96'],15:['Stopka','','#495057']};
 function opt(a){const s=SER[a];const o={color:s[2],unit:'',fill:a===3||a===4||a===8};if(a===3)o.zero=true;if(a===2){o.min=-60;o.max=60;o.step=30;o.lab=v=>(v>0?'P ':v<0?'L ':'')+Math.abs(v);o.unit='°'}if(a===7){o.min=0;o.max=6;o.step=1}if(a===8){o.min=0;o.max=100;o.step=25;o.unit='%'}if(a===14||a===15){o.min=0;o.max=1;o.step=1;o.fill=true}return o}
 function sstat(ys,pos){let lo=Infinity,hi=-Infinity,sum=0,n=0;for(const y of ys){if(y===null||(pos&&y<=0))continue;if(y<lo)lo=y;if(y>hi)hi=y;sum+=y;n++}return n?{lo,hi,avg:sum/n}:null}
@@ -253,11 +257,21 @@ const tl=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:1
 function loadLeaflet(){if(LEAF)return LEAF;LEAF=new Promise(res=>{if(window.L)return res(true);let done=false,left=2;const cssOk=()=>{const d=document.createElement('div');d.className='leaflet-pane';document.body.append(d);const ok=getComputedStyle(d).position==='absolute';d.remove();return ok};const fin=v=>{if(!done){done=true;res(v&&!!window.L&&cssOk())}};const one=()=>{if(--left===0)fin(true)};
 const c=document.createElement('link');c.rel='stylesheet';c.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';c.onload=one;c.onerror=()=>fin(false);document.head.append(c);
 const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';s.onload=one;s.onerror=()=>fin(false);document.head.append(s);setTimeout(()=>fin(false),6000)});return LEAF}
-function mapView(div,pts,m){const map=L.map(div,{zoomControl:false,attributionControl:true});
+/* 1.5.26: indeksy punktów do rysowania bez „gwiazdy” z dryfu GPS na postoju: przy prędkości poniżej 5 km/h
+   pozycja stoi w miejscu, a skoki szybsze niż 250 km/h (błąd pozycji) są pomijane. Liczby jazdy się nie zmieniają. */
+function drawIdx(pts){const out=[];let lk=-1,still=false;for(let i=0;i<pts.length;i++){const p=pts[i];if(lk<0){out.push(i);lk=i;continue}const q=pts[lk];
+const d=Math.hypot(p[0]-q[0],(p[1]-q[1])*Math.cos(p[0]*Math.PI/180))*111200;const v=p[3];
+if(v!==null&&v!==undefined&&v<5){if(still)continue;still=true;out.push(i);lk=i;continue}still=false;
+if(p[5]!==null&&q[5]!==null&&p[5]>q[5]&&d/(p[5]-q[5])>70&&d<5000)continue;out.push(i);lk=i}if(out[out.length-1]!==pts.length-1)out.push(pts.length-1);return out}
+const RIDEC=['#3d8bfd','#f76707','#40c057','#be4bdb','#fab005','#15aabf','#e64980','#94d82d'];
+function mapView(div,pts,m,o){o=o||{};const map=L.map(div,{zoomControl:false,attributionControl:true});
 baseLayer(map,()=>{div.parentNode.insertBefore(el('p','mut','Podkład mapy niedostępny (brak internetu); sama trasa jest z karty.'),div.nextSibling)});
-let run=[],rc=null;const flush=()=>{if(run.length>1)L.polyline(run,{color:rc,weight:4,opacity:.95}).addTo(map)};
-for(let i=0;i<pts.length;i++){const c=col(pts[i][2]);const far=i>0&&Math.hypot(pts[i][0]-pts[i-1][0],(pts[i][1]-pts[i-1][1])*Math.cos(pts[i][0]*Math.PI/180))*111>0.5;
+const lay=L.layerGroup().addTo(map),ix=drawIdx(pts),rideOf=i=>{const b=o.bounds||[0];let k=0;while(k+1<b.length&&b[k+1]<=i)k++;return k};
+map._draw=mode=>{lay.clearLayers();let run=[],rc=null;const flush=()=>{if(run.length>1)L.polyline(run,{color:rc,weight:4,opacity:.95}).addTo(lay)};
+for(let n=0;n<ix.length;n++){const i=ix[n],j=n?ix[n-1]:i;const c=mode==='rides'?RIDEC[rideOf(i)%RIDEC.length]:col(pts[i][2]);const far=n>0&&(Math.hypot(pts[i][0]-pts[j][0],(pts[i][1]-pts[j][1])*Math.cos(pts[i][0]*Math.PI/180))*111>0.5||(mode==='rides'&&rideOf(i)!==rideOf(j)));
 if(far){flush();run=[]}if(c!==rc&&run.length){run.push([pts[i][0],pts[i][1]]);flush();run=[run[run.length-1]]}rc=c;run.push([pts[i][0],pts[i][1]])}flush();
+if(mode==='rides')(o.bounds||[]).forEach((b,k)=>{if(k)L.marker([pts[b][0],pts[b][1]],{icon:L.divIcon({className:'rnum',html:'<span style="background:'+RIDEC[k%RIDEC.length]+'">'+(k+1)+'</span>',iconSize:[22,22],iconAnchor:[11,11]})}).bindTooltip('jazda '+(k+1)).addTo(lay)})};
+map._draw(o.mode||'lean');
 const dot=(i,f,t)=>{const k=L.circleMarker([pts[i][0],pts[i][1]],{radius:7,color:'#fff',weight:2,fillColor:f,fillOpacity:1}).addTo(map);if(t)k.bindTooltip(t,{permanent:true,direction:'top',offset:[0,-6],className:'lab'});return k};
 dot(0,'#2f9e44');dot(pts.length-1,'#1d2129');
 if(m.L!==undefined)dot(m.L,'#e03131','L '+fmt(-pts[m.L][2])+'°');if(m.R!==undefined)dot(m.R,'#e03131','P '+fmt(pts[m.R][2])+'°');if(m.V!==undefined)dot(m.V,'#1971c2',fmt(pts[m.V][3])+' km/h');
@@ -516,7 +530,7 @@ async function reload(){try{SCANS=(await (await fetch('api/scans')).json()).scan
 async function remove(r){if(!confirm('Usunąć przejazd '+pad(r.n)+(isHA()?' z Home Assistant? Na karcie skrzynki zostaje.':' z karty? Tej operacji nie można cofnąć.')))return;
 const q=await api('api/delete?n='+r.n,{method:'POST'});if(!q.ok){alert('Nie udało się usunąć.');return}await reload()}
 async function detail(r){if(STOP)STOP();const D=document.getElementById('detail');document.getElementById('list').hidden=true;D.hidden=false;D.textContent='';scrollTo(0,0);D._seek=null;
-const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);const c=el('div','card');D.append(c);
+const back=el('button',null,'‹ Wszystkie jazdy');back.onclick=list;D.append(back);{const tw=tripOf(r);if(tw){const tb=el('button','tripb','Cały wyjazd · '+tw.rides.length+' jazdy ›');tb.onclick=()=>tripDetail(tw);D.append(' ',tb)}}const c=el('div','card');D.append(c);
 const nm=el('div','row');const ttl=el('span','big',rname(r));const star=el('button','star'+(r.fav?' on':''),r.fav?'★':'☆');star.title='Ulubiona';star.setAttribute('aria-label','Ulubiona');star.onclick=async()=>{try{await setName(r,{fav:!r.fav});star.textContent=r.fav?'★':'☆';star.classList.toggle('on',r.fav)}catch(e){}};nm.append(ttl,star);c.append(nm,el('small',null,sub(r)));const pl=el('div','pl');c.append(pl);const nt=el('p','note',r.note||'');nt.hidden=!r.note;c.append(nt);
 const S0=r.summary,st=el('div');if(S0&&S0.distance_km>0.1){const b4=el('div','big4');const add=(v,u,l)=>{const d=el('div');const b=el('b',null,v);if(v!=='–'&&u)b.append(el('span',null,u));d.append(b,el('small','mut',l));b4.append(d)};add(fmt(S0.distance_km,1),'km','dystans');add(hm(S0.moving_min),'h','w ruchu');add(fmt(S0.max_speed),'km/h','maks.');add(fmt(S0.max_lean_left)+'° / '+fmt(S0.max_lean_right)+'°','','przechył lewo / prawo');c.append(b4)}
 if(S0){const mo=el('details');mo.append(el('summary',null,'więcej liczb'),st);c.append(mo)}
