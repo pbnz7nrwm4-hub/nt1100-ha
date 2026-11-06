@@ -492,7 +492,7 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
   const pick=i=>{const r=j.routes[i];NV.sel=i;cards.forEach(c=>{const on=c._i===i;c.classList.toggle('on',on);c.style.borderColor=on?(VCOL[j.routes[c._i].variant]||''):'';c.querySelector('.ac').hidden=!on});NV.lines.forEach((x,k)=>x.setStyle({opacity:k===i?1:.35,weight:k===i?7:3}));NV.lines[i].bringToFront();alongFor('token='+j.token+'&variant='+r.variant,VN(r.variant),r.pts.map(p=>[p[0],p[1]]))};
   const seen=[];
   for(const i of order){const r=j.routes[i];const vn=VN(r.variant);
-    // 1.5.27: dwa warianty tą samą drogą = jedna karta „Kręto = Bardzo kręto”
+    // 1.5.28: dwa warianty tą samą drogą = jedna karta „Kręto = Bardzo kręto”
     const twin=seen.find(x=>Math.abs(x.r.km-r.km)<0.3&&Math.abs(x.r.min-r.min)<=1);if(twin){twin.t.append(' = '+vn);NV.lines[i].setStyle({opacity:0});continue}
     const d=el('div','ncard');d._i=i;
     const h=el('div','h');const t=el('b');const sw=el('i');sw.style.background=VCOL[r.variant]||'#888';t.append(sw,vn);seen.push({r,t});const tm=el('span','ntm');tm.append(el('b',null,dur(r.min)),el('small',null,r.km+' km'));h.append(t,tm);d.append(h);

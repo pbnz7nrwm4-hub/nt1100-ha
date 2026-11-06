@@ -59,7 +59,7 @@ MIX = ("mix", "Mój plan")
 # zakrety = szukanie dróg krętych, dluzej = zgoda na dłuższą trasę.
 CURVY_DEFAULT = {
     "lekko": {"glowne": 45, "zakrety": 25, "dluzej": 60},
-    "kreto": {"glowne": 90, "zakrety": 60, "dluzej": 60},
+    "kreto": {"glowne": 90, "zakrety": 80, "dluzej": 60},  # 1.5.28: 60 → 80 (pomiar 6 tras, narzedzia/kretosc_diag.py)
     "bardzo": {"glowne": 100, "zakrety": 100, "dluzej": 60},
 }
 CURVY_KEYS = ("glowne", "zakrety", "dluzej")
@@ -1715,7 +1715,7 @@ JUNCTION_TURNS = (T_LEFT, T_SHARP_L, T_RIGHT, T_SHARP_R, T_UTURN, T_ROUNDABOUT)
 
 def curviness(pts, cum, levels=None, turns=None):
     """Krętość jak dla jazd: suma zmian kierunku (próbki co 50 m) na km.
-    1.5.27: gdy znane są skręty z silnika tras (turns), skręty na skrzyżowaniach (±40 m) się nie liczą –
+    1.5.28: gdy znane są skręty z silnika tras (turns), skręty na skrzyżowaniach (±40 m) się nie liczą –
     trasa przez wsie z wieloma skrętami pod kątem prostym nie wychodzi „krętsza” od drogi z zakrętami."""
     jd = sorted(cum[t["idx"]] for t in (turns or []) if t.get("type") in JUNCTION_TURNS and 0 <= t.get("idx", -1) < len(cum))
     if cum[-1] < 500:

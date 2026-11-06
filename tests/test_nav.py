@@ -536,7 +536,7 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(pri['"road_class == MOTORWAY"'], "1.0")      # glowne 0: motorways not avoided
         self.assertEqual(pri['"curvature > 0.97"'], "0.35")           # zakrety 100: straight roads penalised
         self.assertEqual(cm["distance_influence"], 5)                 # dluzej 100
-        # the only 90° turn of the L-shaped test route is a junction from the engine -> not a bend (1.5.27)
+        # the only 90° turn of the L-shaped test route is a junction from the engine -> not a bend (1.5.28)
         self.assertEqual(j["routes"][0]["curvy"]["level"], "prosta")
         # legs: each section with its own variant -> extra "mix" route glued from two engine requests
         FakeGraphHopper.calls = []
