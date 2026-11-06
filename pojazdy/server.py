@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -638,7 +638,7 @@ LICZBY = {"przebieg", "litry", "cena_l", "kwota", "kwh", "kwh_pv", "kwh_bateria"
           "koszt_wartosc", "bak_l", "bateria_kwh", "l100_bez_pradu", "co_km", "nastepny_km", "ostatnio_km"}
 
 
-def oczysc(tabela, j):
+def oczysc(tabela, j, nowy=True):
     d = {}
     for k, v in j.items():
         if k in ("id",):
@@ -651,12 +651,20 @@ def oczysc(tabela, j):
         d.update(litry=l, cena_l=c, kwota=k)
         if not l:
             raise ValueError("podaj litry (albo kwotę i cenę)")
+    # Przy edycji puste pole daty zostawia datę z bazy (nie nadpisuje jej chwilą obecną).
     if tabela in ("tankowania", "koszty", "odczyty") and not d.get("data"):
-        d["data"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+        if nowy:
+            d["data"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+        else:
+            d.pop("data", None)
     if tabela == "ladowania":
-        d.setdefault("zrodlo", "recznie")
+        if nowy:
+            d.setdefault("zrodlo", "recznie")
         if not d.get("poczatek"):
-            d["poczatek"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+            if nowy:
+                d["poczatek"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+            else:
+                d.pop("poczatek", None)
     if tabela == "terminy" and "co_mies" in d:
         d["co_mies"] = int(d["co_mies"]) if d["co_mies"] not in (None, "") else None
     if "pojazd_id" in d and d["pojazd_id"] not in (None, ""):
@@ -838,7 +846,7 @@ class Strona(BaseHTTPRequestHandler):
                     DB.usun(tab, int(id_))
                     po_zmianie()
                     return self.send(200, {"ok": True})
-                d = oczysc(tab, j)
+                d = oczysc(tab, j, nowy=not id_)
                 if tab == "ladowania" and id_:
                     d["zmienione"] = 1
                 uwaga = sprawdz_przebieg(tab, dict(DB.jeden(tab, int(id_)) or {}, **d) if id_ else d, int(id_) if id_ else None)

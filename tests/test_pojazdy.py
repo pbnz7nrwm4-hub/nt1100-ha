@@ -148,7 +148,7 @@ def plik_fuelio():
     a = v % ("Honda NT", "20.0") + log + "".join(
         '"%s","%s","%s","1","%s","0","Testowo","0","0","%s"\n' % r for r in [
             ("2026-09-01", "1000.0", "15.0", "105.0", "7.0"), ("2026-09-05", "1300.0", "15.0", "1500.0", "7.0"),
-            ("2026-09-10", "1600.0", "16.5", "115.5", "7.0")]) + \
+            ("2026-09-10", "1600.0", "16.5", "115.49999999999999", "7.0")]) + \
         '"## CostCategories"\n"CostTypeID","Name","priority","color"\n"1","Serwis","1",""\n' \
         '"## Costs"\n"CostTitle","Date","Odo","CostTypeID","Notes","Cost","RepeatOdo","RepeatMonths","isTemplate","isIncome","RemindDate"\n' \
         '"Olej","2026-09-02","1100.0","1","","250.0","12000","12","0","0","2011-01-01"\n'
@@ -170,6 +170,7 @@ class Fuelio(unittest.TestCase):
         self.assertEqual(p[0]["podejrzane"][0]["wyliczona"], 105.0)
         self.assertEqual(p[0]["koszty"][0]["kategoria"], "Serwis")
         self.assertEqual(p[0]["terminy"][0]["co_mies"], 12)
+        self.assertEqual(p[0]["tankowania"][2]["kwota"], 115.5)  # bez ogona 115.49999999999999
 
     def test_eksport_wraca(self):
         p = {"nazwa": "Test", "bak_l": 20}
@@ -223,6 +224,9 @@ class Serwer(unittest.TestCase):
         r2 = self.req("api/tankowania", {"pojazd_id": ecl, "data": "2026-11-06 10:00", "przebieg": 56400, "litry": 5, "cena_l": 6})
         self.assertIn("mniejszy", r2["uwaga"])
         self.req("api/tankowania/%d/usun" % r2["id"], {})
+        # edycja z pustym polem daty nie zmienia daty wpisu
+        self.req("api/tankowania/%d" % r["id"], {"pojazd_id": ecl, "data": "", "przebieg": 56500, "kwota": 120, "cena_l": 6})
+        self.assertEqual(self.req("api/tankowania/%d" % r["id"])["data"], "2026-11-05 10:00")
         st = self.req("api/statystyki?pojazd=%d&okres=calosc" % ecl)
         self.assertAlmostEqual(st["srednie"]["l100"], 4.0)
         self.assertAlmostEqual(st["srednie"]["kwh100"], 2.0)

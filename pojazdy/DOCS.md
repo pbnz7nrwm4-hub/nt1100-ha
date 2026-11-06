@@ -3,6 +3,13 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.0.2
+
+- Edycja tankowania z importu Fuelio: pole daty pokazuje datę (wcześniej było puste), a kwoty są
+  zaokrąglone (np. 187,08 zamiast 187,07999999999998). Kwoty już zaimportowane zaokrąglają się same
+  przy starcie dodatku.
+- Zapis edycji z pustym polem daty zostawia dotychczasową datę (wcześniej wpisywał bieżącą chwilę).
+
 ## Zmiany w 1.0.1
 
 - Dodatek szuka klucza do Home Assistant także tam, gdzie zostawia go system startowy kontenera

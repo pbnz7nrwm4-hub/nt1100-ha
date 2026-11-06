@@ -264,9 +264,9 @@ function arkusz(tytul,html,onSave,extra){const v=document.createElement("div");v
  if(onSave)v.querySelector(".save").onclick=async()=>{try{const r=await onSave(v);if(r!==false){zamknij();pokaz()}}catch(e){toast(e.message)}};
  if(extra)extra(v,zamknij);return v}
 const val=(v,id)=>{const e=v.querySelector("#"+id);if(!e)return undefined;if(e.type==="checkbox")return e.checked?1:0;return e.value.trim().replace(",",".")};
-const pole=(id,label,value,o={})=>`<div class="f"><label for="${id}">${label}</label><input id="${id}" ${o.type?`type="${o.type}"`:""} ${o.im?`inputmode="${o.im}"`:""} ${o.ph?`placeholder="${esc(o.ph)}"`:""} ${o.cls?`class="${o.cls}"`:""} ${o.list?`list="${o.list}"`:""} value="${esc(value??"")}"></div>`;
+const pole=(id,label,value,o={})=>`<div class="f"><label for="${id}">${label}</label><input id="${id}" ${o.type?`type="${o.type}"`:""} ${o.im?`inputmode="${o.im}"`:""} ${o.ph?`placeholder="${esc(o.ph)}"`:""} ${o.cls?`class="${o.cls}"`:""} ${o.list?`list="${o.list}"`:""} value="${esc(typeof value==="number"?+value.toFixed(3):(value??""))}"></div>`;
 const wybor=(id,label,opts,value)=>`<div class="f"><label for="${id}">${label}</label><select id="${id}">${opts.map(([k,n])=>`<option value="${esc(k)}" ${String(k)===String(value??"")?"selected":""}>${esc(n)}</option>`).join("")}</select></div>`;
-const dtl=s=>(s||"").replace(" ","T").slice(0,16);
+const dtl=s=>{s=(s||"").trim().replace(" ","T");return s.length===10?s+"T12:00":s.slice(0,16)};
 const pojOpts=()=>S.pojazdy.filter(p=>p.aktywny).map(p=>[p.id,p.nazwa]);
 const usunBtn=(tab,id)=>id?`<button type="button" class="btn del" data-usun="${tab}:${id}">Usuń</button>`:"";
 function podepnijUsun(v,zamknij){const b=v.querySelector("[data-usun]");if(!b)return;let raz=false;

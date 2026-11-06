@@ -26,6 +26,11 @@ DOMYSLNE_KATEGORIE = ["Serwis", "Eksploatacja", "Ubezpieczenie", "Rejestracja", 
                       "Oplaty za przejazd", "Mandaty", "Tuning"]
 
 
+def _r(v, n):
+    """Zaokrąglenie wartości z Fuelio (CSV ma np. 187.07999999999998); 0 i puste = brak."""
+    return round(v, n) if v else None
+
+
 def _f(v):
     try:
         return float(str(v).replace(",", "."))
@@ -83,8 +88,8 @@ def czytaj(dane, nazwa_pliku=""):
             litry = _f(r.get("Fuel (l)"))
             if km is None or not r.get("Date"):
                 continue
-            t = {"data": r["Date"][:16], "przebieg": km, "litry": litry, "kwota": _f(r.get("Price")) or None,
-                 "cena_l": _f(r.get("VolumePrice")) or None, "pelny": 1 if str(r.get("Full")) == "1" else 0,
+            t = {"data": r["Date"][:16], "przebieg": km, "litry": _r(litry, 2), "kwota": _r(_f(r.get("Price")), 2),
+                 "cena_l": _r(_f(r.get("VolumePrice")), 3), "pelny": 1 if str(r.get("Full")) == "1" else 0,
                  "pominiete": 1 if str(r.get("Missed")) == "1" else 0, "stacja": (r.get("City") or "").strip(),
                  "notatka": (r.get("Notes") or "").strip(), "fuelio_typ": r.get("FuelType") or "",
                  "zrodlo": "fuelio"}
