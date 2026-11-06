@@ -64,6 +64,7 @@
 | `nt1100_jazdy/navapi.py` | adresy HTTP nawigacji (panel i ekran), jazda autem z korkami |
 | `nt1100_jazdy/nav.py` | planer: silnik tras, GPX, paczka `.ntr` dla ekranu, mapa, korki, zgodność jazdy z planem |
 | `nt1100_jazdy/ntt.py` | odczyt mapy ekranu (kwadraty `.ntt`) |
+| `nt1100_jazdy/graf.py` | graf tras `.ntg` i liczenie trasy offline (wzorzec dla ekranu, te same reguły co planer) |
 | `nt1100_jazdy/www/index.html` | panel: jazdy, statystyki, stan, ustawienia |
 | `nt1100_jazdy/www/nav.js` | panel: zakładka Trasy, układ 4 zakładek, „Ekran i mapa” |
 | `nt1100_jazdy/firmware/` | gotowe, podpisane obrazy skrzynki i ekranu z numerem wersji |
@@ -77,5 +78,8 @@
 - `.ntr` – trasa dla ekranu (binarnie, little-endian): nagłówek `NTR1` + punkty, skręty,
   limity, fotoradary, pogoda, punkty po drodze; teksty w UTF-8 obcinane bez przecinania liter
   (`nav.pack_ntr`).
+- `.ntg` – graf tras tego samego kwadratu (skrzyżowania, odcinki dróg z długością, prędkością,
+  klasą, nawierzchnią, krętością, zakazy skrętu); opis bajtów na górze `silnik-tras/build_map.py`,
+  liczenie w `nt1100_jazdy/graf.py`. W `manifest.json` pod `"graph": {"cells": [...]}`.
 - `.ntt` – kwadrat mapy 0,1° × 0,1° (drogi, limity, fotoradary, POI, tło, teren); `manifest.json`
   ma rozmiar i CRC każdego kwadratu, więc ekran pobiera tylko zmienione.

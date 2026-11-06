@@ -66,7 +66,8 @@ Dziennik: `journalctl -u nt1100-trasy -f`, `cat /var/log/nt1100-trasy.log`.
 
 - `install-lxc.sh` – instalacja (pakiety, usługi, pierwsza budowa).
 - `aktualizuj.sh` – pobranie danych i budowa mapy + grafu.
-- `build_map.py` – mapa na kartę z pliku `.osm.pbf` (wymaga `osmium-tool`).
+- `build_map.py` – mapa na kartę z pliku `.osm.pbf` (wymaga `osmium-tool`), od wersji 3 razem
+  z grafem tras do nawigacji offline na ekranie (`g_*.ntg`).
   Użycie: `build_map.py mapa.osm.pbf KATALOG [--bbox S,W,N,E]`.
 - `config.yml`, `motocykl.json` – ustawienia GraphHoppera.
 - `kafelki.sh` – mapa do przeglądarki (Planetiler, schemat OpenMapTiles, bez budynków;
