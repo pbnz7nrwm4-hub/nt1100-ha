@@ -44,6 +44,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.39
+- Formularz trasy: strzałki w górę i w dół przy każdym przystanku zamieniają go z sąsiednim (trasa liczy się od nowa).
+- Karta „Trwa jazda w OsmAnd” wyjaśnia, że nowa trasa nie zastąpi trwającej jazdy, i ma przycisk „Zakończ jazdę”.
+
 ## Zmiany w 1.5.38 (skrzynka 1.4.7)
 
 - **Postój w domu**: skrzynka na biurku rozpoznaje postój także wtedy, gdy GPS w budynku „skacze” (0–4 km/h),
