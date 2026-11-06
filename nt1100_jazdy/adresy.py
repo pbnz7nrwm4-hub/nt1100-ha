@@ -1,5 +1,5 @@
 """Adresy na karcie ekranu (a_index.nta + a_*.nta z silnik-tras/build_map.py): wybór celu bez
-internetu – miejscowość, ulica, numer. Wzorzec dla programu ekranu 5" (szuka tak samo), dodatek
+internetu – miejscowość, ulica, numer; a_poi.nta – nazwane miejsca (stacje, jedzenie, hotele...). Wzorzec dla programu ekranu 5" (szuka tak samo), dodatek
 używa go do sprawdzenia mapy (/api/nav/adres)."""
 import math
 import os
@@ -22,11 +22,18 @@ def _dist_km(a, b):
     return math.hypot((b[0] - a[0]) * 110.54, (b[1] - a[1]) * 111.32 * k)
 
 
+# rodzaje miejsc jak punkty .ntt (build_map.py P_*)
+KINDS = {10: "stacja", 11: "jedzenie", 12: "kawiarnia", 13: "widok", 14: "przełęcz", 15: "nocleg",
+         16: "ładowarka", 17: "serwis moto", 18: "odpoczynek"}
+
+
 class Addresses:
     def __init__(self, directory):
         self.dir = directory
         self._index = None
         self._mtime = None
+        self._poi = None
+        self._poi_mtime = None
 
     def available(self):
         return os.path.exists(os.path.join(self.dir, "a_index.nta"))
@@ -55,6 +62,56 @@ class Addresses:
             out.append({"fold": fo, "name": name, "postcode": pc, "lat": lat / 1e6, "lon": lon / 1e6, "count": cnt,
                         "cell": (kla, klo), "off": off})
         self._index, self._mtime = out, mt
+        return out
+
+    def poi_index(self):
+        p = os.path.join(self.dir, "a_poi.nta")
+        try:
+            mt = os.path.getmtime(p)
+        except OSError:
+            return []
+        if self._poi is not None and self._poi_mtime == mt:
+            return self._poi
+        with open(p, "rb") as f:
+            buf = f.read()
+        magic, ver, _, n = struct.unpack_from("<4sBBI", buf, 0)
+        if magic != b"NTAP" or ver != 1:
+            raise ValueError("zły spis miejsc")
+        pos = 10
+        out = []
+        for _ in range(n):
+            words, pos = _str(buf, pos)
+            name, pos = _str(buf, pos)
+            city, pos = _str(buf, pos)
+            kind, lat, lon = struct.unpack_from("<Bii", buf, pos)
+            pos += 9
+            out.append((words.split(), name, city, kind, lat / 1e6, lon / 1e6))
+        self._poi, self._poi_mtime = out, mt
+        return out
+
+    def places(self, text, near=None, kinds=None, limit=20):
+        """Nazwane miejsca: każde słowo zapytania to początek słowa nazwy, marki albo miejscowości
+        („orlen bier” = Orlen w Bieruniu). Najpierw najbliższe pozycji, bez pozycji – pełna nazwa."""
+        q = fold(text).split()
+        if not q:
+            return []
+        found = []
+        for words, name, city, kind, lat, lon in self.poi_index():
+            if kinds and kind not in kinds:
+                continue
+            if all(any(w.startswith(t) for w in words) for t in q):
+                found.append((name, city, kind, lat, lon))
+        if near:
+            found.sort(key=lambda r: _dist_km(near, (r[3], r[4])))
+        else:
+            fq = " ".join(q)
+            found.sort(key=lambda r: (0 if fold(r[0]) == fq else 1, fold(r[0]), r[1]))
+        out = []
+        for name, city, kind, lat, lon in found[:limit]:
+            r = {"name": name, "city": city, "kind": KINDS.get(kind, ""), "lat": lat, "lon": lon}
+            if near:
+                r["km"] = round(_dist_km(near, (lat, lon)), 1)
+            out.append(r)
         return out
 
     def towns(self, text, near=None, limit=8):

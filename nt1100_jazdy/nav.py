@@ -46,7 +46,7 @@ GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGH
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
 # pliki mapy z kontenera: kwadraty .ntt i (od mapy 3) graf tras .ntg
-MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta")
+MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta")
 # części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
 MAP_EXTRA = ("graph", "addr")
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
@@ -1509,8 +1509,8 @@ class Nav:
         cen = (home["lat"], home["lon"]) if home else None
 
         def key(f):
-            if f[0] == "a_index.nta":
-                return (-1, 0)                       # spis miejscowości najpierw
+            if f[0] in ("a_index.nta", "a_poi.nta"):
+                return (-1, f[0])                    # spisy miejscowości i miejsc najpierw
             c = "c_" + f[0][2:-4] + ".ntt"             # g_/a_ w kolejności swojego kwadratu mapy
             if c in first:
                 return (first[c], 0)
