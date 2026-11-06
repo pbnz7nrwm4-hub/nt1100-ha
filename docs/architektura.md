@@ -64,7 +64,7 @@
 | `nt1100_jazdy/navapi.py` | adresy HTTP nawigacji (panel i ekran), jazda autem z korkami |
 | `nt1100_jazdy/nav.py` | planer: silnik tras, GPX, paczka `.ntr` dla ekranu, mapa, korki, zgodność jazdy z planem |
 | `nt1100_jazdy/ntt.py` | odczyt mapy ekranu (kwadraty `.ntt`) |
-| `nt1100_jazdy/adresy.py` | spis adresów `.nta` na karcie i szukanie miejscowość → ulica → numer (wzorzec dla ekranu) |
+| `nt1100_jazdy/adresy.py` | spis adresów `.nta` na karcie i szukanie miejscowość → ulica → numer oraz nazwanych miejsc (wzorzec dla ekranu) |
 | `nt1100_jazdy/graf.py` | graf tras `.ntg` i liczenie trasy offline (wzorzec dla ekranu, te same reguły co planer) |
 | `nt1100_jazdy/www/index.html` | panel: jazdy, statystyki, stan, ustawienia |
 | `nt1100_jazdy/www/nav.js` | panel: zakładka Trasy, układ 4 zakładek, „Ekran i mapa” |
@@ -81,7 +81,8 @@
   (`nav.pack_ntr`).
 - `.nta` – adresy: `a_index.nta` (spis miejscowości) i `a_*.nta` (ulice i numery miejscowości,
   których środek leży w kwadracie); opis bajtów na górze `silnik-tras/build_map.py`. W `manifest.json`
-  pod `"addr": {"cells": [...]}`.
+  pod `"addr": {"cells": [...]}`. Tam też `a_poi.nta` (od mapy w wersji 5): nazwane miejsca całej mapy
+  do szukania po nazwie offline (`adresy.Addresses.places`).
 - `.ntg` – graf tras tego samego kwadratu (skrzyżowania, odcinki dróg z długością, prędkością,
   klasą, nawierzchnią, krętością, zakazy skrętu); opis bajtów na górze `silnik-tras/build_map.py`,
   liczenie w `nt1100_jazdy/graf.py`. W `manifest.json` pod `"graph": {"cells": [...]}`.

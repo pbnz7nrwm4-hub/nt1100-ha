@@ -110,6 +110,8 @@ UNIT
 cat > /etc/cron.d/nt1100-trasy <<CRON
 # co miesiąc świeże dane OSM: nowa mapa na kartę i nowy graf tras
 15 3 2 * * root $KAT/bin/aktualizuj.sh >> /var/log/nt1100-trasy.log 2>&1
+# codziennie: nowe skrypty i przebudowa mapy na kartę, gdy zmienił się jej format (bez pobierania OSM)
+45 4 * * * root $KAT/bin/aktualizuj.sh --sprawdz >> /var/log/nt1100-trasy.log 2>&1
 CRON
 
 systemctl daemon-reload

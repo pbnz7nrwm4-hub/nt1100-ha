@@ -66,8 +66,14 @@ od siebie to osobne miejscowości. Nazwa „złożona” = małe litery bez pols
          i16 lat10 i16 lon10 (plik a_*), u32 przesunięcie miejscowości w tym pliku
   W manifeście: "addr": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]} (z a_index.nta).
 
-manifest.json: {"format":1,"wersja":4,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
-"graph": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]}, ...}
+Od wersji mapy 5 jest też spis nazwanych miejsc całej mapy (szukanie offline po nazwie: stacje, jedzenie,
+hotele, widoki, przełęcze, serwisy, ładowarki – rodzaje jak punkty .ntt, także budynki i obszary):
+  a_poi.nta: "NTAP" u8 wersja=1 u8 0 u32 n, wpisy (po nazwie złożonej): napis nazwa_złożona (nazwa, marka
+         i miejscowość, do szukania słowami), napis nazwa, napis miejscowość (addr:city albo najbliższa ze
+         spisu adresów do 10 km), u8 rodzaj, i32 lat1e6, i32 lon1e6. W manifeście w "addr" (cells).
+
+manifest.json: {"format":1,"wersja":5,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
+"graph": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]}, "addr": {...}}
 (lista grafu nazywa się „cells”, nie „files”, bo proste czytniki JSON na ekranie szukają pierwszego „files”).
 crc32 jak w zlib (binascii.crc32), dziesiętnie.
 """
@@ -84,8 +90,9 @@ import time
 FORMAT = 1
 # Wersja zawartości mapy: aktualizuj.sh przebudowuje kwadraty, gdy kontener ma starszą
 # (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B);
-# 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie; 4 = + adresy (a_*.nta).
-MAP_VERSION = 4
+# 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie; 4 = + adresy (a_*.nta);
+# 5 = + spis nazwanych miejsc (a_poi.nta).
+MAP_VERSION = 5
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -167,6 +174,8 @@ POI_TAGS = (
     (("shop", "motorcycle_repair"), P_MOTO_SHOP), (("tourism", "picnic_site"), P_PICNIC),
 )
 NODE_FILTER = ["n/highway=speed_camera"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
+POI_FILTER = ["nwr/%s=%s" % kv for kv, _ in POI_TAGS]
+POI_TOWN_M = 10000  # bez addr:city: najbliższa miejscowość ze spisu adresów, jeśli nie dalej
 
 IMPLICIT = {"PL:urban": 50, "PL:rural": 90, "PL:motorway": 140, "PL:expressway": 120, "PL:living_street": 20,
             "PL:trunk": 100, "urban": 50, "rural": 90, "walk": 7, "none": 0,
@@ -904,7 +913,71 @@ def add_addresses(src, work, out):
     files.append(["a_index.nta", len(data), binascii.crc32(bytes(data))])
     total += len(data)
     print("adresy: %d, miejscowości %d, %.1f MB (%.0f s)" % (n, len(index), total / 1e6, time.time() - t0), flush=True)
-    return {"format": ADDR_FORMAT, "bytes": total, "cells": files}
+    towns = [(name, lat / 1e6, lon / 1e6, cnt) for _, _, name, _, lat, lon, cnt, _, _ in index]
+    return {"format": ADDR_FORMAT, "bytes": total, "cells": files}, towns
+
+
+def poi_kind(tags):
+    for (k, v), kind in POI_TAGS:
+        if tags.get(k) == v:
+            return kind
+    return None
+
+
+def add_poi_index(src, work, out, towns):
+    """Spis nazwanych miejsc (a_poi.nta) do szukania po nazwie offline; zwraca [nazwa, bajty, crc32]."""
+    t0 = time.time()
+    ppbf = os.path.join(work, "miejsca.pbf")
+    run(["osmium", "tags-filter", src] + POI_FILTER + ["-o", ppbf, "--overwrite"])
+    grid = collections.defaultdict(list)    # miejscowości w oczkach 0,1°
+    for name, lat, lon, cnt in towns:
+        grid[cell_of(lat, lon)].append((name, lat, lon, cnt))
+
+    def near_town(lat, lon):
+        k = cell_of(lat, lon)
+        best, bd = "", POI_TOWN_M
+        for dl in (-1, 0, 1):
+            for do in (-1, 0, 1):
+                for name, la, lo, cnt in grid.get((k[0] + dl, k[1] + do), ()):
+                    d = dist_m((lat, lon), (la, lo)) / (1 + min(cnt, 20000) / 2000.0)  # większe przyciągają
+                    if d < bd:
+                        best, bd = name, d
+        return best
+
+    rows = []
+    seen = set()
+    with subprocess.Popen(["osmium", "export", ppbf, "-f", "geojsonseq"], stdout=subprocess.PIPE, text=True,
+                          bufsize=1 << 20) as p:
+        for line in p.stdout:
+            line = line.lstrip("\x1e")
+            if not line.startswith("{"):
+                continue
+            f = json.loads(line)
+            tags = f.get("properties") or {}
+            kind = poi_kind(tags)
+            name = (tags.get("name") or tags.get("brand") or tags.get("operator") or "").strip()
+            if kind is None or not name:
+                continue
+            pt = feature_point(f.get("geometry") or {})
+            if not pt:
+                continue
+            key = (name, kind, round(pt[0], 3), round(pt[1], 3))   # obszar i punkt tego samego miejsca
+            if key in seen:
+                continue
+            seen.add(key)
+            city = (tags.get("addr:city") or "").strip() or near_town(*pt)
+            brand = (tags.get("brand") or "").strip()
+            words = fold(" ".join(x for x in (name, brand if fold(brand) not in fold(name) else "", city) if x))
+            rows.append((words, name, city, kind, int(round(pt[0] * 1e6)), int(round(pt[1] * 1e6))))
+    rows.sort()
+    data = bytearray(struct.pack("<4sBBI", b"NTAP", ADDR_FORMAT, 0, len(rows)))
+    for words, name, city, kind, lat, lon in rows:
+        data += bstr(words) + bstr(name) + bstr(city) + struct.pack("<Bii", kind, lat, lon)
+    with open(os.path.join(out, "a_poi.nta"), "wb") as f:
+        f.write(data)
+    os.remove(ppbf)
+    print("miejsca z nazwą: %d, %.1f MB (%.0f s)" % (len(rows), len(data) / 1e6, time.time() - t0), flush=True)
+    return ["a_poi.nta", len(data), binascii.crc32(bytes(data))]
 
 
 def build(pbf, out, bbox=None):
@@ -1157,7 +1230,10 @@ def build(pbf, out, bbox=None):
     cells.clear()
 
     # 6. adresy do wyboru celu offline (pliki a_*.nta)
-    addr = add_addresses(src, work, out)
+    addr, towns = add_addresses(src, work, out)
+    poi = add_poi_index(src, work, out, towns)
+    addr["cells"].append(poi)
+    addr["bytes"] += poi[1]
 
     # 7. graf tras do nawigacji offline (pliki g_*.ntg)
     graph = build_graph(edges_tmp, restrictions, out)

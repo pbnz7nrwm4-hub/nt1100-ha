@@ -76,6 +76,13 @@ def osm():
     address((50.100, 20.000), **{"addr:place": "Wola", "addr:housenumber": "12"})
     b = [node((50.0540, 19.9640)), node((50.0540, 19.9650)), node((50.0550, 19.9650)), node((50.0550, 19.9640))]
     way(90, b + [b[0]], building="house", **{"addr:city": "Łąkowo", "addr:street": "Polna", "addr:housenumber": "3"})
+    # nazwane miejsca: stacje jednej marki (bez nazwy, z miejscowością i bez), hotel jako budynek, bez nazwy
+    address((50.0505, 19.9605), amenity="fuel", brand="Orlen")
+    address((50.1605, 20.2705), amenity="fuel", name="Orlen", **{"addr:city": "Nowa Wieś"})
+    address((50.0700, 19.9800), amenity="restaurant", name="Karczma Pod Lipą")
+    address((50.0800, 19.9900), amenity="cafe")
+    h = [node((50.0900, 19.9900)), node((50.0900, 19.9910)), node((50.0910, 19.9910)), node((50.0910, 19.9900))]
+    way(91, h + [h[0]], building="hotel", tourism="hotel", name="Hotel Łąkowski")
     out = ["<?xml version='1.0' encoding='UTF-8'?>", '<osm version="0.6" generator="test">']
     tagged = dict(addr)
     for i in sorted(nodes):
@@ -127,7 +134,7 @@ class GraphTest(unittest.TestCase):
 
     def test_manifest_lists_graph_files(self):
         m = json.load(open(os.path.join(self.out, "manifest.json")))
-        self.assertEqual(m["wersja"], 4)
+        self.assertEqual(m["wersja"], 5)
         names = [f[0] for f in m["graph"]["cells"]]
         self.assertTrue(names and all(n.startswith("g_") and n.endswith(".ntg") for n in names))
         self.assertTrue(all(n.endswith(".ntt") for n, _, _ in m["files"]))
@@ -231,6 +238,24 @@ class AddressTest(unittest.TestCase):
     def test_missing(self):
         self.assertFalse(self.a.find("Xyz")["ok"])
         self.assertFalse(self.a.find("Łąkowo", "Kwiatowa")["ok"])
+
+    def test_places_by_name(self):
+        m = json.load(open(os.path.join(self.out, "manifest.json")))
+        self.assertIn("a_poi.nta", [f[0] for f in m["addr"]["cells"]])
+        self.assertEqual(m["wersja"], 5)
+        self.assertEqual(len(self.a.poi_index()), 4)           # kawiarnia bez nazwy pominięta
+        r = self.a.places("orlen", near=(50.16, 20.27))
+        self.assertEqual([(x["name"], x["city"], x["kind"]) for x in r],
+                         [("Orlen", "Nowa Wieś", "stacja"), ("Orlen", "Łąkowo", "stacja")])
+        self.assertLess(r[0]["km"], r[1]["km"])
+        r = self.a.places("orlen lak")                          # marka + miejscowość, bez ogonków
+        self.assertEqual([x["city"] for x in r], ["Łąkowo"])
+        r = self.a.places("lakowski")
+        self.assertEqual((r[0]["name"], r[0]["kind"]), ("Hotel Łąkowski", "nocleg"))
+        self.assertAlmostEqual(r[0]["lat"], 50.0905, places=3)
+        self.assertEqual([x["name"] for x in self.a.places("pod lip")], ["Karczma Pod Lipą"])
+        self.assertEqual(self.a.places("karczma", kinds={10}), [])
+        self.assertEqual(self.a.places(""), [])
 
 
 if __name__ == "__main__":
