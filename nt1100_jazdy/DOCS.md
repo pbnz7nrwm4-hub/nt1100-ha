@@ -29,6 +29,10 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.33 (ekran 5" 2.0.4: odcinki trasy w kolorach wariantów)
+
+Ekran rysuje linię trasy w kolorach odcinków jak panel (szybko niebiesko, lekko kręto zielono, kręto pomarańczowo, bardzo kręto czerwono, fioletowa obwódka „Mojego planu”), na stronie Trasa pokazuje kolejne warianty, a na liście tras szkic wybranej trasy w tych kolorach; działa offline, bo warianty są w paczce trasy na karcie. Droga powrotu liczona bez internetu jest teraz turkusowa, żeby nie myliła się z fioletem planu.
+
 ## Zmiany w 1.5.32 (warianty odcinków dla ekranu)
 - Paczka trasy dla ekranu niesie wariant trasy i wariant każdego odcinka „Mojego planu” (kręto, szybko…),
   żeby ekran 5" mógł rysować odcinki w tych samych kolorach co panel. Starszy program ekranu czyta paczkę jak dawniej.
