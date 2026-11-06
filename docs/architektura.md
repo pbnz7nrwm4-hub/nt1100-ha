@@ -68,6 +68,12 @@
 | `nt1100_jazdy/graf.py` | graf tras `.ntg` i liczenie trasy offline (wzorzec dla ekranu, te same reguły co planer) |
 | `nt1100_jazdy/www/index.html` | panel: jazdy, statystyki, stan, ustawienia |
 | `nt1100_jazdy/www/nav.js` | panel: zakładka Trasy (Start/Cel, wyszukiwarka miejsc, pinezki, zakładki Planuj/Moje trasy/W trasie), układ 4 zakładek, kafle i „Ekran i mapa” w Motocyklu |
+| `pojazdy/server.py` | dodatek Pojazdy: panel, API, ładowania z historii HA, terminy i powiadomienia, czujniki `sensor.pojazdy_*`, kopia |
+| `pojazdy/obliczenia.py` | spalanie „od pełnego do pełnego”, prąd w odcinkach (PHEV), koszty okresów, terminy |
+| `pojazdy/ladowania.py` | sesje ładowania z liczników energii, strefa G13, część z PV z bilansu godzinowego, % baterii |
+| `pojazdy/fuelio.py` | import i eksport kopii Fuelio (`.fuelio` = ZIP z CSV pojazdów) |
+| `pojazdy/baza.py` | baza SQLite `/data/pojazdy.db` |
+| `pojazdy/www/index.html` | panel Pojazdy (telefon): Start, Historia, Statystyki, Terminy, Więcej |
 | `nt1100_jazdy/firmware/` | gotowe, podpisane obrazy skrzynki i ekranu z numerem wersji |
 | `silnik-tras/` | instalacja i aktualizacja kontenera z silnikiem tras i mapą |
 | `tests/` | testy (uruchamia je GitHub przy każdej zmianie) |
@@ -88,3 +94,14 @@
   liczenie w `nt1100_jazdy/graf.py`. W `manifest.json` pod `"graph": {"cells": [...]}`.
 - `.ntt` – kwadrat mapy 0,1° × 0,1° (drogi, limity, fotoradary, POI, tło, teren); `manifest.json`
   ma rozmiar i CRC każdego kwadratu, więc ekran pobiera tylko zmienione.
+
+## Dodatek Pojazdy
+
+Osobny dodatek w tym samym repozytorium (osobny kontener, osobne dane `/data/pojazdy.db`, osobny panel).
+Nie łączy się ze skrzynką ani z NT1100 Jazdy bezpośrednio – wszystko idzie przez Home Assistant:
+
+- czyta z HA (API Supervisora): przebieg motocykla (`sensor.nt1100_przebieg`), historię liczników energii
+  ładowarek i sieci, ceny stref G13, „Wartość kWh”, % baterii auta,
+- publikuje do HA czujniki `sensor.pojazdy_*` (REST API, co 10 min i po zmianie) – w tym
+  `sensor.pojazdy_nt1100_terminy`, z którego NT1100 Jazdy (od 1.5.27) bierze serwis motocykla,
+- powiadomienia o terminach wysyła przez usługę `notify` w HA.

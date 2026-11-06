@@ -16,6 +16,9 @@ Home Assistant czyta tylko gałąź `main`. Niescalona zmiana = brak aktualizacj
 
 Bez podbicia numeru Home Assistant nie zobaczy aktualizacji.
 
+**Dodatek Pojazdy** ma własny numer: `version` w `pojazdy/config.yaml` i `VERSION` w `pojazdy/server.py`
+(oba takie same), zmiany dla użytkownika w `pojazdy/DOCS.md`. Testy: `tests/test_pojazdy.py`.
+
 ## Oprogramowanie skrzynki i ekranu
 
 Źródła i klucze podpisu **nie są** w tym repozytorium (prywatne archiwum właściciela).

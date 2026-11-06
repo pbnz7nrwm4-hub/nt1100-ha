@@ -1,0 +1,850 @@
+"""Pojazdy: dodatek Home Assistant – tankowania, ładowania, koszty i terminy (jak Fuelio).
+
+Panel w menu HA (Ingress, port 8099). Dane w /data/pojazdy.db (wchodzą do kopii HA),
+co noc kopia do /share/pojazdy/kopie (baza + plik .fuelio). Ładowania auta wpisują się
+same z historii HA (liczniki energii ładowarek, bilans sieci, ceny G13, % baterii).
+Czujniki trafiają do HA przez REST API (sensor.pojazdy_*), co 10 min i po każdej zmianie.
+"""
+
+import json
+import os
+import re
+import sys
+import threading
+import time
+import traceback
+import urllib.parse
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import baza as bz  # noqa: E402
+import fuelio  # noqa: E402
+import ladowania as ld  # noqa: E402
+import obliczenia as ob  # noqa: E402
+
+VERSION = "1.0.0"
+DATA = os.environ.get("PJ_DATA", "/data")
+SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
+HERE = os.path.dirname(os.path.abspath(__file__))
+WWW = os.environ.get("PJ_WWW", os.path.join(HERE, "www"))
+PORT = int(os.environ.get("PJ_PORT", "8099"))
+PEERS = set(os.environ.get("PJ_PEERS", "172.30.32.2").split(","))
+SUPERVISOR = os.environ.get("PJ_SUPERVISOR", "http://supervisor")
+TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
+PETLA = os.environ.get("PJ_PETLA", "1") == "1"  # testy wyłączają pętlę w tle
+
+DOMYSLNE = {
+    "ladowarki": [
+        {"miejsce": "dom", "nazwa": "Ładowarka (dom)", "licznik": "sensor.ladowarka_auta_energia_licznik", "pojazd": "eclipse"},
+        {"miejsce": "hala", "nazwa": "Gniazdko w hali", "licznik": "sensor.ladowarka_w_hali_energia_licznik", "pojazd": "eclipse"},
+    ],
+    "siec_pobrana": "sensor.siec_pobrana_licznik",
+    "siec_oddana": "sensor.siec_oddana_licznik",
+    "ceny": {"przedpoludnie": "input_number.cena_przedpoludnie", "popoludnie": "input_number.cena_popoludnie",
+             "pozostale": "input_number.cena_pozostale"},
+    "ceny_zapas": {"przedpoludnie": 0.92, "popoludnie": 1.51, "pozostale": 0.64},
+    "wartosc_kwh": "sensor.wartosc_kwh",
+    "bateria": {"eclipse": "sensor.eclipse_bateria"},
+    "ladowania_od": "2026-10-31T23:00:00+00:00",  # kursor (UTC) – dokąd już sprawdzone
+    "dane_pradu_od": "2026-11-01",  # od kiedy HA mierzy ładowarki (wcześniejsze odcinki bez kWh)
+    "powiadomienie": "",
+    "prog_km": 500,
+    "kategorie": ["Serwis", "Eksploatacja", "Ubezpieczenie", "Przegląd", "Opony", "Rejestracja", "Parking",
+                  "Myjnia", "Opłaty za przejazd", "Mandaty", "Akcesoria", "Inne"],
+}
+# Serwis motocykla z NT1100 Jazdy (domyślne okresy, gdy encja nie podaje własnego).
+NT_SERWIS = {"olej": ("Olej i filtr oleju", 12000, 12), "lancuch": ("Smarowanie łańcucha", 800, None),
+             "przeglad": ("Przegląd okresowy", 12000, 12)}
+
+DB = None
+LOCK = threading.RLock()
+STAN = {"sync": None, "sync_blad": "", "ha": False, "import": None}
+
+
+def log(*a):
+    print(time.strftime("%Y-%m-%d %H:%M:%S"), *a, flush=True)
+
+
+def ust(k):
+    return DB.ust(k, DOMYSLNE.get(k))
+
+
+def teraz_lok():
+    return ld.lok(datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------- Home Assistant
+
+def ha_call(method, path, body=None, timeout=20):
+    if not TOKEN:
+        return None
+    req = urllib.request.Request(
+        SUPERVISOR + path, data=None if body is None else json.dumps(body).encode(), method=method,
+        headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read()
+        try:
+            return json.loads(data or b"null")
+        except ValueError:
+            return None
+
+
+def ha_stan(encja):
+    if not encja or not TOKEN:
+        return None
+    try:
+        return ha_call("GET", "/core/api/states/" + encja)
+    except Exception:
+        return None
+
+
+def ha_liczba(encja):
+    s = ha_stan(encja)
+    try:
+        return float(s["state"])
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def ha_historia(encje, od, do):
+    """{encja: [stany]} z API historii HA (UTC)."""
+    encje = [e for e in encje if e]
+    if not encje or not TOKEN:
+        return {}
+    q = urllib.parse.urlencode({"filter_entity_id": ",".join(encje), "end_time": do.isoformat(),
+                                "minimal_response": "", "no_attributes": "", "significant_changes_only": "0"})
+    path = "/core/api/history/period/%s?%s" % (urllib.parse.quote(od.isoformat()), q)
+    out = {}
+    for lst in ha_call("GET", path, timeout=60) or []:
+        if lst:
+            eid = lst[0].get("entity_id")
+            out[eid] = lst
+    return out
+
+
+_PANEL = []
+
+
+def panel_url():
+    if not _PANEL and TOKEN:
+        try:
+            slug = ((ha_call("GET", "/addons/self/info") or {}).get("data") or {}).get("slug")
+            if slug:
+                _PANEL.append("/hassio/ingress/" + slug)
+        except Exception:
+            pass
+    return _PANEL[0] if _PANEL else "/hassio/dashboard"
+
+
+def powiadom(tytul, tresc, tag):
+    cel = (ust("powiadomienie") or "").strip()
+    if cel.startswith("notify."):
+        cel = cel[7:]
+    try:
+        if cel:
+            ha_call("POST", "/core/api/services/notify/" + cel, {
+                "title": tytul, "message": tresc,
+                "data": {"tag": tag, "url": panel_url(), "clickAction": panel_url()}})
+        else:
+            ha_call("POST", "/core/api/services/persistent_notification/create",
+                    {"title": tytul, "message": tresc, "notification_id": tag})
+    except Exception as e:
+        log("Powiadomienie nieudane:", e)
+
+
+# ---------------------------------------------------------------- dane pojazdu
+
+def pojazd_po_kluczu(klucz):
+    for p in DB.lista("pojazdy"):
+        if p.get("klucz") == klucz or str(p["id"]) == str(klucz):
+            return p
+    return None
+
+
+def dane_pojazdu(pid):
+    return (DB.lista("tankowania", pojazd_id=pid), DB.lista("ladowania", pojazd_id=pid),
+            DB.lista("koszty", pojazd_id=pid), DB.lista("odczyty", pojazd_id=pid))
+
+
+def z_pradem(p):
+    return p.get("rodzaj") in ("phev", "ev")
+
+
+def prad_od(p, l):
+    """Od kiedy znamy wszystkie ładowania pojazdu (ustawienie dane_pradu_od; po dopisaniu
+    historii ładowań z auta można je cofnąć)."""
+    if not z_pradem(p):
+        return None
+    return ust("dane_pradu_od") or "2026-11-01"
+
+
+def przebieg_pojazdu(p, t=None, k=None, o=None, l=None):
+    if t is None:
+        t, l, k, o = dane_pojazdu(p["id"])
+    pts = ob.przebiegi(t, k, o, l or [])
+    return ob.przebieg_teraz(pts), pts
+
+
+def stan_terminow(p, km):
+    dzis = teraz_lok().date()
+    out = []
+    for t in DB.lista("terminy", pojazd_id=p["id"]):
+        if not t.get("aktywny", 1):
+            continue
+        s = ob.stan_terminu(t, dzis, km, prog_km=float(ust("prog_km") or 500))
+        s.update(id=t["id"], nazwa=t["nazwa"], kategoria=t.get("kategoria"), co_km=t.get("co_km"), klucz=t.get("klucz"),
+                 co_mies=t.get("co_mies"), ostatnio_data=t.get("ostatnio_data"), ostatnio_km=t.get("ostatnio_km"),
+                 pojazd_id=p["id"], pojazd=p["nazwa"])
+        s["opis"] = ob.opis_terminu(s)
+        out.append(s)
+
+    def pilnosc(s):
+        a = s["dni"] if s["dni"] is not None else 10 ** 6
+        b = (s["km"] / 30.0) if s["km"] is not None else 10 ** 6  # ok. 30 km dziennie – tylko do kolejności
+        return min(a, b)
+    out.sort(key=pilnosc)
+    return out
+
+
+def okres(nazwa, dzis=None):
+    dzis = dzis or teraz_lok().date()
+    if nazwa == "miesiac":
+        od = dzis.replace(day=1)
+        return od.isoformat(), ob.dodaj_miesiace(od, 1).isoformat()
+    if nazwa == "rok":
+        return dzis.replace(month=1, day=1).isoformat(), date(dzis.year + 1, 1, 1).isoformat()
+    if nazwa == "12m":
+        return ob.dodaj_miesiace(dzis.replace(day=1), -11).isoformat(), ob.dodaj_miesiace(dzis.replace(day=1), 1).isoformat()
+    return "1900-01-01", "2999-01-01"
+
+
+def karta_pojazdu(p):
+    t, l, k, o = dane_pojazdu(p["id"])
+    km, pts = przebieg_pojazdu(p, t, k, o, l)
+    odc = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l))
+    od, do = okres("miesiac")
+    mies = ob.podsumowanie_okresu(t, l, k, o, od, do)
+    ost = ob.srednie(odc, 3)
+    out = {"id": p["id"], "klucz": p.get("klucz"), "nazwa": p["nazwa"], "rodzaj": p["rodzaj"], "przebieg": km,
+           "srednie": ost, "ostatni_odcinek": odc[-1] if odc else None, "miesiac": mies,
+           "terminy": stan_terminow(p, km)[:3], "ostatnie_tankowanie": t[0] if t else None,
+           "bak_l": p.get("bak_l"), "bateria_kwh": p.get("bateria_kwh")}
+    if z_pradem(p):
+        enc = (ust("bateria") or {}).get(p.get("klucz") or "")
+        out["bateria"] = ha_liczba(enc) if enc else None
+    return out
+
+
+def statystyki(p, nazwa_okresu):
+    t, l, k, o = dane_pojazdu(p["id"])
+    od, do = okres(nazwa_okresu)
+    odc_all = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l))
+    odc = [x for x in odc_all if od <= x["do"][:10] < do]
+    out = {"pojazd": p, "okres": nazwa_okresu, "od": od, "do": do, "srednie": ob.srednie(odc), "prad_od": prad_od(p, l),
+           "odcinki": odc_all[-40:], "podsumowanie": ob.podsumowanie_okresu(t, l, k, o, od, do),
+           "miesiace": ob.koszty_miesieczne(t, l, k, od[:7], ob.dodaj_miesiace(ob.d10(do), -1).isoformat()[:7]),
+           "kategorie": {}}
+    for x in k:
+        if od <= (x.get("data") or "")[:10] < do:
+            out["kategorie"][x.get("kategoria") or "Inne"] = round(out["kategorie"].get(x.get("kategoria") or "Inne", 0) + float(x.get("kwota") or 0), 2)
+    if z_pradem(p):
+        out["benzyna"] = ob.porownanie_benzyna(odc, p.get("l100_bez_pradu"))
+        lo = [x for x in l if not x.get("wykluczone") and od <= x["poczatek"][:10] < do]
+        kwh = sum(float(x.get("kwh") or 0) for x in lo)
+        kwb = sum(float(x.get("kwh_bateria") or 0) for x in lo if x.get("kwh_bateria"))
+        kws = sum(float(x.get("kwh") or 0) for x in lo if x.get("kwh_bateria"))
+        out["prad"] = {"kwh": round(kwh, 2), "kwh_pv": round(sum(float(x.get("kwh_pv") or 0) for x in lo), 2),
+                       "koszt": round(sum(float(x.get("koszt") or 0) for x in lo), 2),
+                       "koszt_wartosc": round(sum(float(x.get("koszt_wartosc") or 0) for x in lo), 2),
+                       "sprawnosc": round(kwb / kws, 3) if kws > 0 else None, "ladowan": len(lo)}
+    return out
+
+
+def historia(pid=None, typ=None, limit=400):
+    poj = {p["id"]: p for p in DB.lista("pojazdy")}
+    out = []
+    w = {"pojazd_id": int(pid)} if pid else {}
+    if typ in (None, "", "paliwo"):
+        for t in DB.lista("tankowania", **w):
+            out.append(dict(t, typ="tankowanie", czas=t["data"], kwota_razem=ob.kwota_tankowania(t)))
+    if typ in (None, "", "prad"):
+        for l in DB.lista("ladowania", **w):
+            out.append(dict(l, typ="ladowanie", czas=l["poczatek"], kwota_razem=l.get("koszt") or 0))
+    if typ in (None, "", "koszty"):
+        for k in DB.lista("koszty", **w):
+            out.append(dict(k, typ="koszt", czas=k["data"], kwota_razem=k.get("kwota") or 0))
+    out.sort(key=lambda x: (x["czas"] or "").replace("T", " "), reverse=True)
+    # spalanie przy pełnych tankowaniach
+    for pid_, p in poj.items():
+        t, l, k, o = dane_pojazdu(pid_)
+        for odc in ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l)):
+            for x in out:
+                if x["typ"] == "tankowanie" and x["id"] == odc["tankowanie_id"]:
+                    x["l100"] = odc["l100"]
+                    x["kwh100"] = odc.get("kwh100")
+    for x in out:
+        x["pojazd"] = poj.get(x["pojazd_id"], {}).get("nazwa", "?")
+    return out[:limit]
+
+
+# ---------------------------------------------------------------- ładowania z HA
+
+def ceny_teraz():
+    zap = ust("ceny_zapas") or DOMYSLNE["ceny_zapas"]
+    out = {}
+    for st, enc in (ust("ceny") or {}).items():
+        v = ha_liczba(enc)
+        out[st] = v if v else zap.get(st)
+    return out
+
+
+def synchronizuj_ladowania():
+    """Nowe, zakończone sesje ładowania z liczników -> tabela ladowania."""
+    if not TOKEN:
+        STAN["sync_blad"] = "brak połączenia z Home Assistant"
+        return 0
+    teraz = datetime.now(timezone.utc)
+    kursor = ld.utc(ust("ladowania_od"))
+    od = kursor - timedelta(minutes=30)
+    dodane = 0
+    nowy_kursor = teraz - timedelta(minutes=ld.KONIEC_PO_MIN)
+    ceny = None
+    for lad in ust("ladowarki") or []:
+        p = pojazd_po_kluczu(lad.get("pojazd"))
+        if not p or not lad.get("licznik"):
+            continue
+        h = ha_historia([lad["licznik"]], od, teraz).get(lad["licznik"])
+        ser = ld.seria(h)
+        for s in ld.sesje(ser, teraz, min_kwh=0):
+            if not s["skonczona"]:
+                nowy_kursor = min(nowy_kursor, s["start"] - timedelta(minutes=1))
+                continue
+            if s["kwh"] < ld.MIN_KWH:
+                continue
+            uid = "auto:%s:%s" % (lad["miejsce"], s["start"].strftime("%Y%m%dT%H%M"))
+            if DB.jest_uid("ladowania", uid):
+                continue
+            if ceny is None:
+                ceny = ceny_teraz()
+            okno_od = s["start"].replace(minute=0, second=0, microsecond=0) - timedelta(minutes=5)
+            okno_do = s["koniec"] + timedelta(hours=1, minutes=5)
+            siec = ha_historia([ust("siec_pobrana"), ust("siec_oddana"), ust("wartosc_kwh")], okno_od, okno_do)
+            bat_enc = (ust("bateria") or {}).get(p.get("klucz") or "")
+            bat = ld.seria(ha_historia([bat_enc], s["start"] - timedelta(hours=6), okno_do).get(bat_enc)) if bat_enc else []
+            wyc = ld.wycen(s, ceny, ld.seria(siec.get(ust("siec_pobrana"))), ld.seria(siec.get(ust("siec_oddana"))),
+                           ld.seria(siec.get(ust("wartosc_kwh"))), ha_liczba(ust("wartosc_kwh")))
+            s0, s1 = ld.soc(bat, s["start"], s["koniec"]) if bat else (None, None)
+            w = ld.do_wiersza(s, lad["miejsce"], p["id"], wyc, s0, s1, p.get("bateria_kwh"))
+            w["notatka"] = lad.get("nazwa") or lad["miejsce"]
+            if wyc.get("bez_bilansu"):
+                w["notatka"] += " · bez bilansu sieci (całość wyceniona jak z sieci)"
+            if DB.dodaj("ladowania", w, pomin_istniejace=True):
+                dodane += 1
+                log("Ładowanie:", w["poczatek"], lad["miejsce"], w["kwh"], "kWh", w["koszt"], "zł")
+    DB.ustaw("ladowania_od", max(kursor, nowy_kursor).isoformat())
+    STAN["sync"] = datetime.now(timezone.utc).isoformat()
+    STAN["sync_blad"] = ""
+    return dodane
+
+
+# ---------------------------------------------------------------- przebieg z telemetrii, migracja serwisu
+
+def przebieg_z_encji():
+    dzis = teraz_lok().strftime("%Y-%m-%d")
+    for p in DB.lista("pojazdy"):
+        if not p.get("encja_przebiegu"):
+            continue
+        v = ha_liczba(p["encja_przebiegu"])
+        if v is None:
+            continue
+        km, _ = przebieg_pojazdu(p)
+        dzisiejsze = [o for o in DB.lista("odczyty", pojazd_id=p["id"]) if o["zrodlo"] == "telemetria" and o["data"][:10] == dzis]
+        if dzisiejsze:
+            if abs(dzisiejsze[0]["przebieg"] - v) >= 0.5:
+                DB.zmien("odczyty", dzisiejsze[0]["id"], {"przebieg": v, "data": teraz_lok().strftime("%Y-%m-%d %H:%M")})
+        elif km is None or v > km + 0.5:
+            DB.dodaj("odczyty", {"pojazd_id": p["id"], "data": teraz_lok().strftime("%Y-%m-%d %H:%M"),
+                                 "przebieg": v, "zrodlo": "telemetria"})
+
+
+def migracja_serwisu_nt1100():
+    """Jednorazowo: pozycje serwisu z NT1100 Jazdy (sensor.nt1100_serwis_*) -> terminy."""
+    if DB.ust("migracja_nt1100") or not TOKEN:
+        return
+    p = pojazd_po_kluczu("nt1100")
+    if not p:
+        DB.ustaw("migracja_nt1100", "brak pojazdu")
+        return
+    try:
+        stany = ha_call("GET", "/core/api/states") or []
+    except Exception:
+        return
+    odo = None
+    for s in stany:
+        if s.get("entity_id") == "sensor.nt1100_przebieg":
+            try:
+                odo = float(s["state"])
+            except (TypeError, ValueError):
+                pass
+    n = 0
+    for s in stany:
+        m = re.match(r"^sensor\.nt1100_serwis_([a-z0-9_]+)$", s.get("entity_id") or "")
+        if not m:
+            continue
+        sid = m.group(1)
+        nazwa, co_km, co_mies = NT_SERWIS.get(sid, ((s.get("attributes") or {}).get("friendly_name", sid).replace("NT1100 Serwis ", ""), None, None))
+        try:
+            left = float(s["state"])
+        except (TypeError, ValueError):
+            left = None
+        t = {"pojazd_id": p["id"], "nazwa": nazwa, "kategoria": "Serwis", "co_km": co_km, "co_mies": co_mies,
+             "klucz": "nt1100:" + sid}
+        if left is not None and odo is not None and co_km:
+            t["ostatnio_km"] = round(odo + left - co_km)
+        elif left is not None and odo is not None:
+            t["nastepny_km"] = round(odo + left)
+        if DB.dodaj("terminy", t, pomin_istniejace=True):
+            n += 1
+    if n or odo is not None:
+        DB.ustaw("migracja_nt1100", {"data": teraz_lok().isoformat(), "pozycji": n})
+        log("Serwis NT1100 przeniesiony:", n, "pozycji")
+
+
+# ---------------------------------------------------------------- terminy: powiadomienia
+
+def powiadomienia_terminow():
+    for p in DB.lista("pojazdy"):
+        km, _ = przebieg_pojazdu(p)
+        for s in stan_terminow(p, km):
+            prog = ob.ktore_powiadomienie(s, prog_km=(int(ust("prog_km") or 500), 100, 0))
+            t = DB.jeden("terminy", s["id"])
+            if not prog or (t.get("powiadomiono") or "") == prog:
+                continue
+            DB.zmien("terminy", s["id"], {"powiadomiono": prog})
+            powiadom("%s: %s" % (p["nazwa"], s["nazwa"]), "%s: %s." % (s["nazwa"], s["opis"]), "pojazdy_termin_%d" % s["id"])
+
+
+# ---------------------------------------------------------------- czujniki w HA
+
+def slug(s):
+    s = (s or "").lower()
+    for a, b in zip("ąćęłńóśźż", "acelnoszz"):
+        s = s.replace(a, b)
+    return re.sub(r"[^a-z0-9]+", "_", s).strip("_") or "pojazd"
+
+
+def czujniki():
+    out = []
+    for p in DB.lista("pojazdy"):
+        if not p.get("aktywny", 1):
+            continue
+        c = karta_pojazdu(p)
+        s = slug(p.get("klucz") or p["nazwa"])
+        dev = {"pojazd": p["nazwa"]}
+
+        def add(k, stan, nazwa, jedn=None, ikona=None, attrs=None):
+            a = dict(dev, friendly_name="%s %s" % (p["nazwa"], nazwa))
+            if jedn:
+                a["unit_of_measurement"] = jedn
+            if ikona:
+                a["icon"] = ikona
+            a.update(attrs or {})
+            out.append(("sensor.pojazdy_%s_%s" % (s, k), "unknown" if stan is None else stan, a))
+        sr = c["srednie"]
+        add("spalanie", sr.get("l100"), "spalanie", "L/100km", "mdi:gas-station", {"state_class": "measurement"})
+        add("koszt_100km", sr.get("zl100"), "koszt na 100 km", "zł", "mdi:cash", {"state_class": "measurement"})
+        add("koszt_miesiac", c["miesiac"]["razem"], "koszt w tym miesiącu", "zł", "mdi:calendar-month",
+            {"paliwo": c["miesiac"]["paliwo"], "prad": c["miesiac"]["prad"], "inne": c["miesiac"]["inne"]})
+        add("przebieg", c["przebieg"], "przebieg", "km", "mdi:counter")
+        if z_pradem(p):
+            add("zuzycie_pradu", sr.get("kwh100"), "zużycie prądu", "kWh/100km", "mdi:ev-station", {"state_class": "measurement"})
+        ter = stan_terminow(p, c["przebieg"])
+        add("terminy", sum(1 for t in ter if t["pilne"]), "pilne terminy", None, "mdi:wrench-clock", {
+            "najblizszy": ("%s: %s" % (ter[0]["nazwa"], ter[0]["opis"])) if ter else "",
+            "terminy": [{"nazwa": t["nazwa"], "opis": t["opis"], "dni": t["dni"], "km": t["km"],
+                         "klucz": t.get("klucz"), "co_km": t.get("co_km"), "ostatnio_km": t.get("ostatnio_km"),
+                         "nastepny_data": t["nastepny_data"], "nastepny_km": t["nastepny_km"], "pilne": t["pilne"],
+                         "kategoria": t.get("kategoria")} for t in ter],
+            "panel": panel_url()})
+    return out
+
+
+def publikuj():
+    if not TOKEN:
+        return
+    try:
+        for eid, stan, attrs in czujniki():
+            ha_call("POST", "/core/api/states/" + eid, {"state": stan, "attributes": attrs})
+        STAN["ha"] = True
+    except Exception as e:
+        STAN["ha"] = False
+        log("Czujniki: nie udało się opublikować:", e)
+
+
+def po_zmianie():
+    threading.Thread(target=publikuj, daemon=True).start()
+
+
+# ---------------------------------------------------------------- kopia
+
+def eksport_fuelio(tylko=None):
+    pozycje = []
+    for p in DB.lista("pojazdy"):
+        if tylko and p["id"] != tylko:
+            continue
+        pozycje.append((p, list(reversed(DB.lista("tankowania", pojazd_id=p["id"]))),
+                        list(reversed(DB.lista("koszty", pojazd_id=p["id"])))))
+    return fuelio.eksport(pozycje)
+
+
+def kopia_nocna():
+    kat = os.path.join(SHARE, "kopie")
+    os.makedirs(kat, exist_ok=True)
+    d = teraz_lok().strftime("%Y-%m-%d")
+    DB.kopia(os.path.join(kat, "pojazdy-%s.db" % d))
+    with open(os.path.join(kat, "pojazdy-%s.fuelio" % d), "wb") as f:
+        f.write(eksport_fuelio())
+    pliki = sorted(os.listdir(kat))
+    for ext in (".db", ".fuelio"):
+        stare = [x for x in pliki if x.endswith(ext)][:-30]
+        for x in stare:
+            try:
+                os.remove(os.path.join(kat, x))
+            except OSError:
+                pass
+    DB.ustaw("kopia_ostatnia", teraz_lok().strftime("%Y-%m-%d %H:%M"))
+    log("Kopia zapisana:", kat)
+
+
+def petla():
+    for _ in range(30):
+        try:
+            ha_call("GET", "/core/api/")
+            break
+        except Exception:
+            time.sleep(10)
+    ostatnia_kopia = DB.ust("kopia_ostatnia") or ""
+    while True:
+        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, powiadomienia_terminow, publikuj):
+            try:
+                krok()
+            except Exception as e:
+                if krok is synchronizuj_ladowania:
+                    STAN["sync_blad"] = str(e)
+                log("Błąd (%s):" % krok.__name__, e)
+                traceback.print_exc()
+        n = teraz_lok()
+        if n.hour >= 2 and (DB.ust("kopia_ostatnia") or "")[:10] != n.strftime("%Y-%m-%d"):
+            try:
+                kopia_nocna()
+            except Exception as e:
+                log("Kopia nieudana:", e)
+        time.sleep(600)
+
+
+# ---------------------------------------------------------------- import Fuelio
+
+def propozycja_pojazdu(nazwa):
+    n = (nazwa or "").lower()
+    if re.search(r"\bnt\b|nt1100", n):
+        p = pojazd_po_kluczu("nt1100")
+        return p["id"] if p else None
+    if "mitsubishi" in n or "eclipse" in n:
+        p = pojazd_po_kluczu("eclipse")
+        return p["id"] if p else None
+    return None
+
+
+def import_podglad(dane, nazwa):
+    poj = fuelio.czytaj(dane, nazwa)
+    STAN["import"] = {"dane": dane, "nazwa": nazwa, "czas": time.time()}
+    out = []
+    for v in poj:
+        pid = propozycja_pojazdu(v["nazwa"])
+        nowe = sum(1 for t in v["tankowania"] if not DB.jest_uid("tankowania", t["uid"]))
+        out.append({"plik": v["plik"], "nazwa": v["nazwa"], "tankowan": len(v["tankowania"]), "nowych": nowe,
+                    "kosztow": len(v["koszty"]), "terminow": len(v["terminy"]), "od": v["od"], "do": v["do"],
+                    "podejrzane": v["podejrzane"], "pojazd_id": pid})
+    return {"pojazdy": out, "cele": [{"id": p["id"], "nazwa": p["nazwa"]} for p in DB.lista("pojazdy")]}
+
+
+def import_zapisz(mapowanie, popraw=True):
+    imp = STAN.get("import")
+    if not imp:
+        raise ValueError("najpierw wybierz plik")
+    wynik = {"tankowan": 0, "kosztow": 0, "terminow": 0, "poprawionych": 0}
+    for v in fuelio.czytaj(imp["dane"], imp["nazwa"]):
+        pid = mapowanie.get(v["plik"])
+        if not pid:
+            continue
+        pid = int(pid)
+        for t in v["tankowania"]:
+            if popraw and t.get("podejrzana"):
+                t["kwota"] = t["podejrzana"]
+                t["notatka"] = ((t.get("notatka") or "") + " (kwota poprawiona przy imporcie: litry × cena)").strip()
+                wynik["poprawionych"] += 1
+            t["pojazd_id"] = pid
+            if DB.dodaj("tankowania", t, pomin_istniejace=True):
+                wynik["tankowan"] += 1
+        for k in v["koszty"]:
+            k["pojazd_id"] = pid
+            if DB.dodaj("koszty", k, pomin_istniejace=True):
+                wynik["kosztow"] += 1
+        for t in v["terminy"]:
+            t["pojazd_id"] = pid
+            t["klucz"] = "fuelio:%s:%s" % (v["nazwa"], t["nazwa"])
+            if DB.dodaj("terminy", t, pomin_istniejace=True):
+                wynik["terminow"] += 1
+    STAN["import"] = None
+    log("Import Fuelio:", wynik)
+    po_zmianie()
+    return wynik
+
+
+# ---------------------------------------------------------------- HTTP
+
+TABELE = {"tankowania", "ladowania", "koszty", "terminy", "pojazdy", "odczyty"}
+LICZBY = {"przebieg", "litry", "cena_l", "kwota", "kwh", "kwh_pv", "kwh_bateria", "soc_od", "soc_do", "koszt",
+          "koszt_wartosc", "bak_l", "bateria_kwh", "l100_bez_pradu", "co_km", "nastepny_km", "ostatnio_km"}
+
+
+def oczysc(tabela, j):
+    d = {}
+    for k, v in j.items():
+        if k in ("id",):
+            continue
+        if k in LICZBY:
+            v = None if v in (None, "") else float(str(v).replace(",", "."))
+        d[k] = v
+    if tabela == "tankowania":
+        l, c, k = ob.uzupelnij_tankowanie(d.get("litry"), d.get("cena_l"), d.get("kwota"))
+        d.update(litry=l, cena_l=c, kwota=k)
+        if not l:
+            raise ValueError("podaj litry (albo kwotę i cenę)")
+    if tabela in ("tankowania", "koszty", "odczyty") and not d.get("data"):
+        d["data"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+    if tabela == "ladowania":
+        d.setdefault("zrodlo", "recznie")
+        if not d.get("poczatek"):
+            d["poczatek"] = teraz_lok().strftime("%Y-%m-%d %H:%M")
+    if tabela == "terminy" and "co_mies" in d:
+        d["co_mies"] = int(d["co_mies"]) if d["co_mies"] not in (None, "") else None
+    if "pojazd_id" in d and d["pojazd_id"] not in (None, ""):
+        d["pojazd_id"] = int(d["pojazd_id"])
+    return d
+
+
+def sprawdz_przebieg(tabela, d, id_=None):
+    """Ostrzeżenie (nie błąd): przebieg mniejszy niż wcześniejszy odczyt."""
+    if tabela != "tankowania" or d.get("przebieg") is None or not d.get("pojazd_id"):
+        return None
+    pts = [(x["data"], x["przebieg"]) for x in DB.lista("tankowania", pojazd_id=d["pojazd_id"])
+           if x["id"] != id_ and x.get("przebieg") is not None and x["data"] < d["data"]]
+    if pts and max(k for _, k in pts) > d["przebieg"]:
+        return "Przebieg mniejszy niż przy wcześniejszym tankowaniu (%d km)." % max(k for _, k in pts)
+    return None
+
+
+class Strona(BaseHTTPRequestHandler):
+    server_version = "Pojazdy/" + VERSION
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def send(self, code, body, ctype="application/json", extra=None):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body, ensure_ascii=False, separators=(",", ":"), default=str)
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+            if ctype.startswith(("application/json", "text/")):
+                ctype += "; charset=utf-8"
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def ok_peer(self):
+        if self.client_address[0] not in PEERS:
+            self.send(403, {"blad": "tylko przez panel Home Assistant"})
+            return False
+        return True
+
+    def body(self, limit=25 * 1024 * 1024):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > limit:
+            raise ValueError("plik za duży")
+        return self.rfile.read(n) if n else b""
+
+    def do_GET(self):
+        if not self.ok_peer():
+            return
+        u = urllib.parse.urlsplit(self.path)
+        path = u.path.rstrip("/") or "/"
+        q = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
+        try:
+            if path in ("/", "/index.html"):
+                with open(os.path.join(WWW, "index.html"), "rb") as f:
+                    return self.send(200, f.read(), "text/html")
+            if path == "/api/start":
+                poj = [p for p in DB.lista("pojazdy") if p.get("aktywny", 1)]
+                ter = []
+                karty = []
+                for p in poj:
+                    c = karta_pojazdu(p)
+                    karty.append(c)
+                    ter += stan_terminow(p, c["przebieg"])
+                ter.sort(key=lambda s: (not s["pilne"], s["dni"] if s["dni"] is not None else 99999))
+                return self.send(200, {"pojazdy": karty, "terminy": ter[:3], "wersja": VERSION,
+                                       "miesiac": teraz_lok().strftime("%Y-%m")})
+            if path == "/api/historia":
+                return self.send(200, historia(q.get("pojazd"), q.get("typ")))
+            if path == "/api/statystyki":
+                if q.get("pojazd") in (None, "", "wszystkie"):
+                    poj = [p for p in DB.lista("pojazdy") if p.get("aktywny", 1)]
+                    od, do = okres(q.get("okres") or "rok")
+                    t, l, k, o = [], [], [], []
+                    per = []
+                    for p in poj:
+                        a = dane_pojazdu(p["id"])
+                        t += a[0]; l += a[1]; k += a[2]
+                        s = ob.podsumowanie_okresu(*a, od, do)
+                        per.append({"nazwa": p["nazwa"], "razem": s["razem"], "zl_km": s["zl_km"], "km": s["km"]})
+                    razem = {"razem": round(sum(x["razem"] for x in per), 2), "km": sum(x["km"] for x in per)}
+                    razem["zl_km"] = round(razem["razem"] / razem["km"], 3) if razem["km"] else None
+                    return self.send(200, {"okres": q.get("okres") or "rok", "od": od, "do": do, "pojazdy": per,
+                                           "podsumowanie": razem,
+                                           "miesiace": ob.koszty_miesieczne(t, l, k, od[:7], ob.dodaj_miesiace(ob.d10(do), -1).isoformat()[:7])})
+                p = DB.jeden("pojazdy", int(q["pojazd"]))
+                return self.send(200, statystyki(p, q.get("okres") or "rok"))
+            if path == "/api/terminy":
+                out = []
+                for p in DB.lista("pojazdy"):
+                    km, _ = przebieg_pojazdu(p)
+                    out += stan_terminow(p, km)
+                out.sort(key=lambda s: (s["dni"] if s["dni"] is not None else 99999))
+                return self.send(200, out)
+            if path == "/api/pojazdy":
+                return self.send(200, DB.lista("pojazdy"))
+            m = re.match(r"^/api/(tankowania|ladowania|koszty|terminy|odczyty)/(\d+)$", path)
+            if m:
+                w = DB.jeden(m.group(1), int(m.group(2)))
+                return self.send(200 if w else 404, w or {"blad": "nie ma"})
+            if path == "/api/ustawienia":
+                return self.send(200, {k: ust(k) for k in DOMYSLNE} | {
+                    "stan": {k: v for k, v in STAN.items() if k != "import"}, "wersja": VERSION,
+                    "kopia_ostatnia": DB.ust("kopia_ostatnia"), "migracja_nt1100": DB.ust("migracja_nt1100")})
+            if path == "/api/podpowiedzi":
+                pid = int(q.get("pojazd") or 0)
+                t = DB.lista("tankowania", pojazd_id=pid)
+                p = DB.jeden("pojazdy", pid) or {}
+                km, _ = przebieg_pojazdu(p) if p else (None, None)
+                tel = ha_liczba(p.get("encja_przebiegu")) if p.get("encja_przebiegu") else None
+                stacje = []
+                for x in t:
+                    if x.get("stacja") and x["stacja"] not in stacje:
+                        stacje.append(x["stacja"])
+                return self.send(200, {"cena_l": t[0]["cena_l"] if t else None, "stacja": t[0]["stacja"] if t else "",
+                                       "przebieg": km, "telemetria": tel, "stacje": stacje[:8],
+                                       "ostatnio_km": t[0]["przebieg"] if t else None, "teraz": teraz_lok().strftime("%Y-%m-%dT%H:%M")})
+            if path == "/api/eksport":
+                pid = int(q["pojazd"]) if q.get("pojazd") else None
+                nazwa = "pojazdy-%s.fuelio" % teraz_lok().strftime("%Y-%m-%d")
+                return self.send(200, eksport_fuelio(pid), "application/zip",
+                                 {"Content-Disposition": 'attachment; filename="%s"' % nazwa})
+            return self.send(404, {"blad": "nie ma"})
+        except Exception as e:
+            traceback.print_exc()
+            return self.send(500, {"blad": str(e)})
+
+    def do_POST(self):
+        if not self.ok_peer():
+            return
+        path = urllib.parse.urlsplit(self.path).path.rstrip("/")
+        try:
+            if path == "/api/import/podglad":
+                nazwa = urllib.parse.unquote(self.headers.get("X-Nazwa-Pliku") or "")
+                return self.send(200, import_podglad(self.body(), nazwa))
+            j = json.loads(self.body(2 * 1024 * 1024) or b"{}")
+            if path == "/api/import/zapisz":
+                return self.send(200, import_zapisz(j.get("mapowanie") or {}, bool(j.get("popraw", True))))
+            if path == "/api/ladowania/synchronizuj":
+                n = synchronizuj_ladowania()
+                po_zmianie()
+                return self.send(200, {"dodane": n, "blad": STAN["sync_blad"]})
+            if path == "/api/ustawienia":
+                for k, v in j.items():
+                    if k in DOMYSLNE:
+                        DB.ustaw(k, v)
+                po_zmianie()
+                return self.send(200, {"ok": True})
+            m = re.match(r"^/api/terminy/(\d+)/zrobione$", path)
+            if m:
+                t = DB.jeden("terminy", int(m.group(1)))
+                p = DB.jeden("pojazdy", t["pojazd_id"])
+                km = j.get("przebieg")
+                km = float(km) if km not in (None, "") else przebieg_pojazdu(p)[0]
+                data = (j.get("data") or teraz_lok().strftime("%Y-%m-%d"))[:10]
+                zm = {"ostatnio_data": data, "ostatnio_km": km, "powiadomiono": ""}
+                if not t.get("co_mies"):
+                    zm["nastepny_data"] = j.get("nastepny_data") or None
+                if not t.get("co_km"):
+                    zm["nastepny_km"] = j.get("nastepny_km") or None
+                DB.zmien("terminy", t["id"], zm)
+                if j.get("kwota") not in (None, ""):
+                    DB.dodaj("koszty", {"pojazd_id": p["id"], "data": data, "przebieg": km, "kategoria": t.get("kategoria") or "Serwis",
+                                        "tytul": t["nazwa"], "kwota": float(str(j["kwota"]).replace(",", "."))})
+                po_zmianie()
+                return self.send(200, {"ok": True})
+            m = re.match(r"^/api/(tankowania|ladowania|koszty|terminy|pojazdy|odczyty)(?:/(\d+)(/usun)?)?$", path)
+            if m:
+                tab, id_, usun = m.group(1), m.group(2), m.group(3)
+                if usun:
+                    DB.usun(tab, int(id_))
+                    po_zmianie()
+                    return self.send(200, {"ok": True})
+                d = oczysc(tab, j)
+                if tab == "ladowania" and id_:
+                    d["zmienione"] = 1
+                uwaga = sprawdz_przebieg(tab, dict(DB.jeden(tab, int(id_)) or {}, **d) if id_ else d, int(id_) if id_ else None)
+                if id_:
+                    DB.zmien(tab, int(id_), d)
+                    nid = int(id_)
+                else:
+                    nid = DB.dodaj(tab, d)
+                po_zmianie()
+                return self.send(200, {"ok": True, "id": nid, "uwaga": uwaga})
+            return self.send(404, {"blad": "nie ma"})
+        except (ValueError, KeyError, TypeError) as e:
+            return self.send(400, {"blad": str(e)})
+        except Exception as e:
+            traceback.print_exc()
+            return self.send(500, {"blad": str(e)})
+
+
+def uruchom():
+    global DB
+    os.makedirs(DATA, exist_ok=True)
+    DB = bz.Baza(os.path.join(DATA, "pojazdy.db"))
+    srv = ThreadingHTTPServer(("0.0.0.0", PORT), Strona)
+    srv.daemon_threads = True
+    return srv
+
+
+def main():
+    srv = uruchom()
+    log("Pojazdy %s – panel na porcie %d" % (VERSION, srv.server_address[1]))
+    if PETLA:
+        threading.Thread(target=petla, daemon=True).start()
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
