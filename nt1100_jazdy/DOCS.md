@@ -40,6 +40,9 @@ dla przeglądarki ze zwykłej mapy OpenStreetMap.
   więc w trasie można przełączyć się na inną także bez internetu.
 - **Do domu**: ekran 5" prosi dodatek o trasę do domu z miejsca, w którym stoi. Bez internetu wraca
   po przejechanej drodze.
+- **Oprogramowanie w paczce**: ekran 5" 2.0.0 (mapa lekko pochylona, z drzewkami i numerami dróg,
+  teren z mapy 1.5.17) i rejestrator 1.4.4 (wysyła ekranowi 5" pozycję i dane silnika przez
+  Bluetooth). Ekran 2,8" zostaje na 1.1.3.
 
 ## Zmiany w 1.5.17 (teren w mapie na ekran)
 
