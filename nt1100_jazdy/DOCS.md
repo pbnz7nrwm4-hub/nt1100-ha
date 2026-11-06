@@ -29,6 +29,11 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.31 („Mój plan” w kolorach odcinków)
+- Trasa „Mój plan” (odcinki o różnych wariantach) jest na mapie rysowana w kolorach odcinków: kręto pomarańczowo,
+  szybko niebiesko, bardzo kręto czerwono itd., z fioletową obwódką „Mojego planu”. Kolory zgadzają się z paskiem na karcie.
+  Tak samo wygląda zapisana trasa otwarta z „Moich tras”.
+
 ## Zmiany w 1.5.30 (mapa w jeździe i wyjeździe)
 - Naprawiona mapa w pojedynczej jeździe i w całym wyjeździe: od 1.5.26 zamiast mapy z podkładem pokazywał się
   sam szkic trasy (linia na szarym tle). Teraz jest znowu prawdziwa mapa z kafelkami z kontenera, jak w Trasach.

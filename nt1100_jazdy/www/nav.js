@@ -419,7 +419,7 @@ function safeFit(b){const m=NV.map;if(!m||!b||!b.isValid())return;m.invalidateSi
 function fitRoute(b){NV.fit=b;safeFit(b);lockMap(true)}
 function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}safeFit(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])))}
 function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];setTimeout(drawLegs,0);NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent=''}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
-function showRoute(r){clearPlan();if(!NV.map||!r.pts)return;const ll=r.pts.map(p=>[p[0],p[1]]);const l=L.polyline(ll,{color:VCOL[r.variant]||'#3d8bfd',weight:5,opacity:.85}).addTo(NV.map);NV.lines.push(l);fitRoute(l.getBounds());if(r.id)alongFor('id='+r.id,r.name||'trasa',ll);
+function showRoute(r){clearPlan();if(!NV.map||!r.pts)return;const ll=r.pts.map(p=>[p[0],p[1]]);const l=(r.legs&&r.legs.length>1?legLine(r,ll).setStyle({opacity:.9,weight:5}):L.polyline(ll,{color:VCOL[r.variant]||'#3d8bfd',weight:5,opacity:.85})).addTo(NV.map);NV.lines.push(l);fitRoute(l.getBounds());if(r.id)alongFor('id='+r.id,r.name||'trasa',ll);
   if(r.waypoints)for(const w of r.waypoints){if(!w.name||w.name==='cel'||w.name==='start')continue}NV.shown=r.id}
 async function togglePoi(){NV.poiOn=!NV.poiOn;P.leg.hidden=!NV.poiOn;P.poiBtn.textContent=NV.poiOn?'Ukryj POI':'Pokaż POI z mapy (fotoradary, stacje, widoki)';if(NV.poiOn)await loadPoi();else if(NV.poi){NV.poi.remove();NV.poi=null}}
 async function loadPoi(){if(!NV.map)return;const b=NV.map.getBounds();if(NV.map.getZoom()<9){if(NV.poi)NV.poi.clearLayers();P.legHint.textContent='przybliż mapę, żeby zobaczyć punkty';return}P.legHint.textContent='';
@@ -484,11 +484,20 @@ async function plan(){const vars=Object.keys(P.var).filter(v=>P.var[v]);const rt
   P.go.disabled=true;msg(P.msg,'liczę '+(vars.length+(legs?1:0))+(vars.length+(legs?1:0)===1?' wariant…':' warianty…'),'busy');clearPlan();
   try{const j=await post('api/nav/plan',{points:NV.loop?NV.pts.slice(0,1):NV.pts,variants:vars,legs,avoid:Object.keys(P.av).filter(v=>P.av[v]),name:P.name.value,round_trip_km:rt,round_trip_min:rtm,skip:NV.skip,weather:true});NV.plan=j;msg(P.msg,j.routes.length?'':'żaden wariant się nie policzył',j.routes.length?'':'bad');results(j)}catch(e){msg(P.msg,e.message,'bad')}P.go.disabled=false;renderModeBtn()}
 function renderModeBtn(){if(P.go)P.go.textContent=NV.loop?'Policz pętlę':NV.plan?'Przelicz trasę':'Policz trasę'}
+/* 1.5.31: „Mój plan” na mapie w kolorach odcinków (kręto pomarańczowo, szybko niebiesko…) z fioletową obwódką.
+   Granice odcinków = punkty trasy najbliższe kolejnym przystankom (szukane po kolei, od poprzedniej granicy). */
+function legCuts(r,ll){const w=(r.points||[]).slice(1,-1),cut=[0];let from=0;
+  for(const q of w){const lat=q.lat!==undefined?q.lat:q[0],lon=q.lon!==undefined?q.lon:q[1];let best=from,bd=Infinity;
+    for(let k=from;k<ll.length;k++){const d=(ll[k][0]-lat)**2+((ll[k][1]-lon)*Math.cos(lat*Math.PI/180))**2;if(d<bd){bd=d;best=k}}cut.push(best);from=best}
+  cut.push(ll.length-1);return cut}
+function legLine(r,ll){const cut=legCuts(r,ll);if(cut.length!==r.legs.length+1)return L.polyline(ll,{color:VCOL.mix,weight:4,opacity:.75});
+  const cas=L.polyline(ll,{color:VCOL.mix,weight:8,opacity:.75});const parts=r.legs.map((v,k)=>L.polyline(ll.slice(cut[k],cut[k+1]+1),{color:VCOL[v]||'#888',weight:4,opacity:.9}));
+  const g=L.featureGroup([cas].concat(parts));g.setStyle=o=>{cas.setStyle({opacity:o.opacity,weight:(o.weight||4)+4});parts.forEach(x=>x.setStyle({opacity:o.opacity,weight:o.weight}));return g};return g}
 function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}))P.out.append(el('p','nmsg bad',VN(v)+': '+j.errors[v]));
   const order=j.routes.map((r,i)=>i).sort((a,b)=>(j.routes[b].variant==='mix')-(j.routes[a].variant==='mix'));
   if(j.routes.length)P.out.append(el('small','mut','Dotknij wariantu, żeby go wybrać. Pogrubiona linia na mapie = wybrany.'));
   const bnds=[];const cards=[];
-  j.routes.forEach((r,i)=>{const ll=r.pts.map(p=>[p[0],p[1]]);const l=L.polyline(ll,{color:VCOL[r.variant]||'#888',weight:4,opacity:.75}).addTo(NV.map);l.on('click',()=>pick(i));NV.lines.push(l);bnds.push(...ll)});
+  j.routes.forEach((r,i)=>{const ll=r.pts.map(p=>[p[0],p[1]]);const l=(r.legs&&r.legs.length>1?legLine(r,ll):L.polyline(ll,{color:VCOL[r.variant]||'#888',weight:4,opacity:.75})).addTo(NV.map);l.on('click',()=>pick(i));NV.lines.push(l);bnds.push(...ll)});
   const pick=i=>{const r=j.routes[i];NV.sel=i;cards.forEach(c=>{const on=c._i===i;c.classList.toggle('on',on);c.style.borderColor=on?(VCOL[j.routes[c._i].variant]||''):'';c.querySelector('.ac').hidden=!on});NV.lines.forEach((x,k)=>x.setStyle({opacity:k===i?1:.35,weight:k===i?7:3}));NV.lines[i].bringToFront();alongFor('token='+j.token+'&variant='+r.variant,VN(r.variant),r.pts.map(p=>[p[0],p[1]]))};
   const seen=[];
   for(const i of order){const r=j.routes[i];const vn=VN(r.variant);
