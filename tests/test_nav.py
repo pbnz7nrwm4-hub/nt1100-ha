@@ -225,6 +225,25 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(t, 2)
 
 
+    def test_pack_ntr_leg_variants(self):
+        """1.5.32: „Mój plan” – wariant trasy w nagłówku, wariant odcinka przy przystanku, na którym się kończy."""
+        pts = nav.densify(l_shape(), 30)
+        route = {"id": 2, "version": 1, "name": "plan", "variant": "mix", "pts": pts, "cum": nav.cum_dist(pts), "turns": [],
+                 "waypoints": [{"idx": 10, "name": "A", "kind": 1, "leg": "kreto"},
+                               {"idx": len(pts) - 1, "name": "cel", "kind": 2, "leg": "szybko"}]}
+        b = nav.pack_ntr(route)
+        self.assertEqual(struct.unpack_from("<4sBB", b, 0)[2], nav.VARIANT_CODE["mix"])
+        w2 = struct.unpack_from("<IBBH32s", b, len(b) - 40)
+        w1 = struct.unpack_from("<IBBH32s", b, len(b) - 80)
+        self.assertEqual((w1[0], w1[2]), (10, nav.VARIANT_CODE["kreto"]))
+        self.assertEqual((w2[1], w2[2]), (2, nav.VARIANT_CODE["szybko"]))
+        route["variant"] = None
+        for w in route["waypoints"]:
+            w.pop("leg")
+        b = nav.pack_ntr(route)  # zwykła trasa: pola jak dawniej (zera)
+        self.assertEqual(struct.unpack_from("<4sBB", b, 0)[2], 0)
+        self.assertEqual(struct.unpack_from("<IBBH32s", b, len(b) - 40)[2], 0)
+
     def test_pack_ntr_utf8_cut(self):
         """Długie polskie nazwy obcięte bez przecinania litery (ekran rysował krzaczek)."""
         self.assertEqual(nav.utf8_cut("ąąą", 5), "ąą".encode())

@@ -29,6 +29,10 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.32 (warianty odcinków dla ekranu)
+- Paczka trasy dla ekranu niesie wariant trasy i wariant każdego odcinka „Mojego planu” (kręto, szybko…),
+  żeby ekran 5" mógł rysować odcinki w tych samych kolorach co panel. Starszy program ekranu czyta paczkę jak dawniej.
+
 ## Zmiany w 1.5.31 („Mój plan” w kolorach odcinków)
 - Trasa „Mój plan” (odcinki o różnych wariantach) jest na mapie rysowana w kolorach odcinków: kręto pomarańczowo,
   szybko niebiesko, bardzo kręto czerwono itd., z fioletową obwódką „Mojego planu”. Kolory zgadzają się z paskiem na karcie.

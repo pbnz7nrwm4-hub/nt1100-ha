@@ -35,6 +35,9 @@ import graf
 import ntt
 
 VERSION_NTR = 1
+# 1.5.32: kod wariantu w .ntr (bajt po wersji w nagłówku = wariant trasy, bajt po „kind” przystanku = wariant odcinka
+# kończącego się na tym przystanku); 0 = nieznany. Pola były dotąd zerami, więc stary ekran czyta paczkę jak dawniej.
+VARIANT_CODE = {"szybko": 1, "lekko": 2, "kreto": 3, "bardzo": 4, "mix": 5}
 # Rodzaje wskazówek (jak na ekranie).
 T_STRAIGHT, T_SLIGHT_L, T_LEFT, T_SHARP_L, T_SLIGHT_R, T_RIGHT, T_SHARP_R, T_UTURN = 0, 1, 2, 3, 4, 5, 6, 7
 T_ROUNDABOUT, T_KEEP_L, T_KEEP_R, T_WAYPOINT, T_FINISH, T_FERRY = 8, 9, 10, 11, 12, 13
@@ -658,6 +661,8 @@ class Nav:
             if i is None:
                 i, _ = nearest_index(pts, (w["lat"], w["lon"]))
             wps.append({"idx": int(i), "name": (w.get("name") or "")[:30], "kind": int(w.get("kind", 1))})
+            if w.get("leg"):
+                wps[-1]["leg"] = w["leg"]
         if not wps or wps[-1]["idx"] < len(pts) - 2:
             wps.append({"idx": len(pts) - 1, "name": "cel", "kind": 2})
         else:
@@ -1023,6 +1028,8 @@ class Nav:
             wps = []
             for k, p in enumerate(points[1:] if not (round_trip_km or round_trip_min) else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
+                if v == MIX[0] and legs and k < len(legs):
+                    wps[-1]["leg"] = legs[k]  # 1.5.32: wariant odcinka kończącego się na tym przystanku (dla ekranu)
             route = self.build_route(r["pts"], name or self.auto_name(points, round_trip_km, round_trip_min), "silnik",
                                      r["instr"], wps,
                                      None, v, with_weather, limits_hint=r["limits"])
@@ -1760,7 +1767,7 @@ def pack_ntr(route):
     wx = route.get("weather") or []
     wps = route.get("waypoints") or []
     name = utf8_cut(route.get("name"), 39)
-    out = bytearray(struct.pack("<4sBBHIIIHHHHH40s", b"NTR1", VERSION_NTR, 0, len(wps), int(route.get("id") or 0),
+    out = bytearray(struct.pack("<4sBBHIIIHHHHH40s", b"NTR1", VERSION_NTR, VARIANT_CODE.get(route.get("variant"), 0), len(wps), int(route.get("id") or 0),
                                 int(route.get("version") or 0), len(pts), len(turns), len(limits), len(cams), len(wx), 0,
                                 name))
     for i, p in enumerate(pts):
@@ -1777,5 +1784,6 @@ def pack_ntr(route):
         out += struct.pack("<IIbBBB", w["idx"], int(w.get("t") or 0), int(round(temp)) if temp is not None else -128,
                            int(w.get("rain_prob") or 0), int(w.get("code") or 0), min(255, int(w.get("wind") or 0)))
     for w in wps:
-        out += struct.pack("<IBBH32s", w["idx"], w.get("kind", 1), 0, 0, utf8_cut(w.get("name"), 31))
+        out += struct.pack("<IBBH32s", w["idx"], w.get("kind", 1), VARIANT_CODE.get(w.get("leg"), 0), 0,
+                           utf8_cut(w.get("name"), 31))
     return bytes(out)
