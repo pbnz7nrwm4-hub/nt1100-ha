@@ -2,7 +2,7 @@
 """Diagnoza wariantów krętości: liczy te same trasy w każdym wariancie i porównuje, jak kręte wyszły.
 
 Uruchom tam, gdzie widać silnik tras (np. kontener Claude):
-    python3 narzedzia/kretosc_diag.py http://192.168.1.29:8989 [--kandydaci] [--kreto]
+    NT1100_START=lat,lon python3 narzedzia/kretosc_diag.py http://ADRES-SILNIKA:8989 [--kandydaci] [--kreto]
 
 Dla każdej trasy i wariantu: km, minuty, °/km tak jak w dodatku („deg_km”), °/km bez skrętów
 na skrzyżowaniach („zakręty”), udział klas dróg. --kandydaci dokłada próbne ustawienia modelu.
@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "nt1100_jazdy"))
 import nav  # noqa: E402
 import ntt  # noqa: E402
 
-DOM = (50.0905, 19.0937)
+# Punkt startu z NT1100_START="lat,lon" (repo jest publiczne – bez adresu domowego); domyślnie rynek w Katowicach.
+DOM = tuple(float(x) for x in (os.environ.get("NT1100_START") or "50.2590,19.0220").split(",")[:2])
 TRASY = [("Dom → Szczyrk", DOM, (49.7186, 19.0317)),
          ("Dom → Wisła", DOM, (49.6495, 18.8590)),
          ("Dom → Żywiec", DOM, (49.6857, 19.1925)),
