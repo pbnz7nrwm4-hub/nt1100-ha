@@ -28,6 +28,10 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.25 (ekran 5" 2.0.3: pozycja z własnego GPS, gdy skrzynka nie ma fixu)
+
+Ekran 5" dotąd czekał na pozycję ze skrzynki, nawet gdy ta jeszcze jej nie miała. Teraz, gdy skrzynka jest słyszana, ale od 3 s nie podaje pozycji (zimny start, garaż), ekran jedzie na własnym GPS, a przechył i dane silnika dalej bierze ze skrzynki.
+
 ## Zmiany w 1.5.24 (ekran 5" 2.0.2: paliwo, ceny, kalendarz; skrzynka 1.4.5: upadek na sucho)
 
 - **Zatankuj, zanim będzie za późno**: ekran 5" porównuje zasięg z motocykla (skrzynka) ze stacjami
