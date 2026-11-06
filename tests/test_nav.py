@@ -396,6 +396,26 @@ class NavServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/")
         self.assertIn(b'src="nav.js"', body)
 
+    def test_02b_screen_own_key(self):
+        # 1.5.35: ekran ma osobny klucz; po „tylko klucz ekranu” klucz skrzynki nie wpuszcza ekranu, ale skrzynkę tak
+        code, body, _ = self.req(self.pu + "/api/settings")
+        sk = json.loads(body)["screen_key"]
+        self.assertTrue(sk and sk != KEY)
+        self.assertEqual(self.req(self.iu + "/api/nav/ping?klucz=" + sk)[0], 200)
+        self.assertEqual(self.req(self.iu + "/api/nav/ping", headers={"X-Klucz": sk})[0], 200)
+        self.assertEqual(self.req(self.iu + "/api/ping", headers={"X-Klucz": sk})[0], 401)  # skrzynka tylko swoim
+        try:
+            self.assertEqual(self.jpost(self.pu + "/api/settings", {"screen_key_only": True})[0], 200)
+            self.assertEqual(self.req(self.iu + "/api/nav/ping?klucz=" + KEY)[0], 401)
+            self.assertEqual(self.req(self.iu + "/api/ping", headers={"X-Klucz": KEY})[0], 200)
+            code, j = self.jpost(self.pu + "/api/screen_key/new", {})
+            self.assertEqual(code, 200)
+            self.assertNotEqual(j["screen_key"], sk)
+            self.assertEqual(self.req(self.iu + "/api/nav/ping?klucz=" + sk)[0], 401)
+            self.assertEqual(self.req(self.iu + "/api/nav/ping?klucz=" + j["screen_key"])[0], 200)
+        finally:
+            self.jpost(self.pu + "/api/settings", {"screen_key_only": False})
+
     def test_02_screen_needs_key(self):
         code, body, _ = self.req(self.iu + "/api/nav/ping")
         self.assertEqual(code, 401)

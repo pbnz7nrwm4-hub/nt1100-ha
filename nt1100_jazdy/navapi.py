@@ -880,11 +880,12 @@ def screen_kind(q):
 
 
 def screen_kind_of(fw):
-    """Paczka dla ekranu o zgłoszonej wersji: 2.x = ekran 5", starsze = 2,8"."""
+    """Paczka dla ekranu o zgłoszonej wersji: 2.x = ekran 5", 1.x = 2,8" (od 1.5.35 bez paczki w dodatku).
+    Ekran nieznany = ekran 5" (jedyny na motocyklu)."""
     try:
         return "ekran5" if int(str(fw or "").split(".")[0]) >= 2 else "ekran"
     except ValueError:
-        return "ekran"
+        return "ekran5"
 
 
 def screen_firmware_offer(kind="ekran"):
@@ -1030,11 +1031,14 @@ def screen_routes(idx, n=8):
 
 
 def screen_authorized(h, q):
-    if h.authorized():
-        return True
-    k = (q.get("klucz") or "").strip()
+    """Ekran: własny klucz ekranu zawsze; klucz skrzynki tylko, dopóki nie włączono „tylko klucz ekranu”
+    (ekrany sprzed 1.5.35 mają wpisany klucz skrzynki). Klucz w nagłówku X-Klucz albo ?klucz=."""
     import hmac
-    return bool(k) and hmac.compare_digest(k.encode(), SRV.key().encode())
+    got = [x for x in ((h.headers.get("X-Klucz") or "").strip(), (q.get("klucz") or "").strip()) if x]
+    keys = [SRV.screen_key()]
+    if not SRV.settings().get("screen_key_only"):
+        keys.append(SRV.key())
+    return any(hmac.compare_digest(g.encode(), k.encode()) for g in got for k in keys)
 
 
 def note_screen(h, q):

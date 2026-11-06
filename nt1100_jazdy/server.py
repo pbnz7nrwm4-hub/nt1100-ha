@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.34"
+VERSION = "1.5.35"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +53,7 @@ CACHE = os.path.join(SHARE, "cache")
 INDEX = os.path.join(SHARE, "index.json")
 STATE = os.path.join(DATA, "stan.json")
 KEYFILE = os.path.join(DATA, "klucz")
+SCREEN_KEYFILE = os.path.join(DATA, "klucz_ekranu")  # osobny klucz ekranu (1.5.35): kradzież ekranu nie odcina skrzynki
 FIRMWARE = os.environ.get("NT_FIRMWARE", os.path.join(HERE, "firmware"))
 # Files of a ride sent by the box (the summary .json last = ride complete).
 EXTS = ("trk", "thm", "nam", "rep", "mtl", "json")
@@ -120,6 +121,23 @@ def key():
         with open(KEYFILE, "w", encoding="utf-8") as f:
             f.write(k)
         log("Nowy klucz dla skrzynki zapisany (widoczny w zakladce Ustawienia na stronie dodatku).")
+    return k
+
+
+def screen_key(new=False):
+    """Klucz ekranu nawigacji. new=True: nowy klucz, stary przestaje działać od razu."""
+    k = ""
+    if not new:
+        try:
+            with open(SCREEN_KEYFILE, encoding="utf-8") as f:
+                k = f.read().strip()
+        except FileNotFoundError:
+            k = ""
+    if not k:
+        k = secrets.token_urlsafe(18)
+        with open(SCREEN_KEYFILE, "w", encoding="utf-8") as f:
+            f.write(k)
+        log("Nowy klucz ekranu zapisany (Ustawienia → Połączenie ze skrzynką i ekranem).")
     return k
 
 
@@ -580,6 +598,8 @@ def settings():
         "odo": s.get("odo") if isinstance(s.get("odo"), dict) else None,
         "service": svc,
         "nav": s.get("nav") if isinstance(s.get("nav"), dict) else {},
+        # True: ekran wpuszczany tylko własnym kluczem (klucz skrzynki już nie działa dla ekranu)
+        "screen_key_only": bool(s.get("screen_key_only", False)),
     }
 
 
@@ -1670,6 +1690,8 @@ def apply_settings(j):
             upd[k] = v
     if "weather" in j:
         upd["weather"] = bool(j["weather"])
+    if "screen_key_only" in j:
+        upd["screen_key_only"] = bool(j["screen_key_only"])
     if "notify" in j:
         t = j["notify"]
         if t is not None and (not isinstance(t, str) or not re.fullmatch(r"(notify\.)?[a-z0-9_]{0,64}", t)):
@@ -1807,7 +1829,7 @@ class Page(Base):
         if path == "/api/settings":
             remote = (options().get("adres_spoza_domu") or "").strip().rstrip("/")
             st = settings()
-            return self.send(200, dict(st, key=key(), local_url=local_url(), remote_url=remote,
+            return self.send(200, dict(st, key=key(), screen_key=screen_key(), local_url=local_url(), remote_url=remote,
                                        notify_option=(options().get("powiadomienie") or "").strip(),
                                        notify_effective=notify_target()))
         if path == "/api/notify_targets":
@@ -1837,6 +1859,10 @@ class Page(Base):
             return self.send(413, "za duży plik", "text/plain")
         if navapi.page_post(self, path, q, body):
             return
+        if path == "/api/screen_key/new":
+            k = screen_key(new=True)
+            log("Klucz ekranu zmieniony z panelu – stary nie działa.")
+            return self.send(200, {"ok": True, "screen_key": k})
         if path == "/api/settings":
             try:
                 j = json.loads(body or b"{}")

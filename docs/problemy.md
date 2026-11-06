@@ -20,6 +20,7 @@ Dziennik dodatku: Ustawienia → Dodatki → NT1100 Jazdy → **Dziennik**.
 | Ekran nie pobiera trasy | ekran nie ma Wi-Fi (dom / hotspot) | Menu → Ustawienia Wi-Fi; na iPhonie włącz „Maksymalizuj zgodność” hotspotu |
 | Ekran pokazuje starą wersję | aktualizacja tylko w domu i przy ładowaniu | zakładka Menu (2,8": przytrzymaj ekran → Menu) → Sprawdź wersję → Aktualizuj |
 | „Zgodność z planem” przy jeździe bez planu | (naprawione w 1.5.14) | – |
+| Ekran zginął albo ktoś zna jego klucz | klucz ekranu jest w jego ustawieniach | Ustawienia → Połączenie ze skrzynką i ekranem → Nowy klucz ekranu + „Ekran tylko z własnym kluczem” |
 | Korki nie działają | brak klucza TomTom | Ustawienia → Ustawienia nawigacji → klucz TomTom |
 
 Czego nie robić: nie podłączać zasilania z gniazda diagnostycznego (pin stałego zasilania),
