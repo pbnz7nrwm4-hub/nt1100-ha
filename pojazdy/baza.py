@@ -66,6 +66,9 @@ class Baza:
             if not self.db.execute("SELECT 1 FROM pojazdy LIMIT 1").fetchone():
                 for p in STARTOWE:
                     self.dodaj("pojazdy", p)
+            # 1.0.2: import z Fuelio zapisywał kwoty bez zaokrąglenia (187.07999999999998)
+            self.db.execute("UPDATE tankowania SET litry=round(litry,2), kwota=round(kwota,2), cena_l=round(cena_l,3)")
+            self.db.execute("UPDATE koszty SET kwota=round(kwota,2) WHERE kwota IS NOT NULL")
             self.db.commit()
 
     # ---- ogólne

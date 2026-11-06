@@ -1,5 +1,5 @@
 name: Pojazdy
-version: "1.0.1"
+version: "1.0.2"
 slug: pojazdy
 description: Tankowania, ładowania, koszty i terminy pojazdów (jak Fuelio) – ładowania auta wpisują się same z Home Assistant
 arch:
