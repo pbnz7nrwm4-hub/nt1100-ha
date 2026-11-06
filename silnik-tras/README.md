@@ -59,6 +59,9 @@ skrypt pisze ile i podpowiada `pct resize <numer kontenera> rootfs +10G` (na ho�
   i buduje mapę i graf od nowa. Mapa na ekran jest przebudowywana także bez nowych danych, gdy
   zbudowała ją starsza wersja `build_map.py` (`build_map.py --wersja` ↔ `"wersja"` w `manifest.json`).
   Ręcznie: `/opt/nt1100-trasy/bin/aktualizuj.sh`.
+- cron codziennie o 4:45: `aktualizuj.sh --sprawdz` – tylko nowe skrypty i przebudowa mapy na ekran,
+  gdy nowy `build_map.py` ma nowszą wersję (z obecnych danych OSM, silnik tras działa dalej).
+  Kontenery zainstalowane wcześniej dopisują ten wpis do `/etc/cron.d/nt1100-trasy` same.
 
 Dziennik: `journalctl -u nt1100-trasy -f`, `cat /var/log/nt1100-trasy.log`.
 
@@ -68,7 +71,7 @@ Dziennik: `journalctl -u nt1100-trasy -f`, `cat /var/log/nt1100-trasy.log`.
 - `aktualizuj.sh` – pobranie danych i budowa mapy + grafu.
 - `build_map.py` – mapa na kartę z pliku `.osm.pbf` (wymaga `osmium-tool`), od wersji 3 razem
   z grafem tras do nawigacji offline na ekranie (`g_*.ntg`), od wersji 4 także z adresami
-  (`a_*.nta`, `a_index.nta`).
+  (`a_*.nta`, `a_index.nta`), od wersji 5 ze spisem nazwanych miejsc (`a_poi.nta`).
   Użycie: `build_map.py mapa.osm.pbf KATALOG [--bbox S,W,N,E]`.
 - `config.yml`, `motocykl.json` – ustawienia GraphHoppera.
 - `kafelki.sh` – mapa do przeglądarki (Planetiler, schemat OpenMapTiles, bez budynków;

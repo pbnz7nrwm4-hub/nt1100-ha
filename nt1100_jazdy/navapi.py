@@ -7,6 +7,7 @@ Strona (Ingress, bez klucza):
        /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent,
        /api/nav/offline?from=lat,lon&to=lat,lon&variant&avoid (trasa tak, jak policzy ją ekran bez internetu),
        /api/nav/adres?miasto&ulica&nr&lat&lon (adres ze spisu na karcie, jak na ekranie)
+       /api/nav/miejsca?q&lat&lon&kinds (nazwane miejsca ze spisu na karcie, jak na ekranie)
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
        /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/drive (jazda autem: korki), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
@@ -642,6 +643,15 @@ def page_get(h, path, q):
             near = (lat, lon) if lat is not None and lon is not None else None
             return h.send(200, NAV.addresses.find(q.get("miasto") or "", q.get("ulica") or "", q.get("nr") or "",
                                                   near)) or True
+        if path == "/api/nav/miejsca":
+            # nazwane miejsca tak, jak znajdzie je ekran bez internetu (spis a_poi.nta z karty)
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+            near = (lat, lon) if lat is not None and lon is not None else None
+            kinds = {int(k) for k in q.get("kinds", "").split(",") if k.strip().isdigit()} or None
+            res = NAV.addresses.places((q.get("q") or "")[:60], near, kinds)
+            if not res and not NAV.addresses.poi_index():
+                return h.send(200, {"results": [], "error": "mapa bez spisu miejsc (potrzebna mapa w wersji 5)"}) or True
+            return h.send(200, {"results": res}) or True
         if path == "/api/nav/offline":
             # trasa tak, jak policzy ją ekran bez internetu (graf z karty), do porównania z silnikiem
             try:

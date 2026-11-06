@@ -1,7 +1,9 @@
 #!/bin/bash
 # Pobiera świeże dane OSM, buduje mapę na kartę ekranu, kafelki mapy do przeglądarki
 # i przebudowuje graf tras.
-# Uruchamiane przez install-lxc.sh i co miesiąc z crona.
+# Uruchamiane przez install-lxc.sh i co miesiąc z crona. Z --sprawdz (cron codziennie): tylko nowe
+# skrypty z repozytorium i przebudowa mapy na kartę, gdy nowy build_map.py ma nowszą wersję mapy
+# (bez pobierania OSM i bez zatrzymywania silnika tras).
 set -euo pipefail
 KAT=/opt/nt1100-trasy
 . "$KAT/obszar.env"
@@ -39,6 +41,13 @@ sprawdz() {  # co jest w kontenerze
   echo "  wolne miejsce: $(df -Ph "$KAT" | awk 'NR==2{print $4}')"
 }
 [ "${1:-}" = "--stan" ] && { sprawdz; exit 0; }
+# jedno uruchomienie naraz (codzienne sprawdzenie nie wchodzi w miesięczną budowę)
+exec 9>/run/nt1100-aktualizuj.lock
+flock -n 9 || { echo "$(date '+%F %T') aktualizacja już trwa"; exit 0; }
+# codzienne sprawdzenie w cronie (kontenery zainstalowane przed 1.5.23 miały tylko miesięczne)
+if [ -f /etc/cron.d/nt1100-trasy ] && ! grep -q -- "--sprawdz" /etc/cron.d/nt1100-trasy; then
+  echo "45 4 * * * root $KAT/bin/aktualizuj.sh --sprawdz >> /var/log/nt1100-trasy.log 2>&1" >> /etc/cron.d/nt1100-trasy
+fi
 trap 'koniec false "przerwane z błędem (dziennik: /var/log/nt1100-trasy.log)"; systemctl start nt1100-trasy.service nt1100-mapa.service || true' ERR
 # przerwanie (Ctrl+C, zamknięte okno konsoli): silnik tras nie zostaje wyłączony
 trap 'koniec false "przerwane"; systemctl start nt1100-trasy.service nt1100-mapa.service || true; exit 130' INT TERM HUP
@@ -71,7 +80,7 @@ aktualizuj_skrypty() {
   case "$zmiany" in *aktualizuj.sh*) exec env NT1100_SKRYPTY=1 "$KAT/bin/aktualizuj.sh" "$@" ;; esac
 }
 if [ "${SAMOAKTUALIZACJA:-1}" != 0 ] && [ -z "${NT1100_SKRYPTY:-}" ]; then
-  etap "aktualizacja skryptów" 1
+  [ "${1:-}" = "--sprawdz" ] || etap "aktualizacja skryptów" 1
   aktualizuj_skrypty "$@"
 fi
 
@@ -94,6 +103,15 @@ buduj_mape() {
   rm -rf "$KAT/www/mapa.stara"
   systemctl start nt1100-mapa.service
 }
+
+if [ "${1:-}" = "--sprawdz" ]; then
+  if [ -s "$KAT/www/mapa/manifest.json" ] && [ -s "$PBF" ] && ! mapa_aktualna; then
+    echo "$(date '+%F %T') nowa wersja mapy na ekran – przebudowa z obecnych danych OSM"
+    buduj_mape
+    podsumuj "gotowe (nowa wersja mapy na ekran)"
+  fi
+  exit 0
+fi
 
 etap "pobieranie danych OSM" 1
 echo "$(date '+%F %T') pobieranie $URL"

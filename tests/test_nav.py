@@ -842,9 +842,16 @@ class NavServerTest(unittest.TestCase):
         idx = struct.pack("<4sBBI", b"NTAI", 1, 0, 0)
         with open(os.path.join(out, "a_index.nta"), "wb") as f:
             f.write(idx)
-        addr = {"format": 1, "bytes": len(idx), "cells": [["a_index.nta", len(idx), binascii.crc32(idx)]]}
+        poi = struct.pack("<4sBBI", b"NTAP", 1, 0, 1)
+        for x in (b"orlen bierun", "Orlen".encode(), "Bieruń".encode()):
+            poi += bytes([len(x)]) + x
+        poi += struct.pack("<Bii", 10, 50090000, 19090000)
+        with open(os.path.join(out, "a_poi.nta"), "wb") as f:
+            f.write(poi)
+        addr = {"format": 1, "bytes": len(idx) + len(poi), "cells": [["a_index.nta", len(idx), binascii.crc32(idx)],
+                                                                     ["a_poi.nta", len(poi), binascii.crc32(poi)]]}
         with open(os.path.join(out, "manifest.json"), "w") as f:
-            json.dump({"format": 1, "wersja": 4, "built": "2026-11-06", "bytes": sum(x[1] for x in files),
+            json.dump({"format": 1, "wersja": 5, "built": "2026-11-06", "bytes": sum(x[1] for x in files),
                        "files": files, "graph": graph, "addr": addr}, f)
         ms = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(MS.H, directory=root))
         threading.Thread(target=ms.serve_forever, daemon=True).start()
@@ -852,13 +859,19 @@ class NavServerTest(unittest.TestCase):
             self.jpost(self.pu + "/api/nav/settings", {"map_url": "http://127.0.0.1:%d" % ms.server_address[1]})
             code, j = self.jpost(self.pu + "/api/nav/map/sync", {"force": True})
             self.assertTrue(j["ok"], j)
-            self.assertEqual(j["files"], 5)                       # 2 kwadraty mapy + 2 grafu + spis adresów
+            self.assertEqual(j["files"], 6)                       # 2 kwadraty mapy + 2 grafu + spisy adresów i miejsc
             self.assertTrue(os.path.exists(os.path.join(nv.map_dir, "g_500_199.ntg")))
             code, body, _ = self.req(self.iu + "/api/nav/mapa/manifest.json?klucz=" + KEY)
             mf = json.loads(body)
             self.assertEqual(sorted(f[0] for f in mf["files"]), ["c_500_199.ntt", "c_500_200.ntt"])
             self.assertEqual(sorted(f[0] for f in mf["graph"]["cells"]), ["g_500_199.ntg", "g_500_200.ntg"])
-            self.assertEqual([f[0] for f in mf["addr"]["cells"]], ["a_index.nta"])
+            self.assertEqual([f[0] for f in mf["addr"]["cells"]], ["a_index.nta", "a_poi.nta"])
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/a_poi.nta.gz?klucz=" + KEY)
+            self.assertEqual((code, gzip.decompress(body)), (200, poi))
+            code, body, _ = self.req(self.pu + "/api/nav/miejsca?q=Orlen%20Bieru%C5%84&lat=50.1&lon=19.1")
+            r = json.loads(body)["results"]
+            self.assertEqual([(x["name"], x["city"], x["kind"]) for x in r], [("Orlen", "Bieruń", "stacja")])
+            self.assertLess(r[0]["km"], 2)
             code, body, _ = self.req(self.iu + "/api/nav/mapa/a_index.nta.gz?klucz=" + KEY)
             self.assertEqual((code, gzip.decompress(body)), (200, idx))
             code, body, _ = self.req(self.pu + "/api/nav/adres?miasto=Bierun")

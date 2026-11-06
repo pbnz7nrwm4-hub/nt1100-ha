@@ -28,7 +28,7 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
-## Zmiany w 1.5.23 (ekran 5" 2.0.2: paliwo, ceny, kalendarz; skrzynka 1.4.5: upadek na sucho)
+## Zmiany w 1.5.24 (ekran 5" 2.0.2: paliwo, ceny, kalendarz; skrzynka 1.4.5: upadek na sucho)
 
 - **Zatankuj, zanim będzie za późno**: ekran 5" porównuje zasięg z motocykla (skrzynka) ze stacjami
   na trasie z mapy na karcie. Gdy po najbliższej stacji nie ma już żadnej w zasięgu (minus 15 km
@@ -49,6 +49,17 @@ dla przeglądarki ze zwykłej mapy OpenStreetMap.
   w szczegółach jazdy w panelu: „podejrzenie upadku (na sucho) po 12 min: …”). Po kilku jazdach ocenimy
   fałszywe alarmy, dopiero wtedy ekran zapyta „jesteś cały?” i wyśle wiadomość.
 - Zakładka Dom na ekranie: kafle bramy i garażu niższe, pod nimi kalendarz i linia połączenia.
+## Zmiany w 1.5.23 (szukanie miejsc po nazwie offline, codzienne sprawdzenie kontenera)
+
+- Kontener dokłada do mapy na kartę **spis nazwanych miejsc** z całej mapy (mapa w wersji 5): stacje,
+  restauracje, kawiarnie, noclegi, widoki, przełęcze, serwisy motocyklowe, ładowarki, miejsca odpoczynku,
+  z nazwą, marką i miejscowością. Ekran 5" znajdzie je bez internetu po kawałkach słów, bez polskich
+  znaków: „orlen bier” = Orlen w Bieruniu, „pod lip” = Karczma Pod Lipą. Najbliższe najpierw.
+- Dla sprawdzenia: `/api/nav/miejsca?q=…&lat=…&lon=…` szuka tak, jak ekran.
+- Kontener sprawdza codziennie o 4:45 nowe skrypty z repozytorium i, gdy zmienił się format mapy na kartę,
+  przebudowuje ją z obecnych danych OSM (bez pobierania i bez zatrzymywania tras). Świeże dane OSM nadal
+  raz w miesiącu. Starsze kontenery dopiszą sobie to sprawdzenie przy najbliższej aktualizacji.
+- Mapa w panelu dodatku się nie zmienia (wektorowa, ciemna albo jasna, z cieniowaniem gór).
 
 ## Zmiany w 1.5.22 (adresy na karcie, cel z ekranu przez hotspot)
 
@@ -61,7 +72,7 @@ dla przeglądarki ze zwykłej mapy OpenStreetMap.
   (firmy, miejsca) i w ulubionych. Kontener nie jest wystawiony do internetu; drogą jest dodatek
   (adres HA spoza domu wpisany w ustawieniach ekranu).
 - Dla sprawdzenia: `/api/nav/adres?miasto=…&ulica=…&nr=…` szuka tak, jak ekran.
-- Kontener sam przebuduje mapę (raz). Program ekranu z wyszukiwaniem adresów przyjdzie w osobnej
+- Kontener przebuduje mapę przy najbliższej aktualizacji (od 1.5.23 sprawdza codziennie). Program ekranu z wyszukiwaniem adresów przyjdzie w osobnej
   wersji ekranu.
 
 ## Zmiany w 1.5.21 (graf tras do nawigacji offline)
