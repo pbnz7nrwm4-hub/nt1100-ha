@@ -3,6 +3,18 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.1.0
+
+- **Ładowania z ekranu auta**: historię z ekranu Mitsubishi (Poziom ładowania → historia długo-
+  i krótkoterminowa) można wczytać plikiem CSV w „Import z Fuelio”. Kolumny: `od,do,kwh_bateria,notatka`
+  (daty RRRR-MM-DD, `do` włącznie; jeden wiersz = dzień albo cały miesiąc). Podgląd pokazuje sumę i od kiedy
+  będzie liczone zużycie prądu.
+- Auto pokazuje energię **do baterii**; dodatek przelicza ją na energię z gniazdka (÷ 88 %, straty ładowania),
+  żeby była porównywalna z ładowaniami z HA. Koszt szacunkowy wg bieżącej „Wartości kWh”.
+- Wpis za cały miesiąc dzieli się na baki proporcjonalnie do dni, więc kWh/100 km liczy się też dla starszych
+  tankowań. Po imporcie „prąd liczony od” przesuwa się na pierwszy dzień z pliku.
+- W historii takie wpisy mają znaczek „z auta · szacunek”; sprawność ładowania liczy się tylko z pomiarów HA.
+
 ## Zmiany w 1.0.2
 
 - Edycja tankowania z importu Fuelio: pole daty pokazuje datę (wcześniej było puste), a kwoty są

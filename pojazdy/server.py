@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -276,8 +276,10 @@ def statystyki(p, nazwa_okresu):
         out["benzyna"] = ob.porownanie_benzyna(odc, p.get("l100_bez_pradu"))
         lo = [x for x in l if not x.get("wykluczone") and od <= x["poczatek"][:10] < do]
         kwh = sum(float(x.get("kwh") or 0) for x in lo)
-        kwb = sum(float(x.get("kwh_bateria") or 0) for x in lo if x.get("kwh_bateria"))
-        kws = sum(float(x.get("kwh") or 0) for x in lo if x.get("kwh_bateria"))
+        # sprawność tylko z prawdziwych pomiarów (wpisy z ekranu auta mają gniazdko wyliczone z baterii)
+        zm = [x for x in lo if x.get("kwh_bateria") and x.get("zrodlo") != "ekran_auta"]
+        kwb = sum(float(x.get("kwh_bateria") or 0) for x in zm)
+        kws = sum(float(x.get("kwh") or 0) for x in zm)
         out["prad"] = {"kwh": round(kwh, 2), "kwh_pv": round(sum(float(x.get("kwh_pv") or 0) for x in lo), 2),
                        "koszt": round(sum(float(x.get("koszt") or 0) for x in lo), 2),
                        "koszt_wartosc": round(sum(float(x.get("koszt_wartosc") or 0) for x in lo), 2),
@@ -585,7 +587,25 @@ def propozycja_pojazdu(nazwa):
     return None
 
 
+SPRAWNOSC_LADOWANIA = 0.88  # bateria / gniazdko – do przeliczenia odczytów z ekranu auta (straty ładowarki ~12 %)
+
+
 def import_podglad(dane, nazwa):
+    lad = fuelio.czytaj_ladowania(dane)
+    if lad is not None:
+        if not lad:
+            raise ValueError("w pliku nie ma żadnego wiersza od,do,kwh_bateria")
+        STAN["import"] = {"dane": dane, "nazwa": nazwa, "czas": time.time()}
+        p = pojazd_po_kluczu("eclipse") or next((x for x in DB.lista("pojazdy") if z_pradem(x)), None)
+        nowe = sum(1 for x in lad if not DB.jest_uid("ladowania", "ekran:%s:%s" % (x["od"], x["do"])))
+        kwb = sum(x["kwh_bateria"] for x in lad)
+        teraz = ust("dane_pradu_od") or "2026-11-01"
+        return {"ladowania": {"plik": "ekran", "ile": len(lad), "nowych": nowe, "od": lad[0]["od"], "do": lad[-1]["do"],
+                              "kwh_bateria": round(kwb, 1), "kwh_gniazdko": round(kwb / SPRAWNOSC_LADOWANIA, 1),
+                              "sprawnosc": SPRAWNOSC_LADOWANIA, "prad_od_teraz": teraz,
+                              "prad_od_nowe": min(teraz, lad[0]["od"]), "pojazd_id": p["id"] if p else None,
+                              "lista": lad},
+                "pojazdy": [], "cele": [{"id": x["id"], "nazwa": x["nazwa"]} for x in DB.lista("pojazdy") if z_pradem(x)]}
     poj = fuelio.czytaj(dane, nazwa)
     STAN["import"] = {"dane": dane, "nazwa": nazwa, "czas": time.time()}
     out = []
@@ -602,7 +622,15 @@ def import_zapisz(mapowanie, popraw=True):
     imp = STAN.get("import")
     if not imp:
         raise ValueError("najpierw wybierz plik")
-    wynik = {"tankowan": 0, "kosztow": 0, "terminow": 0, "poprawionych": 0}
+    wynik = {"tankowan": 0, "kosztow": 0, "terminow": 0, "poprawionych": 0, "ladowan": 0}
+    lad = fuelio.czytaj_ladowania(imp["dane"])
+    if lad is not None:
+        pid = mapowanie.get("ekran")
+        if pid:
+            wynik.update(import_ladowan_z_auta(int(pid), lad))
+        STAN["import"] = None
+        po_zmianie()
+        return wynik
     for v in fuelio.czytaj(imp["dane"], imp["nazwa"]):
         pid = mapowanie.get(v["plik"])
         if not pid:
@@ -629,6 +657,34 @@ def import_zapisz(mapowanie, popraw=True):
     log("Import Fuelio:", wynik)
     po_zmianie()
     return wynik
+
+
+def import_ladowan_z_auta(pid, lad):
+    """Ładowania odczytane z ekranu auta (energia do baterii, za dzień albo miesiąc).
+
+    Gniazdko = bateria / sprawność; koszt szacunkowy wg bieżącej „Wartości kWh” (cen sprzed
+    zapisu HA nie znamy). Od pierwszego dnia z pliku liczy się zużycie prądu (dane_pradu_od)."""
+    try:
+        wart = ha_liczba(ust("wartosc_kwh"))
+    except Exception:
+        wart = None
+    n = 0
+    for x in lad:
+        kwh = round(x["kwh_bateria"] / SPRAWNOSC_LADOWANIA, 2)
+        koszt = round(kwh * wart, 2) if wart else None
+        notatka = ("z ekranu auta: %s kWh do baterii, gniazdko ≈ bateria / %d %%%s. %s" % (
+            str(x["kwh_bateria"]).replace(".", ","), round(SPRAWNOSC_LADOWANIA * 100),
+            ", koszt wg Wartości kWh %.2f zł" % wart if wart else "", x.get("notatka") or "")).strip()
+        if DB.dodaj("ladowania", {"pojazd_id": pid, "poczatek": x["od"] + " 00:00", "koniec": x["do"] + " 23:59",
+                                  "kwh": kwh, "kwh_bateria": x["kwh_bateria"], "koszt": koszt, "koszt_wartosc": koszt,
+                                  "miejsce": "z ekranu auta", "zrodlo": "ekran_auta", "notatka": notatka,
+                                  "uid": "ekran:%s:%s" % (x["od"], x["do"])}, pomin_istniejace=True):
+            n += 1
+    teraz = ust("dane_pradu_od") or "2026-11-01"
+    if lad and lad[0]["od"] < teraz:
+        DB.ustaw("dane_pradu_od", lad[0]["od"])
+    log("Import ładowań z ekranu auta:", n, "wpisów, prąd liczony od", ust("dane_pradu_od"))
+    return {"ladowan": n, "prad_od": ust("dane_pradu_od")}
 
 
 # ---------------------------------------------------------------- HTTP

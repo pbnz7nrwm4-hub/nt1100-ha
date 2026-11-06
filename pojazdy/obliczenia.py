@@ -61,6 +61,23 @@ def _klucz(t):
     return (float(t.get("przebieg") or 0), t.get("data") or "", t.get("id") or 0)
 
 
+def _dt(s):
+    s = (s or "").replace("T", " ").strip()
+    return datetime.strptime(s[:16], "%Y-%m-%d %H:%M") if len(s) >= 16 else datetime.strptime(s[:10], "%Y-%m-%d")
+
+
+def czesc_okresu(l, od, do):
+    """Ładowanie zapisane za okres (zrodlo "ekran_auta", np. cały miesiąc): jaka jego część
+    przypada na czas od–do (0..1). None = zwykłe ładowanie (liczone w chwili początku)."""
+    if l.get("zrodlo") != "ekran_auta" or not l.get("koniec"):
+        return None
+    a, b = _dt(l["poczatek"]), _dt(l["koniec"]) + timedelta(minutes=1)
+    x, y = max(a, _dt(od)), min(b, _dt(do))
+    if b <= a or y <= x:
+        return 0.0
+    return (y - x).total_seconds() / (b - a).total_seconds()
+
+
 def odcinki(tankowania, ladowania=None, prad_od=None):
     """Odcinki "od pełnego do pełnego baku" (jak Fuelio).
 
@@ -103,6 +120,15 @@ def odcinki(tankowania, ladowania=None, prad_od=None):
             ile = 0
             for l in ladowania:
                 if l.get("wykluczone"):
+                    continue
+                cz = czesc_okresu(l, o["od"], o["do"])
+                if cz is not None:
+                    # ładowanie za okres (np. miesiąc z ekranu auta): część proporcjonalna do dni w odcinku
+                    if cz > 0:
+                        kwh += float(l.get("kwh") or 0) * cz
+                        kw += float(l.get("koszt") or 0) * cz
+                        kwb += float(l.get("kwh_bateria") or 0) * cz
+                        ile += 1
                     continue
                 p = (l.get("poczatek") or "").replace("T", " ")[:16]
                 if o["od"][:16] <= p < o["do"][:16] or (len(o["do"]) <= 10 and o["od"][:10] <= p[:10] < o["do"][:10]):

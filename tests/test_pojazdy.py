@@ -182,6 +182,25 @@ class Fuelio(unittest.TestCase):
         self.assertEqual(back[0]["koszty"][0]["kategoria"], "Opony")
 
 
+class LadowaniaZAuta(unittest.TestCase):
+    CSV = b"od,do,kwh_bateria,notatka\n2026-06-01,2026-06-30,150,czerwiec\n2026-07-05,2026-07-05,9.5,\nzle,,x,\n"
+
+    def test_czytaj(self):
+        lad = fuelio.czytaj_ladowania(self.CSV)
+        self.assertEqual([(x["od"], x["do"], x["kwh_bateria"]) for x in lad],
+                         [("2026-06-01", "2026-06-30", 150.0), ("2026-07-05", "2026-07-05", 9.5)])
+        self.assertIsNone(fuelio.czytaj_ladowania(plik_fuelio()))
+
+    def test_miesiac_dzielony_na_baki(self):
+        t = [{"data": "2026-06-01", "przebieg": 1000, "litry": 10, "pelny": 1},
+             {"data": "2026-06-16", "przebieg": 1500, "litry": 10, "pelny": 1},
+             {"data": "2026-07-01", "przebieg": 2000, "litry": 10, "pelny": 1}]
+        l = [{"poczatek": "2026-06-01 00:00", "koniec": "2026-06-30 23:59", "kwh": 150, "zrodlo": "ekran_auta"}]
+        o = ob.odcinki(t, l, "2026-06-01")
+        self.assertAlmostEqual(o[0]["kwh"], 75.0, places=1)  # 15 z 30 dni
+        self.assertAlmostEqual(o[1]["kwh"], 75.0, places=1)
+
+
 class Serwer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -244,6 +263,14 @@ class Serwer(unittest.TestCase):
         self.assertEqual(t["ostatnio_km"], 1700)
         self.assertTrue(any(x["typ"] == "koszt" and x["kwota"] == 300 for x in self.req("api/historia?pojazd=%d" % nt)))
         self.assertEqual(self.req("api/statystyki?pojazd=wszystkie&okres=calosc")["podsumowanie"]["razem"] > 0, True)
+        # ładowania z ekranu auta: przesuwają początek liczenia prądu
+        pg = self.req("api/import/podglad", raw=LadowaniaZAuta.CSV, headers={"X-Nazwa-Pliku": "auto.csv"})
+        self.assertEqual((pg["ladowania"]["ile"], pg["ladowania"]["pojazd_id"]), (2, ecl))
+        w = self.req("api/import/zapisz", {"mapowanie": {"ekran": ecl}})
+        self.assertEqual((w["ladowan"], w["prad_od"]), (2, "2026-06-01"))
+        h = [x for x in self.req("api/historia?pojazd=%d" % ecl) if x.get("zrodlo") == "ekran_auta"]
+        self.assertAlmostEqual(sum(x["kwh_bateria"] for x in h), 159.5)
+        self.req("api/ustawienia", {"dane_pradu_od": "2026-11-01"})
         z = self.req("api/eksport")
         self.assertEqual(z[:2], b"PK")
         self.assertEqual(len(fuelio.czytaj(z)), 2)

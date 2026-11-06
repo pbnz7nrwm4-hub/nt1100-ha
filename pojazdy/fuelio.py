@@ -70,6 +70,27 @@ def pliki(dane, nazwa_pliku=""):
     return [(nazwa_pliku or "fuelio.csv", dane.decode("utf-8-sig", "replace"))]
 
 
+def czytaj_ladowania(dane):
+    """CSV ładowań odczytanych z ekranu auta: od,do,kwh_bateria[,notatka] (daty RRRR-MM-DD, `do` włącznie).
+
+    Zwraca None, gdy to nie ten format (wtedy plik jest kopią Fuelio)."""
+    if dane[:2] == b"PK":
+        return None
+    tekst = dane.decode("utf-8-sig", "replace")
+    pierwsza = tekst.lstrip().split("\n", 1)[0]
+    if "kwh_bateria" not in pierwsza:
+        return None
+    sep = ";" if pierwsza.count(";") > pierwsza.count(",") else ","
+    out = []
+    for r in csv.DictReader(io.StringIO(tekst.lstrip()), delimiter=sep):
+        od, do = (r.get("od") or "").strip()[:10], (r.get("do") or r.get("od") or "").strip()[:10]
+        kwh = _f(r.get("kwh_bateria"))
+        if len(od) != 10 or len(do) != 10 or not kwh or do < od:
+            continue
+        out.append({"od": od, "do": do, "kwh_bateria": round(kwh, 2), "notatka": (r.get("notatka") or "").strip()})
+    return sorted(out, key=lambda x: x["od"])
+
+
 def czytaj(dane, nazwa_pliku=""):
     """Odczyt kopii Fuelio -> lista pojazdów z tankowaniami i kosztami (bez zapisu)."""
     out = []
