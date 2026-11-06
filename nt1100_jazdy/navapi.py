@@ -28,6 +28,7 @@ import ntt
 SRV = None
 NAV = None
 PLANS = {}  # token -> (czas, lista tras) z ostatnich planowań
+HOME_ENTITY_RE = re.compile(r"(cover|button|switch|lock)\.[a-z0-9_]+")
 NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000), "car_alert_min": (2, 30)}
 RECENT_MAX = 12
 
@@ -287,6 +288,12 @@ def nav_settings_apply(j):
         if v and not re.fullmatch(r"(device_tracker|person)\.[a-z0-9_]+", v):
             return "telefon: encja device_tracker.… albo person.…"
         cur["phone_tracker"] = v
+    for k in ("gate_entity", "garage_entity"):
+        if k in j:
+            v = str(j[k] or "").strip()
+            if v and not HOME_ENTITY_RE.fullmatch(v):
+                return "brama/garaż: encja cover.…, button.…, switch.… albo lock.…"
+            cur[k] = v
     if "vehicle" in j:
         if j["vehicle"] not in ("moto", "auto"):
             return "zly pojazd"
@@ -806,14 +813,100 @@ def page_post(h, path, q, body):
 
 # ---------------------------------------------------------------- ekran (port 8098)
 
-def screen_firmware_offer():
+SCREEN_KINDS = ("ekran", "ekran5")   # ekran 2,8" (1.x) i ekran 5" (2.x): osobne paczki
+
+
+def screen_kind(q):
+    k = (q.get("k") or "").strip()
+    return k if k in SCREEN_KINDS else "ekran"
+
+
+def screen_firmware_offer(kind="ekran"):
     if SRV is None:  # nawigacja jeszcze nie wystartowała
         return None
-    j = SRV.read_json(os.path.join(SRV.FIRMWARE, "ekran.json"), {})
-    path = os.path.join(SRV.FIRMWARE, "ekran.bin")
+    kind = kind if kind in SCREEN_KINDS else "ekran"
+    j = SRV.read_json(os.path.join(SRV.FIRMWARE, kind + ".json"), {})
+    path = os.path.join(SRV.FIRMWARE, kind + ".bin")
     if not j.get("version") or not os.path.exists(path):
         return None
     return {"version": j["version"], "size": os.path.getsize(path), "path": path}
+
+
+# ---------------------------------------------------------------- dom dla ekranu 5" (brama, garaż, trasy)
+
+HOME_STATES = {
+    "gate": {"open": "otwarta", "closed": "zamknięta", "opening": "otwiera się", "closing": "zamyka się",
+             "on": "otwarta", "off": "zamknięta", "unlocked": "otwarta", "locked": "zamknięta"},
+    "garage": {"open": "otwarty", "closed": "zamknięty", "opening": "otwiera się", "closing": "zamyka się",
+               "on": "otwarty", "off": "zamknięty", "unlocked": "otwarty", "locked": "zamknięty"},
+}
+
+
+def home_entity(which):
+    return NAV.settings()["gate_entity" if which == "gate" else "garage_entity"]
+
+
+def home_state(which):
+    """{"state": "zamknięta", "open": False} albo None, gdy encji nie ustawiono."""
+    ent = home_entity(which)
+    if not ent:
+        return None
+    try:
+        st = SRV.ha_call("GET", "/core/api/states/" + ent, timeout=5) or {}
+    except Exception as e:
+        SRV.log("brama/garaż: stan", ent, e)
+        st = {}
+    raw = str(st.get("state") or "")
+    if ent.startswith("button."):
+        return {"state": "przycisk", "open": False}
+    if not raw or raw in ("unknown", "unavailable"):
+        return {"state": "stan nieznany", "open": False}
+    return {"state": HOME_STATES[which].get(raw, raw)[:20], "open": raw in ("open", "opening", "on", "unlocked")}
+
+
+def screen_home():
+    s = NAV.settings()
+    home = s["home"]
+    if not home and not (s["gate_entity"] or s["garage_entity"]):
+        return None
+    out = {"lat": home["lat"], "lon": home["lon"], "name": home.get("name") or "Dom"} if home else {}
+    for w in ("gate", "garage"):
+        st = home_state(w)
+        if st:
+            out[w] = st
+    return out
+
+
+def home_press(which):
+    """Jak pilot: brama w ruchu = stop, inaczej otwórz/zamknij (cover), naciśnij (button),
+    przełącz (switch), otwórz/zamknij (lock)."""
+    ent = home_entity(which)
+    if not ent:
+        raise ValueError("bramy/garażu nie ustawiono w dodatku")
+    dom = ent.split(".", 1)[0]
+    raw = ""
+    if dom in ("cover", "lock"):
+        raw = str((SRV.ha_call("GET", "/core/api/states/" + ent, timeout=5) or {}).get("state") or "")
+    if dom == "cover":
+        svc = "stop_cover" if raw in ("opening", "closing") else "toggle"
+    elif dom == "button":
+        svc = "press"
+    elif dom == "switch":
+        svc = "toggle"
+    else:
+        svc = "lock" if raw == "unlocked" else "unlock"
+    SRV.ha_call("POST", "/core/api/services/%s/%s" % (dom, svc), {"entity_id": ent})
+    SRV.log("Ekran:", "brama" if which == "gate" else "garaż", dom + "." + svc)
+    return {"ok": True, "service": dom + "." + svc, "home": screen_home()}
+
+
+def screen_routes(idx, n=8):
+    """Trasy do wyboru na postoju (ekran 5"): ostatnie n, bieżąca pierwsza."""
+    rs = sorted(idx.get("routes") or [], key=lambda r: (-(r.get("created") or 0), -r["id"]))
+    cur = idx.get("current")
+    rs = [r for r in rs if r["id"] == cur] + [r for r in rs if r["id"] != cur]
+    return [{"id": r["id"], "version": r.get("version") or 0, "name": (r.get("name") or "")[:40], "km": r.get("km") or 0,
+             "fav": bool(r.get("fav"))} for r in rs[:n]]
 
 
 def screen_authorized(h, q):
@@ -881,7 +974,10 @@ def screen_get(h, path, q):
                    "settings": dict({k: s[k] for k in ("lean_popup_deg", "traffic_min", "offroute_m", "free_km")},
                                     # w samochodzie bez „wyniku zakrętu” (pochył auta nic nie znaczy)
                                     vehicle=s["vehicle"], **({"lean_popup_deg": 90} if s["vehicle"] == "auto" else {})),
-                   "traffic": bool(s["tomtom_key"]), "fw": (screen_firmware_offer() or {}).get("version") or ""}
+                   "traffic": bool(s["tomtom_key"]),
+                   "fw": (screen_firmware_offer(screen_kind(q)) or {}).get("version") or "",
+                   # ekran 5": dom (brama, garaż) i trasy do wyboru na postoju
+                   "home": screen_home(), "routes": screen_routes(idx)}
             lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
             if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
                 try:
@@ -918,10 +1014,10 @@ def screen_get(h, path, q):
             return h.send(200, {"ok": True, "traffic": NAV.traffic(rid, lat, lon)}) or True
         if path == "/api/nav/fw":
             note_screen(h, q)
-            o = screen_firmware_offer()
+            o = screen_firmware_offer(screen_kind(q))
             return h.send(200, {"version": o["version"] if o else "", "size": o["size"] if o else 0}) or True
         if path == "/api/nav/fw/bin":
-            o = screen_firmware_offer()
+            o = screen_firmware_offer(screen_kind(q))
             if not o:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True
             SRV.log("Ekran pobiera oprogramowanie", o["version"])
@@ -977,8 +1073,25 @@ def screen_post(h, path, q, body):
             NAV.screen_log(clean)
             return h.send(200, {"ok": True, "saved": len(clean)}) or True
         if path == "/api/nav/goto":
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            if lat is not None and lon is not None and (lat or lon):
+                # ekran 5" „Do domu”: start z jego pozycji teraz
+                NAV.screen_seen(lat, lon, 0, SRV.num(j.get("heading")) or 0, {"t_seen": int(time.time())})
             r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"))
             return h.send(200, {"ok": True, "route": r, "place": place}) or True
+        if path == "/api/nav/use":
+            # ekran 5": jeździec wybrał na postoju inną trasę z listy
+            rid = int(SRV.num(j.get("id")) or 0)
+            if not any(r["id"] == rid for r in NAV.index()["routes"]):
+                return h.send(404, {"ok": False, "error": "brak trasy"}) or True
+            NAV.set_current(rid)
+            NAV.note_current(rid)
+            return h.send(200, {"ok": True, "current": rid}) or True
+        if path == "/api/nav/dom":
+            which = j.get("which")
+            if which not in ("gate", "garage"):
+                return h.send(400, {"ok": False, "error": "zle dane"}) or True
+            return h.send(200, home_press(which)) or True
     except ValueError as e:
         return h.send(400, {"ok": False, "error": str(e)}) or True
     except Exception as e:

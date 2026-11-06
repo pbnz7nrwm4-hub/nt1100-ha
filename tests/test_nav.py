@@ -958,6 +958,80 @@ class NavServerTest(unittest.TestCase):
         finally:
             n.build_status = orig
 
+    def test_18_screen5_home_routes_firmware(self):
+        """Ekran 5": dom z bramą i garażem w pingu, przycisk jak pilot, wybór trasy, własna paczka."""
+        calls, states = [], {"cover.brama": "closed", "cover.garaz": "opening"}
+
+        def fake_ha(method, path, body=None, timeout=10):
+            calls.append((method, path, body))
+            if method == "GET" and path.startswith("/core/api/states/"):
+                return {"state": states.get(path.rsplit("/", 1)[1], "unknown")}
+            return []
+        orig = srv.ha_call
+        srv.ha_call = fake_ha
+        try:
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"gate_entity": "light.zle"})
+            self.assertEqual(code, 400)
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"gate_entity": "cover.brama", "garage_entity": "cover.garaz",
+                                                                 "home": {"lat": 50.0, "lon": 19.9, "name": "Dom"}})
+            self.assertEqual(code, 200, j)
+            # two routes: both offered, the current first
+            pts = l_shape()
+            seg = "".join('<trkpt lat="%.6f" lon="%.6f"></trkpt>' % p for p in pts)
+            ids = []
+            for name in ("Pierwsza", "Druga"):
+                code, body, _ = self.req(self.pu + "/api/nav/gpx?name=" + name, (GPX % seg).encode(),
+                                         {"Content-Type": "application/gpx+xml"}, "POST")
+                ids.append(json.loads(body)["id"])
+            code, body, _ = self.req(self.iu + "/api/nav/ping?k=ekran5", headers={"X-Klucz": KEY})
+            j = json.loads(body)
+            self.assertEqual(j["home"]["gate"], {"state": "zamknięta", "open": False})
+            self.assertEqual(j["home"]["garage"], {"state": "otwiera się", "open": True})
+            self.assertEqual((j["home"]["lat"], j["home"]["lon"]), (50.0, 19.9))
+            self.assertEqual(j["routes"][0]["id"], ids[1])
+            self.assertIn(ids[0], [r["id"] for r in j["routes"]])
+            self.assertLessEqual(len(j["routes"]), 8)
+            # the rider picks the older one on the screen
+            code, j = self.jpost(self.iu + "/api/nav/use", {"id": ids[0]}, {"X-Klucz": KEY})
+            self.assertEqual((code, j["current"]), (200, ids[0]))
+            code, body, _ = self.req(self.iu + "/api/nav/ping", headers={"X-Klucz": KEY})
+            self.assertEqual(json.loads(body)["route"]["id"], ids[0])
+            code, j = self.jpost(self.iu + "/api/nav/use", {"id": 99999}, {"X-Klucz": KEY})
+            self.assertEqual(code, 404)
+            # gate closed: toggle; garage moving: stop (like the remote)
+            calls.clear()
+            code, j = self.jpost(self.iu + "/api/nav/dom", {"which": "gate"}, {"X-Klucz": KEY})
+            self.assertEqual((code, j["service"]), (200, "cover.toggle"))
+            self.assertIn(("POST", "/core/api/services/cover/toggle", {"entity_id": "cover.brama"}), calls)
+            code, j = self.jpost(self.iu + "/api/nav/dom", {"which": "garage"}, {"X-Klucz": KEY})
+            self.assertEqual(j["service"], "cover.stop_cover")
+            code, j = self.jpost(self.iu + "/api/nav/dom", {"which": "okno"}, {"X-Klucz": KEY})
+            self.assertEqual(code, 400)
+            code, _ = self.jpost(self.iu + "/api/nav/dom", {"which": "gate"})
+            self.assertEqual(code, 401)
+        finally:
+            srv.ha_call = orig
+        # firmware: each screen gets only its own package
+        fw = srv.FIRMWARE
+        made = not os.path.isdir(fw)
+        os.makedirs(fw, exist_ok=True)
+        with open(os.path.join(fw, "ekran5.bin"), "wb") as f:
+            f.write(b"x" * 100)
+        with open(os.path.join(fw, "ekran5.json"), "w") as f:
+            json.dump({"version": "2.0.0"}, f)
+        try:
+            code, body, _ = self.req(self.iu + "/api/nav/fw?k=ekran5", headers={"X-Klucz": KEY})
+            self.assertEqual(json.loads(body), {"version": "2.0.0", "size": 100})
+            code, body, _ = self.req(self.iu + "/api/nav/ping?k=ekran5", headers={"X-Klucz": KEY})
+            self.assertEqual(json.loads(body)["fw"], "2.0.0")
+            code, body, _ = self.req(self.iu + "/api/nav/ping?k=ekran", headers={"X-Klucz": KEY})
+            self.assertNotEqual(json.loads(body)["fw"], "2.0.0")
+        finally:
+            os.remove(os.path.join(fw, "ekran5.bin"))
+            os.remove(os.path.join(fw, "ekran5.json"))
+            if made:
+                shutil.rmtree(fw, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
