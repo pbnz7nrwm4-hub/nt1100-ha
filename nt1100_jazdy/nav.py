@@ -30,6 +30,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+import graf
 import ntt
 
 VERSION_NTR = 1
@@ -43,6 +44,8 @@ TURN_TEXT = {T_STRAIGHT: "prosto", T_SLIGHT_L: "lekko w lewo", T_LEFT: "w lewo",
 GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGHT_R, 2: T_RIGHT, 3: T_SHARP_R,
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
+# pliki mapy z kontenera: kwadraty .ntt i (od mapy 3) graf tras .ntg
+MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg")
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
@@ -405,6 +408,7 @@ class Nav:
         self.data = data
         self.settings_fn = settings_fn  # -> dict z ustawieniami nawigacji
         self.map = ntt.Map(self.map_dir)
+        self.graph = graf.Graph(self.map_dir)
         self.lock = threading.RLock()
         self.state_path = os.path.join(data, "nawigacja.json")
         self.state = self._read(self.state_path, {})
@@ -1371,8 +1375,11 @@ class Nav:
     # ---- mapa z kontenera
     def map_status(self):
         m = self.map.manifest()
+        g = (m or {}).get("graph") or {}
         return {"available": bool(m), "built": m.get("built") if m else None, "files": len(m.get("files", [])) if m else 0,
                 "mb": round(m.get("bytes", 0) / 1e6, 1) if m else 0, "source_url": self.settings()["map_url"],
+                # graf tras do nawigacji offline na ekranie 5" (mapa wersja 3)
+                "graph_files": len(g.get("cells", [])), "graph_mb": round(g.get("bytes", 0) / 1e6, 1),
                 "sync": self.state.get("map_sync")}
 
     def map_sync(self, force=False):
@@ -1398,12 +1405,17 @@ class Nav:
         for f in (local or {}).get("files", []):
             if len(f) >= 3:
                 have[f[0]] = (f[1], f[2])
+        for f in ((local or {}).get("graph") or {}).get("cells", []):
+            if len(f) >= 3:
+                have[f[0]] = (f[1], f[2])
         n = kept = 0
         files = []
-        for f in remote.get("files", []):
+        gfiles = []
+        rgraph = remote.get("graph") if isinstance(remote.get("graph"), dict) else {}
+        for f in list(remote.get("files", [])) + list(rgraph.get("cells", [])):
             name, size = f[0], f[1]
             crc = f[2] if len(f) >= 3 else None
-            if not re.fullmatch(r"c_-?\d+_-?\d+\.ntt", name):
+            if not MAP_FILE.fullmatch(name):
                 continue
             dst = os.path.join(tmp, name)
             if crc is not None and have.get(name) == (size, crc) and os.path.exists(os.path.join(self.map_dir, name)):
@@ -1420,8 +1432,10 @@ class Nav:
                 n += 1
             if crc is None:
                 crc = file_crc(dst)
-            files.append([name, size, crc])
+            (gfiles if name.endswith(".ntg") else files).append([name, size, crc])
         remote = dict(remote, files=files)
+        if rgraph:
+            remote["graph"] = dict(rgraph, cells=gfiles)
         self._write(os.path.join(tmp, "manifest.json"), remote)
         with self.map.lock:
             old = self.map_dir + ".stara"
@@ -1492,7 +1506,10 @@ class Nav:
             a = f[0][2:-4].split("_")
             la, lo = (int(a[0]) + 0.5) / 10, (int(a[1]) + 0.5) / 10
             return (2, (la - cen[0]) ** 2 + ((lo - cen[1]) * math.cos(math.radians(cen[0]))) ** 2)
-        return dict(m, files=sorted(m.get("files", []), key=key), gz=True)
+        out = dict(m, files=sorted(m.get("files", []), key=key), gz=True)
+        if isinstance(m.get("graph"), dict):
+            out["graph"] = dict(m["graph"], cells=sorted(m["graph"].get("cells", []), key=key))
+        return out
 
     def map_gz(self, name):
         """Kwadrat spakowany gzip (do szybszej wysyłki na ekran); pamiętany obok mapy."""
@@ -1533,7 +1550,7 @@ class Nav:
         try:
             tmp = self.zip_path() + ".tmp"
             with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-                for f in m.get("files", []):
+                for f in m.get("files", []) + ((m.get("graph") or {}).get("cells") or []):
                     p = os.path.join(self.map_dir, f[0])
                     if os.path.exists(p):
                         z.write(p, "mapa/" + f[0])
@@ -1565,7 +1582,7 @@ class Nav:
         return st
 
     def map_file(self, name):
-        if name == "manifest.json" or re.fullmatch(r"c_-?\d+_-?\d+\.ntt", name):
+        if name == "manifest.json" or MAP_FILE.fullmatch(name):
             p = os.path.join(self.map_dir, name)
             return p if os.path.exists(p) else None
         return None

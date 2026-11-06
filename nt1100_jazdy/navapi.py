@@ -4,11 +4,12 @@ Strona (Ingress, bez klucza):
   GET  /nav.js, /api/nav/routes, /api/nav/route?id, /api/nav/gpx?id, /api/nav/search?q,
        /api/nav/poi?bbox, /api/nav/along?id|token&variant&kinds&max (POI wzdłuż trasy),
        /api/nav/nearby?kinds&lat&lon (miejsca przed motocyklem), /api/nav/resolve?text, /api/nav/settings,
-       /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent
+       /api/nav/map, /api/nav/plan?n (zgodność jazdy), /api/nav/screen, /api/nav/recent,
+       /api/nav/offline?from=lat,lon&to=lat,lon&variant&avoid (trasa tak, jak policzy ją ekran bez internetu)
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
        /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/drive (jazda autem: korki), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
-  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz),
+  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz i graf .ntg.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS)
   POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę)
 """
@@ -22,6 +23,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 
+import graf
 import nav
 import ntt
 
@@ -621,6 +623,26 @@ def page_get(h, path, q):
             out = NAV.nearby(pos["lat"], pos["lon"], kinds)
             out["pos"] = pos
             return h.send(200, out) or True
+        if path == "/api/nav/offline":
+            # trasa tak, jak policzy ją ekran bez internetu (graf z karty), do porównania z silnikiem
+            try:
+                a = [float(x) for x in q.get("from", "").split(",")]
+                b = [float(x) for x in q.get("to", "").split(",")]
+                assert len(a) == 2 and len(b) == 2
+            except (ValueError, AssertionError):
+                return h.send(400, {"error": "podaj from=lat,lon i to=lat,lon"}) or True
+            if not NAV.graph.available():
+                return h.send(200, {"ok": False, "error": "mapa bez grafu tras (potrzebna mapa w wersji 3)"}) or True
+            s = NAV.settings()
+            avoid = [x for x in q.get("avoid", ",".join(s["avoid"])).split(",") if x]
+            t0 = time.time()
+            r = graf.route(NAV.graph, tuple(a), tuple(b), q.get("variant") or s["go_variant"], avoid, s["curvy"])
+            if not r:
+                return h.send(200, {"ok": False, "error": "brak drogi w grafie"}) or True
+            pts = graf.geometry(NAV.graph, NAV.map, r)
+            return h.send(200, {"ok": True, "km": r["km"], "min": r["min"], "variant": r["variant"], "avoid": r["avoid"],
+                                "nodes": r["nodes"], "snap_m": r["snap_m"], "ms": int((time.time() - t0) * 1000),
+                                "pts": [[round(y, 6), round(x, 6)] for y, x in pts]}) or True
         if path == "/api/nav/along":
             # POI wzdłuż trasy: zapisanej (id) albo świeżo policzonej (token + wariant)
             route = None
@@ -872,6 +894,12 @@ def home_state(which):
     return {"state": HOME_STATES[which].get(raw, raw)[:20], "open": raw in ("open", "opening", "on", "unlocked")}
 
 
+def screen_offline_settings(s):
+    return {"variant": s["go_variant"], "avoid": s["avoid"], "curvy": s["curvy"],
+            "fav": [{"name": f.get("name") or "", "lat": f["lat"], "lon": f["lon"]} for f in s["fav"]
+                    if isinstance(f.get("lat"), (int, float)) and isinstance(f.get("lon"), (int, float))]}
+
+
 def screen_home():
     s = NAV.settings()
     home = s["home"]
@@ -986,6 +1014,9 @@ def screen_get(h, path, q):
                    "fw": (screen_firmware_offer(screen_kind(q)) or {}).get("version") or "",
                    # ekran 5": dom (brama, garaż) i trasy do wyboru na postoju
                    "home": screen_home(), "routes": screen_routes(idx)}
+            if screen_kind(q) == "ekran5":
+                # nawigacja offline na ekranie: te same suwaki wariantów i omijanie co w planerze
+                out["offline"] = screen_offline_settings(s)
             lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
             if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
                 try:
@@ -1004,7 +1035,7 @@ def screen_get(h, path, q):
             if not m:
                 return h.send(404, {"ok": False, "error": "brak mapy"}) or True
             return h.send(200, m) or True
-        if path.startswith("/api/nav/mapa/") and path.endswith(".ntt.gz"):
+        if path.startswith("/api/nav/mapa/") and (path.endswith(".ntt.gz") or path.endswith(".ntg.gz")):
             p = NAV.map_gz(path.rsplit("/", 1)[1][:-3])
             if not p:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True
