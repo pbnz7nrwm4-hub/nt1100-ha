@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.22"
+VERSION = "1.5.23"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -394,6 +394,16 @@ def problems(rep):
     b = rep.get("battery")
     if isinstance(b, (int, float)) and 0 <= b < 20:
         out.append("bateria skrzynki %d%%" % b)
+    # 1.5.23 (skrzynka 1.4.5, na sucho): podejrzenia upadku z czujnika ruchu
+    cr = rep.get("crash") or {}
+    if (cr.get("n") or 0) > 0:
+        kinds = {1: "uderzenie i leżenie", 2: "uderzenie i zatrzymanie", 3: "leżenie bez uderzenia"}
+        for c in (cr.get("list") or [])[:4]:
+            s = int(num(c.get("s")) or 0)
+            out.append("podejrzenie upadku (na sucho) po %d min: %s, %s g, przechył %s°, przed tym %s km/h"
+                       % (s // 60, kinds.get(c.get("type"), "?"), fmt_num(c.get("g")), fmt_num(c.get("lean")), fmt_num(c.get("speed"))))
+        if (cr.get("n") or 0) > len(cr.get("list") or []):
+            out.append("podejrzeń upadku razem: %d" % cr["n"])
     return out
 
 

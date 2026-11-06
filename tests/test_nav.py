@@ -1118,6 +1118,8 @@ class NavServerTest(unittest.TestCase):
             self.assertEqual(code, 401)
         finally:
             srv.ha_call = orig
+        # 1.5.23: calendar on the ping, fuel prices through Google
+        self.check_calendar_and_prices(ids)
         # firmware: each screen gets only its own package
         fw = srv.FIRMWARE
         made = not os.path.isdir(fw)
@@ -1139,6 +1141,65 @@ class NavServerTest(unittest.TestCase):
             if made:
                 shutil.rmtree(fw, ignore_errors=True)
 
+    def check_calendar_and_prices(self, ids):
+        navmod = srv.navapi.nav
+        now = time.time()
+        iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + "+00:00"
+        seen = []
+
+        def fake_ha(method, path, body=None, timeout=10):
+            seen.append(path)
+            if path.startswith("/core/api/calendars/calendar.dom"):
+                return [{"start": {"dateTime": iso(now + 7200)}, "end": {"dateTime": iso(now + 9000)}, "summary": "Dentysta"},
+                        {"start": {"date": time.strftime("%Y-%m-%d", time.localtime(now + 86400))}, "end": {"date": "x"},
+                         "summary": "Urodziny"}]
+            return {"state": "closed"}
+        orig = srv.ha_call
+        srv.ha_call = fake_ha
+        try:
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"calendar_entity": "light.zle"})
+            self.assertEqual(code, 400)
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"calendar_entity": "calendar.dom", "google_key": "G-123"})
+            self.assertEqual(code, 200, j)
+            self.assertIs(j["google_key"], True)
+            code, body, _ = self.req(self.iu + "/api/nav/ping?k=ekran5", headers={"X-Klucz": KEY})
+            j = json.loads(body)
+            self.assertEqual([c["title"] for c in j["calendar"]], ["Dentysta", "Urodziny"])
+            self.assertTrue(j["calendar"][0]["when"].startswith(("dziś", "jutro")), j["calendar"][0])
+            self.assertEqual(j["calendar"][1]["when"], "jutro")
+            # fuel prices: one Google call per station, the second ask comes from the cache
+            calls = []
+
+            def fake_http(url, data=None, headers=None, timeout=25):
+                calls.append((url, data, headers))
+                return {"places": [{"displayName": {"text": "Orlen"}, "fuelOptions": {"fuelPrices": [
+                    {"type": "DIESEL", "price": {"units": "6", "nanos": 500000000, "currencyCode": "PLN"}, "updateTime": iso(now - 600)},
+                    {"type": "REGULAR_UNLEADED", "price": {"units": "6", "nanos": 190000000, "currencyCode": "PLN"},
+                     "updateTime": iso(now - 7200)}]}}]}
+            o2 = navmod.http_json
+            navmod.http_json = fake_http
+            try:
+                pl = {"places": [{"lat": 50.1, "lon": 19.9, "name": "A"}, {"lat": 50.2, "lon": 19.8, "name": "B"}, {"lat": "x"}]}
+                code, j = self.jpost(self.iu + "/api/nav/fuel_prices", pl, {"X-Klucz": KEY})
+                self.assertEqual(code, 200, j)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(calls[0][2]["X-Goog-Api-Key"], "G-123")
+                self.assertEqual(j["prices"][0]["text"], "6,19 zł · 2 h temu")
+                self.assertEqual(j["prices"][0]["pb95"], 6.19)
+                self.assertIsNone(j["prices"][2])
+                code, j = self.jpost(self.iu + "/api/nav/fuel_prices", pl, {"X-Klucz": KEY})
+                self.assertEqual(len(calls), 2)  # z pamięci
+                code, _ = self.jpost(self.iu + "/api/nav/fuel_prices", pl)
+                self.assertEqual(code, 401)
+            finally:
+                navmod.http_json = o2
+            # bez klucza: odpowiedź bez cen, nie błąd
+            code, j = self.jpost(self.pu + "/api/nav/settings", {"google_key": ""})
+            self.assertEqual(code, 200, j)
+            code, j = self.jpost(self.iu + "/api/nav/fuel_prices", {"places": [{"lat": 50.3, "lon": 19.7}]}, {"X-Klucz": KEY})
+            self.assertEqual((code, j["ok"], j["prices"]), (200, False, [None]))
+        finally:
+            srv.ha_call = orig
 
 if __name__ == "__main__":
     unittest.main()

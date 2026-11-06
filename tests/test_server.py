@@ -49,6 +49,15 @@ def track(n_points=900, curvy=True):
 
 
 class ServerTest(unittest.TestCase):
+    def test_problems_crash_dry_run(self):
+        rep = {"gnss": {"found": True, "fix_pct": 99, "outages": 0}, "crash": {"n": 5, "list": [
+            {"s": 750, "type": 1, "g": 6.2, "lean": 70, "speed": 60}, {"s": 900, "type": 3, "g": 0, "lean": -80, "speed": 30}]}}
+        out = srv.problems(rep)
+        self.assertEqual(len([o for o in out if "upadku" in o]), 3)
+        self.assertIn("po 12 min: uderzenie i leżenie", out[0])
+        self.assertIn("razem: 5", out[-1])
+        self.assertEqual([o for o in srv.problems({"crash": {"n": 0, "list": []}}) if "upadku" in o], [])
+
     @classmethod
     def setUpClass(cls):
         for d in (srv.RIDES, srv.INCOMING, srv.CACHE, srv.DATA):

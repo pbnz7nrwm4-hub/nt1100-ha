@@ -28,6 +28,28 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.23 (ekran 5" 2.0.2: paliwo, ceny, kalendarz; skrzynka 1.4.5: upadek na sucho)
+
+- **Zatankuj, zanim będzie za późno**: ekran 5" porównuje zasięg z motocykla (skrzynka) ze stacjami
+  na trasie z mapy na karcie. Gdy po najbliższej stacji nie ma już żadnej w zasięgu (minus 15 km
+  zapasu), albo zasięg spadł poniżej 30 km, nad mapą pojawia się na 20 s żółty pasek
+  „Zatankuj: … za 12 km” z dźwiękiem. Każda stacja ogłaszana raz. Bez skrzynki (brak zasięgu) nic się nie dzieje.
+- **Stacje z cenami**: na postoju Trasa → „Stacja” przy każdej z 3 stacji cena Pb95 i wiek ceny
+  („6,19 zł · 2 h temu”), gdy ekran ma internet (hotspot). Ceny z Google (zgłaszane przez kierowców);
+  trzeba wpisać **klucz Google Places** w Ustawieniach nawigacji (Google Cloud, włączone „Places API (New)”;
+  darmowy limit miesięczny wystarcza na zwykłe użycie). Bez klucza stacje bez cen, jak dotąd. Dodatek
+  pamięta cenę stacji przez godzinę. Dla ekranu: `POST /api/nav/fuel_prices {"places":[{lat,lon,name}]}`.
+- **Kalendarz na postoju**: zakładka Dom pokazuje dwa najbliższe wydarzenia z kalendarza HA (np. iCloud
+  przez integrację CalDAV): „dziś 14:00 Dentysta”. Encja `calendar.…` w Ustawieniach nawigacji → Planowanie i dom.
+- **Nowy cel z telefonu**: gdy trasa przyjdzie z dodatku (skrót iPhone’a „Wyślij na motocykl”, „Wyślij na
+  ekran” w panelu), ekran pokazuje na 8 s „Nowy cel: …” (przy nowej wersji tej samej trasy: „Trasa: …”).
+- **Skrzynka 1.4.5 – podejrzenie upadku, na sucho**: czujnik ruchu i prędkość: (1) uderzenie ≥ 5 g
+  i leżenie ≥ 55° przez 2 s, (2) uderzenie przy ≥ 25 km/h i zatrzymanie w 15 s, (3) leżenie zaraz po jeździe
+  bez uderzenia. Skrzynka **nic nie robi** poza wpisem w dzienniku jazdy i w raporcie jazdy („problemy”
+  w szczegółach jazdy w panelu: „podejrzenie upadku (na sucho) po 12 min: …”). Po kilku jazdach ocenimy
+  fałszywe alarmy, dopiero wtedy ekran zapyta „jesteś cały?” i wyśle wiadomość.
+- Zakładka Dom na ekranie: kafle bramy i garażu niższe, pod nimi kalendarz i linia połączenia.
+
 ## Zmiany w 1.5.22 (adresy na karcie, cel z ekranu przez hotspot)
 
 - Kontener dokłada do mapy na kartę **spis adresów** (mapa w wersji 4): miejscowości, ulice i numery
