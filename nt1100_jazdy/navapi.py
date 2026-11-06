@@ -34,6 +34,7 @@ SRV = None
 NAV = None
 PLANS = {}  # token -> (czas, lista tras) z ostatnich planowań
 HOME_ENTITY_RE = re.compile(r"(cover|button|switch|lock)\.[a-z0-9_]+")
+CALENDAR_ENTITY_RE = re.compile(r"calendar\.[a-z0-9_]+")
 NAV_LIMITS = {"lean_popup_deg": (5, 60), "traffic_min": (1, 60), "offroute_m": (50, 1000), "car_alert_min": (2, 30)}
 RECENT_MAX = 12
 
@@ -271,7 +272,7 @@ def nav_settings_apply(j):
     if not isinstance(j, dict):
         return "zle dane nawigacji"
     cur = dict(SRV.settings().get("nav") or {})
-    for k in ("engine_url", "map_url", "tomtom_key", "default_variant"):
+    for k in ("engine_url", "map_url", "tomtom_key", "google_key", "default_variant"):
         if k in j:
             v = str(j[k] or "").strip()
             if k.endswith("_url") and v and not re.fullmatch(r"https?://[^\s/]+(:\d+)?(/[^\s]*)?", v):
@@ -299,6 +300,11 @@ def nav_settings_apply(j):
             if v and not HOME_ENTITY_RE.fullmatch(v):
                 return "brama/garaż: encja cover.…, button.…, switch.… albo lock.…"
             cur[k] = v
+    if "calendar_entity" in j:
+        v = str(j["calendar_entity"] or "").strip()
+        if v and not CALENDAR_ENTITY_RE.fullmatch(v):
+            return "kalendarz: encja calendar.…"
+        cur["calendar_entity"] = v
     if "vehicle" in j:
         if j["vehicle"] not in ("moto", "auto"):
             return "zly pojazd"
@@ -587,6 +593,7 @@ def page_get(h, path, q):
                        avoid_all=nav.AVOID, curvy_default=nav.CURVY_DEFAULT,
                        curvy_levels_default=nav.CURVY_LEVELS_DEFAULT)
             lst["settings"]["tomtom_key"] = bool(lst["settings"]["tomtom_key"])
+            lst["settings"]["google_key"] = bool(lst["settings"]["google_key"])
             lst["drive"] = drive()
             lst["phone_entity"] = phone_entity()
             return h.send(200, lst) or True
@@ -690,6 +697,7 @@ def page_get(h, path, q):
         if path == "/api/nav/settings":
             s = NAV.settings()
             s["tomtom_key"] = bool(s["tomtom_key"])
+            s["google_key"] = bool(s["google_key"])
             return h.send(200, s) or True
         if path == "/api/nav/map":
             return h.send(200, NAV.map_status()) or True
@@ -812,6 +820,7 @@ def page_post(h, path, q, body):
                 return h.send(400, {"error": err}) or True
             s = NAV.settings()
             s["tomtom_key"] = bool(s["tomtom_key"])
+            s["google_key"] = bool(s["google_key"])
             return h.send(200, s) or True
         if path == "/api/nav/map/sync":
             return h.send(200, NAV.map_sync(force=bool(j.get("force")))) or True
@@ -958,6 +967,54 @@ def home_press(which):
     return {"ok": True, "service": dom + "." + svc, "home": screen_home()}
 
 
+def calendar_next(ent, n=3, now=None):
+    """Najbliższe wydarzenia z kalendarza HA (3 dni), po polsku: [{"when": "dziś 14:00", "title": ...}]."""
+    import datetime
+    now = now or time.time()
+    try:
+        start = datetime.datetime.fromtimestamp(now, datetime.timezone.utc)
+        end = start + datetime.timedelta(days=3)
+        q = urllib.parse.urlencode({"start": start.isoformat().replace("+00:00", "Z"),
+                                    "end": end.isoformat().replace("+00:00", "Z")})
+        ev = SRV.ha_call("GET", "/core/api/calendars/%s?%s" % (ent, q), timeout=5) or []
+    except Exception as e:
+        SRV.log("kalendarz:", ent, e)
+        return []
+    items = []
+    for e in ev if isinstance(ev, list) else []:
+        st = e.get("start") or {}
+        title = str(e.get("summary") or "")[:40]
+        if not title:
+            continue
+        if st.get("dateTime"):
+            t = nav.parse_iso(st["dateTime"])
+            if t is None:
+                continue
+            items.append((t, calendar_when(t, now, True), title))
+        elif st.get("date"):
+            t = nav.parse_iso(st["date"] + "T00:00:00" + time.strftime("%z", time.localtime(now))[:3] + ":" + time.strftime("%z", time.localtime(now))[3:])
+            if t is None:
+                continue
+            items.append((t, calendar_when(t, now, False), title))
+    items.sort()
+    return [{"when": w, "title": t} for _, w, t in items[:n]]
+
+
+def calendar_when(t, now, with_time):
+    """„dziś 14:00”, „jutro 9:00”, „pt 9:00” (czas lokalny HA)."""
+    lt, ln = time.localtime(t), time.localtime(now)
+    day = (lt.tm_year, lt.tm_yday)
+    today = (ln.tm_year, ln.tm_yday)
+    lt_tomorrow = time.localtime(now + 86400)
+    if day == today:
+        d = "dziś"
+    elif day == (lt_tomorrow.tm_year, lt_tomorrow.tm_yday):
+        d = "jutro"
+    else:
+        d = ("pn", "wt", "śr", "cz", "pt", "sb", "nd")[lt.tm_wday]
+    return d + (" %d:%02d" % (lt.tm_hour, lt.tm_min) if with_time else "")
+
+
 def screen_routes(idx, n=8):
     """Trasy do wyboru na postoju (ekran 5"): ostatnie n, bieżąca pierwsza."""
     rs = sorted(idx.get("routes") or [], key=lambda r: (-(r.get("created") or 0), -r["id"]))
@@ -1036,6 +1093,9 @@ def screen_get(h, path, q):
                    "fw": (screen_firmware_offer(screen_kind(q)) or {}).get("version") or "",
                    # ekran 5": dom (brama, garaż) i trasy do wyboru na postoju
                    "home": screen_home(), "routes": screen_routes(idx)}
+            # 1.5.23: kalendarz domu na postoju (3 najbliższe wydarzenia)
+            if s["calendar_entity"]:
+                out["calendar"] = calendar_next(s["calendar_entity"])
             if screen_kind(q) == "ekran5":
                 # nawigacja offline na ekranie: te same suwaki wariantów i omijanie co w planerze
                 out["offline"] = screen_offline_settings(s)
@@ -1133,6 +1193,16 @@ def screen_post(h, path, q, body):
             NAV.note_current(r["id"])
             return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
                                 "min": int(r["time_s"] / 60)}) or True
+        if path == "/api/nav/fuel_prices":
+            # 1.5.23: ekran 5" – ceny Pb95 dla stacji z karty (Google przez dodatek)
+            places = j.get("places") if isinstance(j, dict) else None
+            if not isinstance(places, list):
+                return h.send(400, {"ok": False, "error": "zle dane"}) or True
+            try:
+                prices = NAV.fuel_prices([p for p in places if isinstance(p, dict)][:6])
+            except ValueError as e:
+                return h.send(200, {"ok": False, "error": str(e), "prices": [None] * min(6, len(places))}) or True
+            return h.send(200, {"ok": True, "prices": prices}) or True
         if path == "/api/nav/log":
             entries = j.get("entries") if isinstance(j, dict) else j
             if not isinstance(entries, list):

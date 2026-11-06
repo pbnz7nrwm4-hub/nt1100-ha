@@ -126,6 +126,78 @@ def http_json(url, data=None, headers=None, timeout=25):
         return json.loads(r.read())
 
 
+# ---------------------------------------------------------------- ceny paliw (1.5.23)
+
+FUEL_PB95 = ("REGULAR_UNLEADED", "SP95", "SP95_E10")
+
+
+def fuel_price_google(key, lat, lon, radius_m=250):
+    """Cena Pb95 najbliższej stacji wg Google Places (ceny zgłaszane przez kierowców).
+    Zwraca {"text", "pb95", "age_min", "station"} albo None."""
+    j = http_json("https://places.googleapis.com/v1/places:searchNearby",
+                  data={"includedTypes": ["gas_station"], "maxResultCount": 3, "languageCode": "pl",
+                        "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon},
+                                                           "radius": radius_m}}},
+                  headers={"X-Goog-Api-Key": key,
+                           "X-Goog-FieldMask": "places.displayName,places.location,places.fuelOptions"},
+                  timeout=12)
+    return fuel_price_from_places(j, time.time())
+
+
+def fuel_price_from_places(j, now):
+    best = None
+    for pl in (j or {}).get("places") or []:
+        for fp in ((pl.get("fuelOptions") or {}).get("fuelPrices") or []):
+            if fp.get("type") not in FUEL_PB95:
+                continue
+            pr = fp.get("price") or {}
+            try:
+                val = float(pr.get("units") or 0) + float(pr.get("nanos") or 0) / 1e9
+            except (TypeError, ValueError):
+                continue
+            if not 2 <= val <= 20:
+                continue
+            upd = parse_iso(fp.get("updateTime"))
+            age = int((now - upd) / 60) if upd else None
+            cand = (age if age is not None else 10 ** 6, val)
+            if best is None or cand < best[0]:
+                best = (cand, val, age, (pl.get("displayName") or {}).get("text") or "")
+        if best:
+            break
+    if not best:
+        return None
+    _, val, age, name = best
+    if age is None:
+        when = ""
+    elif age < 60:
+        when = " · %d min temu" % age
+    elif age < 48 * 60:
+        when = " · %d h temu" % (age // 60)
+    else:
+        when = " · %d dni temu" % (age // 1440)
+    return {"text": ("%.2f zł" % val).replace(".", ",") + when, "pb95": round(val, 2), "age_min": age, "station": name}
+
+
+def parse_iso(s):
+    """ISO 8601 (Z albo +hh:mm) -> unix; None gdy nie da się."""
+    if not s or not isinstance(s, str):
+        return None
+    try:
+        import datetime
+        t = s.replace("Z", "+00:00")
+        if "." in t:
+            # ułamki sekund o dowolnej długości
+            head, tail = t.split(".", 1)
+            m = re.match(r"(\d+)(.*)", tail)
+            t = head + (m.group(2) if m else "")
+        d = datetime.datetime.fromisoformat(t)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        return d.timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------- geometria
 
 def cum_dist(pts):
@@ -417,6 +489,7 @@ class Nav:
         self.state_path = os.path.join(data, "nawigacja.json")
         self.state = self._read(self.state_path, {})
         self.traffic_cache = {}
+        self.fuel_cache = {}   # 1.5.23: (lat4, lon4) -> (czas, wynik)
         if log_fn:
             global LOG
             LOG = log_fn
@@ -448,6 +521,9 @@ class Nav:
             "engine_url": (s.get("engine_url") or "").rstrip("/"),
             "map_url": (s.get("map_url") or "").rstrip("/"),
             "tomtom_key": s.get("tomtom_key") or "",
+            # 1.5.23: ceny paliw (Google Places) i kalendarz na ekran 5"
+            "google_key": s.get("google_key") or "",
+            "calendar_entity": s.get("calendar_entity") or "",
             "lean_popup_deg": int(s.get("lean_popup_deg") or 20),
             "traffic_min": int(s.get("traffic_min") or 5),
             "car_alert_min": int(s.get("car_alert_min") or 5),
@@ -1268,6 +1344,38 @@ class Nav:
                         continue
                     if t0 <= (e.get("t") or 0) <= t1:
                         out.append(e)
+        return out
+
+    # ---- ceny paliw (1.5.23): Google Places, stacja po stacji, pamięć 1 h
+    def fuel_prices(self, places):
+        """[{lat, lon, name}] -> lista tej samej długości: {"text": "6,19 zł · 2 h temu",
+        "pb95": 6.19, "age_min": 120, "station": "Orlen"} albo None (brak ceny / stacji).
+        Bez klucza Google: ValueError."""
+        s = self.settings()
+        if not s["google_key"]:
+            raise ValueError("brak klucza Google (Ustawienia nawigacji)")
+        out = []
+        for p in places[:6]:
+            lat, lon = p.get("lat"), p.get("lon")
+            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                out.append(None)
+                continue
+            key = (round(lat, 4), round(lon, 4))
+            c = self.fuel_cache.get(key)
+            if c and time.time() - c[0] < 3600:
+                out.append(c[1])
+                continue
+            try:
+                r = fuel_price_google(s["google_key"], lat, lon)
+            except Exception as e:
+                log("ceny paliw:", e)
+                r = None
+            self.fuel_cache[key] = (time.time(), r)
+            if len(self.fuel_cache) > 400:
+                oldest = sorted(self.fuel_cache.items(), key=lambda kv: kv[1][0])[:200]
+                for k, _ in oldest:
+                    self.fuel_cache.pop(k, None)
+            out.append(r)
         return out
 
     def traffic(self, rid, lat, lon):
