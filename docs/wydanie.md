@@ -27,7 +27,7 @@ Do repozytorium trafiają tylko gotowe, zaszyfrowane i podpisane obrazy:
 1. Zbuduj obraz z prywatnych źródeł (instrukcja w prywatnym archiwum) i przetestuj
    na komputerze (testy rdzenia) oraz na urządzeniu.
 2. Zaszyfruj i podpisz narzędziem z prywatnego archiwum → `skrzynka.bin` + `skrzynka.json`
-   albo `ekran.bin` + `ekran.json` (wersja i rozmiar).
+   albo `ekran5.bin` + `ekran5.json` (ekran 5"; wersja i rozmiar). Paczki ekranu 2,8" (`ekran`) od 1.5.35 nie ma.
 3. Podmień pliki w `nt1100_jazdy/firmware/` i wydaj nową wersję **dodatku** (jak wyżej).
    Dodatek sam zaproponuje urządzeniom nowszą wersję.
 

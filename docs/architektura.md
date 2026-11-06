@@ -39,7 +39,7 @@
 | Kto → do kogo | Adres | Zabezpieczenie |
 |---|---|---|
 | skrzynka → dodatek | `http://IP-HA:8098` w domu, adres spoza domu przez Cloudflare w trasie | nagłówek `X-Klucz` (klucz z panelu dodatku), suma CRC każdego pliku |
-| ekran → dodatek | ten sam port 8098 | `X-Klucz` albo `?klucz=` |
+| ekran → dodatek | ten sam port 8098 | `X-Klucz` albo `?klucz=`: osobny klucz ekranu (`/data/klucz_ekranu`, od 1.5.35); klucz skrzynki działa dla ekranu, dopóki nie zaznaczono „Ekran tylko z własnym kluczem” |
 | telefon → panel dodatku | przez Home Assistant (Ingress) | logowanie Home Assistant |
 | dodatek → silnik tras | `http://IP-KONTENERA:8989` i `:8988` | tylko sieć domowa |
 | link GPX z powiadomienia | `/api/nav/trasa.gpx?...&t=...` | podpis tylko dla tej trasy i jej wersji |
@@ -54,7 +54,8 @@
 | `/share/nt1100/index.json` | które jazdy ze skrzynki już są (ta sama jazda wysłana drugi raz nie dubluje się) |
 | `/share/nt1100/nawigacja/` | trasy (`trasy/<id>.json` i `.ntr` dla ekranu), mapa ekranu (`mapa/`), dziennik ekranu (`ekran/`) |
 | `/data/stan.json` | ustawienia z panelu (serwis, przebieg, nawigacja, powiadomienia) |
-| `/data/klucz` | klucz dla skrzynki i ekranu (gdy nie wpisano własnego w konfiguracji) |
+| `/data/klucz` | klucz skrzynki (gdy nie wpisano własnego w konfiguracji) |
+| `/data/klucz_ekranu` | klucz ekranu (Ustawienia → „Nowy klucz ekranu” tworzy nowy) |
 
 ## Pliki w repozytorium
 

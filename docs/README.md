@@ -7,6 +7,7 @@ Krótko, po polsku, krok po kroku. Szczegóły funkcji dodatku są w `nt1100_jaz
 |---|---|---|
 | [architektura.md](architektura.md) | każdy | z czego składa się system, kto z kim rozmawia, gdzie leżą dane |
 | [instalacja.md](instalacja.md) | właściciel | uruchomienie od zera: dodatek, skrzynka, ekran, silnik tras |
+| `../nt1100_jazdy/DOCS.md` → „Przed wyjazdem, w trasie…” | właściciel | krótka lista na wyjazd i co robić, gdy coś padnie (widać ją w HA) |
 | [problemy.md](problemy.md) | właściciel | co zrobić, gdy coś nie działa (objaw → przyczyna → co zrobić) |
 | [wydanie.md](wydanie.md) | osoba, która zmienia kod | jak wydać nową wersję dodatku i oprogramowania urządzeń |
 | `../silnik-tras/README.md` | właściciel | kontener z silnikiem tras i mapą |

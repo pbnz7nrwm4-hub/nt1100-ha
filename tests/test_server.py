@@ -184,12 +184,14 @@ class ServerTest(unittest.TestCase):
         v = json.loads(out)
         self.assertEqual(set(v), {"addon", "box", "screen", "engine"})
         self.assertEqual(v["addon"]["installed"], srv.VERSION)
-        self.assertEqual(v["screen"]["latest"], (srv.navapi.screen_firmware_offer() or {}).get("version"))
+        self.assertEqual(v["screen"]["latest"], (srv.navapi.screen_firmware_offer("ekran5") or {}).get("version"))
         # 1.5.19: ekran 5" (2.x) porównywany z paczką ekran5, 2,8" (1.x) z paczką ekran
         self.assertEqual(srv.navapi.screen_kind_of("2.0.0"), "ekran5")
         self.assertEqual(srv.navapi.screen_kind_of("1.1.3"), "ekran")
-        self.assertEqual(srv.navapi.screen_kind_of(None), "ekran")
-        self.assertEqual(srv.navapi.screen_kind_of("x"), "ekran")
+        self.assertEqual(srv.navapi.screen_kind_of(None), "ekran5")
+        self.assertEqual(srv.navapi.screen_kind_of("x"), "ekran5")
+        # 1.5.35: paczki ekranu 2,8" już nie ma – dodatek nic mu nie proponuje
+        self.assertIsNone(srv.navapi.screen_firmware_offer("ekran"))
 
     def test_records_line(self):
         self.ride(19, "20261001-080000", start="2026-10-01T08:00:00Z", km=20.0)
