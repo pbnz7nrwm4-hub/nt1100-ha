@@ -669,7 +669,8 @@ function settingsCard(V){const S=NV.data.settings;const k0=el('div','card');k0.a
   const eu=field(k,'Silnik tras (kontener Proxmox, np. http://192.168.1.50:8989)','url',null,S.engine_url);
   const mu=field(k,'Mapa na kartę (ten sam kontener, np. http://192.168.1.50:8988)','url',null,S.map_url);
   const tk=field(k,'Klucz TomTom (korki; puste = wyłączone)','password',null,'',S.tomtom_key);
-  const gk=field(k,'Klucz Google Places (ceny paliw na ekranie 5"; puste = bez cen)','password',null,'',S.google_key);
+  const gk=field(k,'Klucz Google Places (ceny paliw na ekranie 5" i w panelu; puste = bez cen)','password',null,'',S.google_key);
+  if(S.google_usage){const u=S.google_usage,w=u.n>=u.warn;k.append(el('p',w?'nmsg bad':'mut','Zapytania do Google w tym miesiącu ('+u.month+'): '+u.n+(w?' – to dużo, sprawdź alert budżetu w Google Cloud':' (ostrzegam od '+u.warn+')')))}
   const kp=grp('Planowanie i dom');const kc=grp('Jazda autem z OsmAnd (zapas bez ekranu): korki i objazdy');const ke=grp('Ekran w trasie');k=ke;
   kc.append(el('p','mut','W aucie najpierw „Wyślij na ekran” (ekran 5" ma własny GPS). Gdy ekranu nie ma: po „🚗 Jadę (OsmAnd)” dodatek co tyle minut, ile „Sprawdzanie korków”, patrzy na korki przed telefonem (TomTom). Gdy objazd jest szybszy, przychodzi powiadomienie z nową trasą do otwarcia w OsmAnd.'));
   const pt=field(kc,'Telefon (encja z pozycją; puste = z celu powiadomień: '+(NV.data.phone_entity||'brak')+')','text',null,S.phone_tracker);pt.placeholder='device_tracker.iphone';

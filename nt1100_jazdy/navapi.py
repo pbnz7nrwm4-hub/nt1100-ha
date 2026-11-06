@@ -594,6 +594,7 @@ def page_get(h, path, q):
                        curvy_levels_default=nav.CURVY_LEVELS_DEFAULT)
             lst["settings"]["tomtom_key"] = bool(lst["settings"]["tomtom_key"])
             lst["settings"]["google_key"] = bool(lst["settings"]["google_key"])
+            lst["settings"]["google_usage"] = NAV.google_usage()
             lst["drive"] = drive()
             lst["phone_entity"] = phone_entity()
             return h.send(200, lst) or True
@@ -698,6 +699,7 @@ def page_get(h, path, q):
             s = NAV.settings()
             s["tomtom_key"] = bool(s["tomtom_key"])
             s["google_key"] = bool(s["google_key"])
+            s["google_usage"] = NAV.google_usage()
             return h.send(200, s) or True
         if path == "/api/nav/map":
             return h.send(200, NAV.map_status()) or True
@@ -821,6 +823,7 @@ def page_post(h, path, q, body):
             s = NAV.settings()
             s["tomtom_key"] = bool(s["tomtom_key"])
             s["google_key"] = bool(s["google_key"])
+            s["google_usage"] = NAV.google_usage()
             return h.send(200, s) or True
         if path == "/api/nav/fuel_prices":
             return fuel_prices_reply(h, j)  # 1.5.34: ceny stacji też w panelu
