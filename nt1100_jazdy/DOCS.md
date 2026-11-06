@@ -17,9 +17,10 @@ Cztery zakładki na dole ekranu:
 
 - **Jazdy**: lista jazd i **Statystyki** (przełącznik u góry).
 - **Trasy**: mapa na cały ekran z wysuwanym panelem (pociągnij uchwyt albo stuknij go:
-  pół ekranu → cały → sama mapa). Wyszukiwarka nad mapą, a gdy motocykl jedzie albo stoi
+  pół ekranu → cały → sama mapa). Nad mapą pole „Dokąd jedziesz?”, w panelu trzy zakładki:
+  **Planuj** (Start i Cel jak w nawigacji), **Moje trasy**, **W trasie**. Gdy motocykl jedzie albo stoi
   ponad 2 km od domu, u góry pasek „W trasie”.
-- **Motocykl**: stan skrzynki, ekranu i silnika tras, przebieg i serwis, parking, skan,
+- **Motocykl**: na górze cztery kafle (przebieg, najbliższy serwis, skrzynka, ekran), niżej stan skrzynki, ekranu i silnika tras, przebieg i serwis, parking, skan,
   wersje oprogramowania.
 - **Ustawienia**: wszystkie ustawienia w zwijanych grupach, razem z ustawieniami nawigacji.
 
@@ -27,6 +28,28 @@ Cztery zakładki na dole ekranu:
 gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował własne kafelki, mapa
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
+
+## Zmiany w 1.5.26 (wygląd panelu: cel jak w nawigacji, cały wyjazd na mapie)
+
+- **Planowanie trasy** jak w nawigacji: pola **Start** (domyślnie pozycja motocykla albo dom) i **Dokąd jedziesz?**,
+  „+ przystanek”, „⇅” zamienia start z celem, ✕ usuwa punkt. Dotknięcie pola (albo „Dokąd jedziesz?” nad mapą)
+  otwiera wyszukiwarkę na cały ekran: podpowiedzi w trakcie pisania (bez Entera), na górze pozycja motocykla,
+  dom, moja pozycja z telefonu, „Wskaż na mapie”, ulubione i ostatnio wybrane. Wyniki to adresy i miejscowości
+  (przez internet) oraz **miejsca z mapy na kartę** (stacje, jedzenie, noclegi…, działają bez internetu).
+  Link z Map Google/Apple albo współrzędne też działają. Po wybraniu celu trasa liczy się sama.
+- Dotknięcie mapy pokazuje małe menu: **Jedź tutaj**, **Przystanek**, **Start stąd** (nic się nie dodaje przypadkiem).
+- **Pinezki**: zielona start, niebieskie przystanki z numerem, czerwona z flagą cel (bez ucinanych napisów).
+- Panel Tras w zakładkach **Planuj · Moje trasy · W trasie**; przełącznik **Do celu | Pętla z powrotem**
+  (pętla na km albo na czas, także własna długość). „Pomiń miejscowość” → „+ omiń miejscowość” z tą samą wyszukiwarką.
+- Warianty tras: duży czas i km, jeden główny przycisk „Wyślij na ekran”. **Moje trasy**: dotknięcie = pokaż,
+  obok „Na ekran” i menu ⋯ (symulacja, GPX, usuń).
+- **Jazdy → wyjazd** (jazdy połączone przerwą krótszą niż ustawiona): „Cały wyjazd na mapie” z przełącznikiem
+  **Kolory: przechył | jazdy** (każda jazda swoim kolorem, numery na początku jazd). W szczegółach jazdy, która
+  należy do wyjazdu, przycisk „Cały wyjazd · N jazdy ›”. Lista jazd wyjazdu bez powtórzonej godziny.
+- Mapy jazd nie rysują „gwiazdy” z dryfu GPS na postoju (poniżej 5 km/h pozycja stoi, skoki szybsze niż 250 km/h
+  są pomijane). Dystans i liczby jazdy się nie zmieniają.
+- Motocykl: na górze cztery kafle (przebieg, najbliższy serwis, skrzynka, ekran).
+- Do zrobienia po aktualizacji: nic. Ustawienia zostają; „ostatnio wybrane” pamięta przeglądarka telefonu.
 
 ## Zmiany w 1.5.25 (ekran 5" 2.0.3: pozycja z własnego GPS, gdy skrzynka nie ma fixu)
 

@@ -67,7 +67,7 @@
 | `nt1100_jazdy/adresy.py` | spis adresów `.nta` na karcie i szukanie miejscowość → ulica → numer oraz nazwanych miejsc (wzorzec dla ekranu) |
 | `nt1100_jazdy/graf.py` | graf tras `.ntg` i liczenie trasy offline (wzorzec dla ekranu, te same reguły co planer) |
 | `nt1100_jazdy/www/index.html` | panel: jazdy, statystyki, stan, ustawienia |
-| `nt1100_jazdy/www/nav.js` | panel: zakładka Trasy, układ 4 zakładek, „Ekran i mapa” |
+| `nt1100_jazdy/www/nav.js` | panel: zakładka Trasy (Start/Cel, wyszukiwarka miejsc, pinezki, zakładki Planuj/Moje trasy/W trasie), układ 4 zakładek, kafle i „Ekran i mapa” w Motocyklu |
 | `nt1100_jazdy/firmware/` | gotowe, podpisane obrazy skrzynki i ekranu z numerem wersji |
 | `silnik-tras/` | instalacja i aktualizacja kontenera z silnikiem tras i mapą |
 | `tests/` | testy (uruchamia je GitHub przy każdej zmianie) |
