@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -203,6 +203,13 @@ def prad_od(p, l):
     return ust("dane_pradu_od") or "2026-11-01"
 
 
+def korekta_baterii(p):
+    """(pojemność baterii, sprawność ładowania) do korekty prądu o stan baterii w odcinku."""
+    if z_pradem(p) and p.get("bateria_kwh"):
+        return (float(p["bateria_kwh"]), SPRAWNOSC_LADOWANIA)
+    return None
+
+
 def przebieg_pojazdu(p, t=None, k=None, o=None, l=None):
     if t is None:
         t, l, k, o = dane_pojazdu(p["id"])
@@ -246,7 +253,7 @@ def okres(nazwa, dzis=None):
 def karta_pojazdu(p):
     t, l, k, o = dane_pojazdu(p["id"])
     km, pts = przebieg_pojazdu(p, t, k, o, l)
-    odc = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l))
+    odc = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l), korekta_baterii(p))
     od, do = okres("miesiac")
     mies = ob.podsumowanie_okresu(t, l, k, o, od, do)
     ost = ob.srednie(odc, 3)
@@ -263,7 +270,7 @@ def karta_pojazdu(p):
 def statystyki(p, nazwa_okresu):
     t, l, k, o = dane_pojazdu(p["id"])
     od, do = okres(nazwa_okresu)
-    odc_all = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l))
+    odc_all = ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l), korekta_baterii(p))
     odc = [x for x in odc_all if od <= x["do"][:10] < do]
     out = {"pojazd": p, "okres": nazwa_okresu, "od": od, "do": do, "srednie": ob.srednie(odc), "prad_od": prad_od(p, l),
            "odcinki": odc_all[-40:], "podsumowanie": ob.podsumowanie_okresu(t, l, k, o, od, do),
@@ -304,7 +311,7 @@ def historia(pid=None, typ=None, limit=400):
     # spalanie przy pełnych tankowaniach
     for pid_, p in poj.items():
         t, l, k, o = dane_pojazdu(pid_)
-        for odc in ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l)):
+        for odc in ob.odcinki(t, l if z_pradem(p) else None, prad_od(p, l), korekta_baterii(p)):
             for x in out:
                 if x["typ"] == "tankowanie" and x["id"] == odc["tankowanie_id"]:
                     x["l100"] = odc["l100"]
@@ -548,6 +555,35 @@ def kopia_nocna():
     log("Kopia zapisana:", kat)
 
 
+def _data_tankowania(t):
+    """Data tankowania jako czas lokalny; sama data (np. z Fuelio) = południe."""
+    d = (t.get("data") or "").replace("T", " ")
+    return datetime.strptime(d[:16], "%Y-%m-%d %H:%M") if len(d) >= 16 else datetime.strptime(d[:10] + " 12:00", "%Y-%m-%d %H:%M")
+
+
+def uzupelnij_soc():
+    """Stan baterii (%) w chwili tankowania z historii HA (tylko tankowania bez wpisanej wartości)."""
+    for p in DB.lista("pojazdy"):
+        enc = (ust("bateria") or {}).get(p.get("klucz") or "")
+        if not (enc and z_pradem(p)):
+            continue
+        od = prad_od(p, None)
+        brak = [t for t in DB.lista("tankowania", pojazd_id=p["id"]) if t.get("soc") is None and (t["data"] or "")[:10] >= od]
+        if not brak:
+            continue
+        teraz = datetime.now(timezone.utc)
+        pocz = min(ld.do_utc(_data_tankowania(t)) for t in brak) - timedelta(hours=12)
+        ser = ld.seria(ha_historia([enc], pocz, teraz).get(enc))
+        for t in brak:
+            moment = ld.do_utc(_data_tankowania(t))
+            if moment > teraz - timedelta(minutes=20):
+                continue
+            v = ld.wartosc_w(ser, moment)
+            if v is not None:
+                DB.zmien("tankowania", t["id"], {"soc": round(v, 1)})
+                log("Stan baterii przy tankowaniu %s: %s %%" % (t["data"], round(v, 1)))
+
+
 def petla():
     for _ in range(30):
         try:
@@ -557,7 +593,7 @@ def petla():
             time.sleep(10)
     ostatnia_kopia = DB.ust("kopia_ostatnia") or ""
     while True:
-        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, powiadomienia_terminow, publikuj):
+        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, uzupelnij_soc, powiadomienia_terminow, publikuj):
             try:
                 krok()
             except Exception as e:
@@ -691,7 +727,7 @@ def import_ladowan_z_auta(pid, lad):
 
 TABELE = {"tankowania", "ladowania", "koszty", "terminy", "pojazdy", "odczyty"}
 LICZBY = {"przebieg", "litry", "cena_l", "kwota", "kwh", "kwh_pv", "kwh_bateria", "soc_od", "soc_do", "koszt",
-          "koszt_wartosc", "bak_l", "bateria_kwh", "l100_bez_pradu", "co_km", "nastepny_km", "ostatnio_km"}
+          "koszt_wartosc", "soc", "bak_l", "bateria_kwh", "l100_bez_pradu", "co_km", "nastepny_km", "ostatnio_km"}
 
 
 def oczysc(tabela, j, nowy=True):

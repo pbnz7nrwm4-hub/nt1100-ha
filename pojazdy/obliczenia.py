@@ -78,12 +78,15 @@ def czesc_okresu(l, od, do):
     return (y - x).total_seconds() / (b - a).total_seconds()
 
 
-def odcinki(tankowania, ladowania=None, prad_od=None):
+def odcinki(tankowania, ladowania=None, prad_od=None, korekta=None):
     """Odcinki "od pełnego do pełnego baku" (jak Fuelio).
 
     Litry niepełnych tankowań dolicza się do najbliższego pełnego. Tankowanie
     oznaczone "pominąłem poprzednie" przerywa liczenie (nowy początek).
     Dla aut z wtyczką: kWh ładowań między datami początku i końca odcinka.
+    `korekta` = (pojemność baterii kWh, sprawność ładowania): gdy oba tankowania mają stan
+    baterii (`soc`, %), kWh odcinka zmniejsza się o przyrost energii w baterii (÷ sprawność),
+    a przy jej spadku zwiększa.
     Odcinki zaczęte przed `prad_od` (zanim HA zaczął zapisywać ładowania) nie mają
     kWh (None) – inaczej zużycie prądu wyszłoby zaniżone.
     """
@@ -107,7 +110,7 @@ def odcinki(tankowania, ladowania=None, prad_od=None):
                 o = {"od": start["data"], "do": t["data"], "od_km": float(start["przebieg"]),
                      "do_km": float(t["przebieg"]), "km": km, "litry": round(litry, 2),
                      "koszt_paliwa": round(koszt, 2), "l100": round(litry / km * 100, 2),
-                     "tankowanie_id": t.get("id")}
+                     "tankowanie_id": t.get("id"), "soc_od": start.get("soc"), "soc_do": t.get("soc")}
                 out.append(o)
             start, litry, koszt = t, 0.0, 0.0
     if ladowania is not None:
@@ -136,6 +139,14 @@ def odcinki(tankowania, ladowania=None, prad_od=None):
                     kw += float(l.get("koszt") or 0)
                     kwb += float(l.get("kwh_bateria") or 0)
                     ile += 1
+            if korekta and korekta[0] and o.get("soc_od") is not None and o.get("soc_do") is not None:
+                zmiana = (float(o["soc_do"]) - float(o["soc_od"])) / 100.0 * float(korekta[0]) / float(korekta[1] or 1)
+                nowe = max(0.0, kwh - zmiana)
+                if kwh > 0:
+                    kw *= nowe / kwh
+                o["kwh_ladowano"] = round(kwh, 2)
+                o["skorygowano"] = True
+                kwh = nowe
             o["kwh"] = round(kwh, 2)
             o["kwh100"] = round(kwh / o["km"] * 100, 2)
             o["koszt_pradu"] = round(kw, 2)

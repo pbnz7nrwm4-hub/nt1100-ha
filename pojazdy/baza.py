@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS pojazdy (
 CREATE TABLE IF NOT EXISTS tankowania (
   id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, data TEXT NOT NULL, przebieg REAL,
   litry REAL, cena_l REAL, kwota REAL, pelny INTEGER DEFAULT 1, pominiete INTEGER DEFAULT 0,
-  stacja TEXT, notatka TEXT, fuelio_typ TEXT, zrodlo TEXT DEFAULT 'recznie', uid TEXT UNIQUE);
+  stacja TEXT, notatka TEXT, fuelio_typ TEXT, zrodlo TEXT DEFAULT 'recznie', uid TEXT UNIQUE, soc REAL);
 CREATE TABLE IF NOT EXISTS ladowania (
   id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, poczatek TEXT NOT NULL, koniec TEXT,
   kwh REAL, kwh_pv REAL, kwh_bateria REAL, soc_od REAL, soc_do REAL, koszt REAL, koszt_wartosc REAL,
@@ -35,7 +35,7 @@ POLA = {
     "pojazdy": ["nazwa", "rodzaj", "paliwo", "bak_l", "bateria_kwh", "encja_przebiegu", "l100_bez_pradu",
                 "aktywny", "kolejnosc", "klucz"],
     "tankowania": ["pojazd_id", "data", "przebieg", "litry", "cena_l", "kwota", "pelny", "pominiete", "stacja",
-                   "notatka", "fuelio_typ", "zrodlo", "uid"],
+                   "notatka", "fuelio_typ", "zrodlo", "uid", "soc"],
     "ladowania": ["pojazd_id", "poczatek", "koniec", "kwh", "kwh_pv", "kwh_bateria", "soc_od", "soc_do", "koszt",
                   "koszt_wartosc", "strefy", "miejsce", "przebieg", "zrodlo", "wykluczone", "zmienione", "notatka", "uid"],
     "koszty": ["pojazd_id", "data", "przebieg", "kategoria", "tytul", "kwota", "notatka", "zrodlo", "uid"],
@@ -66,6 +66,9 @@ class Baza:
             if not self.db.execute("SELECT 1 FROM pojazdy LIMIT 1").fetchone():
                 for p in STARTOWE:
                     self.dodaj("pojazdy", p)
+            # 1.2.0: stan baterii (%) w chwili tankowania – do korekty zużycia prądu w odcinku
+            if "soc" not in [c[1] for c in self.db.execute("PRAGMA table_info(tankowania)")]:
+                self.db.execute("ALTER TABLE tankowania ADD COLUMN soc REAL")
             # 1.0.2: import z Fuelio zapisywał kwoty bez zaokrąglenia (187.07999999999998)
             self.db.execute("UPDATE tankowania SET litry=round(litry,2), kwota=round(kwota,2), cena_l=round(cena_l,3)")
             self.db.execute("UPDATE koszty SET kwota=round(kwota,2) WHERE kwota IS NOT NULL")

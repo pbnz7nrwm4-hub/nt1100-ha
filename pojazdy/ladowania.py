@@ -24,6 +24,13 @@ MIN_KWH = 0.1          # mniejsze "sesje" to szum licznika
 KONIEC_PO_MIN = 15     # sesja uznana za skończoną po tylu minutach bez przyrostu
 
 
+def do_utc(lokalny):
+    """datetime lokalny (Polska, bez strefy) -> UTC."""
+    if PL is not None:
+        return lokalny.replace(tzinfo=PL).astimezone(timezone.utc)
+    return datetime.fromtimestamp(lokalny.timestamp(), timezone.utc)
+
+
 def lok(dt):
     """datetime UTC -> lokalny (Polska), bez strefy."""
     if PL is not None:
