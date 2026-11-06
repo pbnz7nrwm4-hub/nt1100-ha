@@ -29,6 +29,14 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.27 (serwis w dodatku Pojazdy)
+
+Gdy zainstalowany jest dodatek **Pojazdy** (to samo repozytorium), serwis motocykla prowadzi on: terminy
+(data i/lub przebieg), przypomnienia w telefonie i koszty. NT1100 Jazdy w zakładce Stan dalej pokazuje,
+ile zostało do każdej pozycji, ale nie wysyła już własnych przypomnień, a jego encje serwisu
+(`sensor.nt1100_serwis_*`, przyciski „zrobiony”) znikają – zastępują je encje Pojazdów
+(`sensor.pojazdy_nt1100_terminy`). Pozycje serwisu przenoszą się same przy pierwszym uruchomieniu
+Pojazdów. Bez dodatku Pojazdy wszystko działa jak dotąd.
 ## Zmiany w 1.5.26 (wygląd panelu: cel jak w nawigacji, cały wyjazd na mapie)
 
 - **Planowanie trasy** jak w nawigacji: pola **Start** (domyślnie pozycja motocykla albo dom) i **Dokąd jedziesz?**,

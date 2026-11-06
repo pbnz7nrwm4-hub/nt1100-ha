@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.26"
+VERSION = "1.5.27"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -611,7 +611,39 @@ def odometer(rides=None):
     return round(km)
 
 
+POJAZDY_TERMINY = "sensor.pojazdy_nt1100_terminy"
+_POJAZDY = {"t": 0.0, "v": None}
+
+
+def pojazdy_terminy():
+    """Serwis prowadzi dodatek Pojazdy (od 1.5.27): jego terminy motocykla z encji
+    sensor.pojazdy_nt1100_terminy, albo None (bez Pojazdów – serwis jak dotąd tutaj)."""
+    if not TOKEN:
+        return None
+    if time.time() - _POJAZDY["t"] < 300:
+        return _POJAZDY["v"]
+    v = None
+    try:
+        s = ha_call("GET", "/core/api/states/" + POJAZDY_TERMINY) or {}
+        t = (s.get("attributes") or {}).get("terminy")
+        if isinstance(t, list):
+            v = t
+    except Exception:
+        v = None
+    _POJAZDY.update(t=time.time(), v=v)
+    return v
+
+
 def service_status(odo_km=None):
+    pt = pojazdy_terminy()
+    if pt is not None:
+        out = []
+        for it in pt:
+            sid = (it.get("klucz") or "").split(":", 1)[-1] if (it.get("klucz") or "").startswith("nt1100:") else slug_entity(it.get("nazwa") or "")
+            out.append({"id": sid, "name": it.get("nazwa") or "", "left_km": it.get("km"), "left_days": it.get("dni"),
+                        "opis": it.get("opis"), "interval_km": it.get("co_km"), "last_km": it.get("ostatnio_km"),
+                        "pojazdy": True})
+        return out
     if odo_km is None:
         odo_km = odometer()
     out = []
@@ -1052,7 +1084,8 @@ class Mqtt:
                 "json_attributes_topic": TOPIC + "/parking", "source_type": "gps", "icon": "mdi:parking",
                 "availability": avail, "device": dev})
             ids = set()
-            for it in settings()["service"]:
+            # gdy serwis prowadzi dodatek Pojazdy, własne encje serwisu znikają (Pojazdy mają swoje)
+            for it in ([] if pojazdy_terminy() is not None else settings()["service"]):
                 sid = it["id"]
                 ids.add(sid)
                 self.pub("%s/sensor/nt1100/serwis_%s/config" % (DISC, sid), {
@@ -1255,6 +1288,8 @@ def notify_ride(n, s):
 
 def notify_service():
     """Service due soon: one notification per item until it is marked done."""
+    if pojazdy_terminy() is not None:
+        return  # przypomina dodatek Pojazdy
     odo = odometer()
     if odo is None:
         return
@@ -1743,6 +1778,7 @@ class Page(Base):
             "sd_min_free_pct": st["sd_min_free_pct"],
             "fw_offer": (firmware_offer() or {}).get("version"),
             "odo": odo, "odo_set": st["odo"], "service": service_status(odo),
+            "service_pojazdy": pojazdy_terminy() is not None,
             "parking": parking(newest_ride()),
             "mqtt": {"connected": MQTT.connected, "host": MQTT.host, "user": MQTT.user or None,
                      "started": MQTT.client is not None, "error": MQTT.status_error()},
@@ -1810,6 +1846,8 @@ class Page(Base):
             if err:
                 return self.send(400, err, "text/plain")
             return self.send(200, settings())
+        if path == "/api/service/done" and pojazdy_terminy() is not None:
+            return self.send(409, {"ok": False, "error": "serwis prowadzi dodatek Pojazdy"})
         if path == "/api/service/done":
             sid = q.get("id", "")
             if sid not in [it["id"] for it in settings()["service"]]:

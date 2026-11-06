@@ -8,6 +8,10 @@ Instalacja: Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria
 - `nt1100_jazdy/` – strona jazd w Home Assistant (panel w menu bocznym), odbiór jazd ze skrzynki
   (port 8098, tylko z kluczem), urządzenie NT1100 przez MQTT, pogoda na trasie, przebieg
   i serwis, powiadomienie po jeździe z rekordami.
+- `pojazdy/` – dodatek **Pojazdy** (jak Fuelio): tankowania (ręcznie), ładowania auta z wtyczką
+  (same, z historii Home Assistant: liczniki ładowarek, bilans PV, strefy G13, % baterii), spalanie
+  l/100 km i kWh/100 km, koszty miesięczne i roczne, inne koszty, terminy z przypomnieniem, import
+  i eksport w formacie Fuelio, nocna kopia. Instrukcja: `pojazdy/DOCS.md`.
 - `silnik-tras/` – silnik tras nawigacji do uruchomienia w kontenerze Proxmox (GraphHopper
   + mapa na kartę ekranu z OpenStreetMap); instrukcja w `silnik-tras/README.md`.
 

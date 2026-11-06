@@ -1,0 +1,21 @@
+name: Pojazdy
+version: "1.0.0"
+slug: pojazdy
+description: Tankowania, ładowania, koszty i terminy pojazdów (jak Fuelio) – ładowania auta wpisują się same z Home Assistant
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:car-cog
+panel_title: Pojazdy
+homeassistant_api: true
+hassio_api: true
+map:
+  - type: share
+    read_only: false
+options: {}
+schema: {}
