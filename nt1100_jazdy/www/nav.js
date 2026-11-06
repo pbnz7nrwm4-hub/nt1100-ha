@@ -21,7 +21,7 @@ css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)
 '.nres{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer}.nres.on{border-color:var(--acc)}.nres .sw{width:12px;height:12px;border-radius:50%;flex:0 0 12px}.nres .tx{flex:1;min-width:0}.nres small{display:block}'+
 '.nrt{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.nrt:last-child{border:0}.nrt .tx{flex:1;min-width:0}.nrt small{display:block}.nrt .cur{font-size:11px;padding:2px 7px;border-radius:8px;background:var(--ok);color:#fff}'+
 '.nrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nrow input{flex:1;min-width:160px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2)}'+
-'.nleg[hidden]{display:none}.nleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--mut);margin:6px 0}.nleg span{display:inline-flex;align-items:center;gap:5px}.nleg i{width:11px;height:11px;border-radius:50%;display:inline-block;border:1.5px solid #fff}'+
+'.fprice{margin-top:2px;color:#1c7ed6;font-weight:600}.npo .fprice{display:block;font-size:12px}.nleg[hidden]{display:none}.nleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--mut);margin:6px 0}.nleg span{display:inline-flex;align-items:center;gap:5px}.nleg i{width:11px;height:11px;border-radius:50%;display:inline-block;border:1.5px solid #fff}'+
 '.npo{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}.npo:last-child{border:0}.npo i{width:11px;height:11px;border-radius:50%;flex:0 0 11px}.npo .tx{flex:1;min-width:0}.npo small{display:block;color:var(--mut)}.npo button{padding:4px 9px;font-size:13px}.nlist{max-height:340px;overflow:auto}'+
 '.nlg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:2px 0 6px 66px;font-size:12px;color:var(--mut)}.nlg .chip{font-size:12px;padding:3px 9px;display:inline-flex;align-items:center;gap:5px}.nlg .chip i{width:8px;height:8px;border-radius:50%;display:inline-block}.nlg .chip.on{background:var(--card);color:var(--txt,inherit);border-width:2px}'+
 '.nsl{display:grid;grid-template-columns:110px 1fr 38px;gap:4px 10px;align-items:center;font-size:13px;margin:4px 0}.nsl input[type=range]{width:100%}.nsl b{grid-column:1/-1;margin-top:8px;font-size:14px;display:flex;align-items:center;gap:6px}.nsl b i{width:10px;height:10px;border-radius:50%;display:inline-block}.nsl output{text-align:right;color:var(--mut)}'+
@@ -425,21 +425,28 @@ async function togglePoi(){NV.poiOn=!NV.poiOn;P.leg.hidden=!NV.poiOn;P.poiBtn.te
 async function loadPoi(){if(!NV.map)return;const b=NV.map.getBounds();if(NV.map.getZoom()<9){if(NV.poi)NV.poi.clearLayers();P.legHint.textContent='przybliż mapę, żeby zobaczyć punkty';return}P.legHint.textContent='';
   try{const j=await J('api/nav/poi?bbox='+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(4)).join(','));if(j.too_big)P.legHint.textContent='przybliż mapę, żeby zobaczyć punkty';else if(j.points.length>=400)P.legHint.textContent='pokazano część punktów – przybliż, żeby zobaczyć wszystkie';if(!NV.poi)NV.poi=L.layerGroup().addTo(NV.map);NV.poi.clearLayers();
     for(const p of j.points){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:6,color:'#fff',weight:1.5,fillColor:k[1],fillOpacity:.95}).bindPopup(popupHtml(p,k)+'<br><a href="#" data-add="1">dodaj jako punkt trasy</a>');
-      m.on('popupopen',e=>{const a=e.popup.getElement().querySelector('[data-add]');if(a)a.onclick=ev=>{ev.preventDefault();addPt({lat:p.lat,lon:p.lon,name:p.name||k[0]});m.closePopup()}});NV.poi.addLayer(m)}}catch(e){}}
+      m.on('popupopen',e=>{const a=e.popup.getElement().querySelector('[data-add]');if(a)a.onclick=ev=>{ev.preventDefault();addPt({lat:p.lat,lon:p.lon,name:p.name||k[0]});m.closePopup()}});stationPrice(m,p);NV.poi.addLayer(m)}}catch(e){}}
 
 /* ---- POI: wspólne */
 const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// ceny Pb95 stacji (1.5.34): Google przez dodatek, pamięć 1 h; bez klucza lub bez ceny – po cichu nic
+async function fuelPrices(pts){try{const j=await post('api/nav/fuel_prices',{places:pts.slice(0,6).map(p=>({lat:p.lat,lon:p.lon,name:p.name||''}))});return j.prices||[]}catch(e){return[]}}
 function popupHtml(p,k){k=k||KIND[p.kind]||['punkt','#888'];return '<b>'+esc(p.name||k[0])+'</b>'+(p.name?'<br>'+esc(k[0]):'')+(p.limit?' · '+p.limit+' km/h':'')}
 const kmTxt=x=>(x<10?x.toFixed(1):Math.round(x))+' km';
 function nearIdx(ll,lat,lon){let b=1e18,bi=0;for(let i=0;i<ll.length;i++){const a=ll[i],dy=a[0]-lat,dx=(a[1]-lon)*0.64,d=dy*dy+dx*dx;if(d<b){b=d;bi=i}}return bi}
 function insertWaypoint(p,ll){if(NV.pts.length<2){addPt(p);return}const a=NV.pts.slice();const last=a.pop();const k=nearIdx(ll,p.lat,p.lon);let at=a.length;for(let i=1;i<a.length;i++){if(nearIdx(ll,a[i].lat,a[i].lon)>k){at=i;break}}a.splice(at,0,p);a.push(last);setPts(a);autoPlan()}
-function poiMarker(layer,p,extra){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:8,color:'#fff',weight:2,fillColor:k[1],fillOpacity:1}).bindPopup(popupHtml(p,k)+(extra?'<br>'+extra:''));layer.addLayer(m);return m}
+function stationPrice(m,p){if(p.kind!==10)return;m.on('popupopen',async e=>{const box=e.popup.getElement();const c=box&&box.querySelector('.leaflet-popup-content');if(!c)return;
+  const show=()=>{if(p._price&&!c.querySelector('.fprice')){const d=el('div','fprice');d.append('⛽ Pb95 ');d.append(el('b',null,p._price.text));c.append(d)}};
+  if(p._price===undefined){p._price=null;const r=await fuelPrices([p]);p._price=r[0]||null}show()})}
+function poiMarker(layer,p,extra){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:8,color:'#fff',weight:2,fillColor:k[1],fillOpacity:1}).bindPopup(popupHtml(p,k)+(extra?'<br>'+extra:''));stationPrice(m,p);layer.addLayer(m);return m}
 // lista POI: wiersze z nazwą, odległością i przyciskami
 function poiRows(box,points,opt){box.textContent='';if(!points.length){box.append(el('p','mut',opt.empty));return}
   for(const p of points){const k=KIND[p.kind]||['punkt','#888'];const r=el('div','npo');const dot=el('i');dot.style.background=k[1];const tx=el('div','tx');tx.append(el('span',null,p.name||k[0]));
     tx.append(el('small',null,(p.name?k[0]+' · ':'')+opt.dist(p)+(p.off_m!==null&&p.off_m!==undefined?' · '+(p.off_m<1000?p.off_m+' m':(p.off_m/1000).toFixed(1)+' km')+' od trasy':'')));
     const sh=el('button',null,'Pokaż');sh.onclick=()=>{if(!NV.map)return;sheet('mid');NV.map.setView([p.lat,p.lon],15);if(p._m)p._m.openPopup()};
-    r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r)}}
+    r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r);p._row=tx}
+  const st=points.filter(p=>p.kind===10).slice(0,6);
+  if(st.length)fuelPrices(st).then(pr=>st.forEach((p,i)=>{const x=pr[i];if(x&&p._row)p._row.append(el('small','fprice','⛽ Pb95 '+x.text))}))}
 
 /* ---- po drodze: POI wzdłuż wybranej trasy */
 async function alongFor(q,label,ll){if(!P.along)return;NV.alongQ=q;NV.alongLL=ll;NV.alongLabel=label;if(NV.alongCat===undefined)NV.alongCat=0;P.along.hidden=false;renderAlong()}

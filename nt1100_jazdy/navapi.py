@@ -822,6 +822,8 @@ def page_post(h, path, q, body):
             s["tomtom_key"] = bool(s["tomtom_key"])
             s["google_key"] = bool(s["google_key"])
             return h.send(200, s) or True
+        if path == "/api/nav/fuel_prices":
+            return fuel_prices_reply(h, j)  # 1.5.34: ceny stacji też w panelu
         if path == "/api/nav/map/sync":
             return h.send(200, NAV.map_sync(force=bool(j.get("force")))) or True
         if path == "/api/nav/goto":
@@ -1165,6 +1167,18 @@ def screen_get(h, path, q):
     return h.send(404, {"ok": False, "error": "brak"}) or True
 
 
+def fuel_prices_reply(h, j):
+    """1.5.34: wspólna odpowiedź na POST /api/nav/fuel_prices (ekran 5" i panel): ceny Pb95 z Google, pamięć 1 h."""
+    places = j.get("places") if isinstance(j, dict) else None
+    if not isinstance(places, list):
+        return h.send(400, {"ok": False, "error": "zle dane"}) or True
+    try:
+        prices = NAV.fuel_prices([p for p in places if isinstance(p, dict)][:6])
+    except ValueError as e:
+        return h.send(200, {"ok": False, "error": str(e), "prices": [None] * min(6, len(places))}) or True
+    return h.send(200, {"ok": True, "prices": prices}) or True
+
+
 def screen_post(h, path, q, body):
     if not path.startswith("/api/nav/"):
         return False
@@ -1195,14 +1209,7 @@ def screen_post(h, path, q, body):
                                 "min": int(r["time_s"] / 60)}) or True
         if path == "/api/nav/fuel_prices":
             # 1.5.23: ekran 5" – ceny Pb95 dla stacji z karty (Google przez dodatek)
-            places = j.get("places") if isinstance(j, dict) else None
-            if not isinstance(places, list):
-                return h.send(400, {"ok": False, "error": "zle dane"}) or True
-            try:
-                prices = NAV.fuel_prices([p for p in places if isinstance(p, dict)][:6])
-            except ValueError as e:
-                return h.send(200, {"ok": False, "error": str(e), "prices": [None] * min(6, len(places))}) or True
-            return h.send(200, {"ok": True, "prices": prices}) or True
+            return fuel_prices_reply(h, j)
         if path == "/api/nav/log":
             entries = j.get("entries") if isinstance(j, dict) else j
             if not isinstance(entries, list):
