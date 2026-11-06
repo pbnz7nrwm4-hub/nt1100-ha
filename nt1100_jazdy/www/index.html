@@ -25,6 +25,9 @@ main{padding:4px 12px 24px;max-width:760px;margin:0 auto}
 .grid span{font-size:12px;color:var(--mut)}
 .card>svg{width:100%;height:auto;display:block;background:var(--card2);border-radius:10px}
 #map{height:340px;border-radius:10px;background:var(--card2)}
+/* 1.5.37: przyciski mapy w jazdach (kłódka, cała trasa, pełny ekran) – jak w mapie Trasy */
+.mctl{background:var(--card);border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}.mctl button{border:0;border-radius:0;background:var(--card);color:inherit;width:38px;height:38px;font-size:18px;padding:0;cursor:pointer;min-width:0}.mctl button+button{border-top:1px solid var(--line)}
+.mfull{position:fixed!important;left:0;top:0;width:100vw!important;height:100vh!important;height:100dvh!important;z-index:10000;border-radius:0!important;touch-action:none}body.mfs{overflow:hidden}
 .legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;margin:8px 0 0}.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
 a{color:var(--acc)}button,select,input{font:inherit;color:var(--ink)}button{padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card2);cursor:pointer}button:hover{border-color:var(--acc)}
 button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}button.warn{color:var(--bad)}.acts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
@@ -240,7 +243,7 @@ info.remove();if(!tot){c.append(el('p','mut','Brak danych o przechyle.'));return
 C.forEach((b,i)=>{const row=el('div','hb');const bar=el('div');const f=el('i');f.style.background=b[1];f.style.width=(cnt[i]/tot*100)+'%';bar.append(f);row.append(el('span',null,b[2]),bar,el('span','mut',fmt(cnt[i]/tot*100,1)+'%'));c.append(row)});
 c.append(el('small','mut','Liczone z próbek co 20 s przy prędkości powyżej 5 km/h.'))}
 async function allMap(c,ls){ls=ls.filter(l=>l.length>1);if(!ls.length){c.append(el('p','mut','Brak tras.'));return}const div=el('div','mapd');c.append(div);
-if(await loadLeaflet()){try{const map=L.map(div,{zoomControl:false});baseLayer(map);const all=[];for(const l of ls){const ll=l.map(p=>[p[0],p[1]]);all.push(...ll);L.polyline(ll,{color:'#e8590c',weight:3,opacity:.7}).addTo(map)}map.fitBounds(L.latLngBounds(all),{padding:[20,20]});return}catch(e){}}
+if(await loadLeaflet()){try{const map=L.map(div,{zoomControl:false});baseLayer(map);const all=[];for(const l of ls){const ll=l.map(p=>[p[0],p[1]]);all.push(...ll);L.polyline(ll,{color:'#e8590c',weight:3,opacity:.7}).addTo(map)}map.fitBounds(L.latLngBounds(all),{padding:[20,20]});mapCtl(map,div,all,20);return}catch(e){}}
 const pts=[].concat(...ls),W=700,H=460,p=proj(pts,W,H,16),svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H});let k=0;for(const l of ls){let d='';for(let i=0;i<l.length;i++)d+=(i?'L':'M')+p.X(k+i)+' '+p.Y(k+i);k+=l.length;svg.append(svgEl('path',{d,fill:'none',stroke:'#e8590c','stroke-width':2.5,opacity:.75}))}div.replaceWith(svg)}
 function legend(){const g=el('div','legend');for(const c of C){const s=el('span');const i=el('i');i.style.background=c[1];s.append(i,c[2]);g.append(s)}return g}
 function marks(pts){const m={};let ml=0,mr=0,ms=-1;for(let i=0;i<pts.length;i++){const l=pts[i][2],v=pts[i][3];if(l!==null&&l<-ml&&-l>20){ml=-l;m.L=i}if(l!==null&&l>mr&&l>20){mr=l;m.R=i}if(v!==null&&v>ms){ms=v;m.V=i}}
@@ -281,9 +284,23 @@ const d=Math.hypot(p[0]-q[0],(p[1]-q[1])*Math.cos(p[0]*Math.PI/180))*111200;cons
 if(v!==null&&v!==undefined&&v<5){if(still)continue;still=true;out.push(i);lk=i;continue}still=false;
 if(p[5]!==null&&q[5]!==null&&p[5]>q[5]&&d/(p[5]-q[5])>70&&d<5000)continue;out.push(i);lk=i}if(out[out.length-1]!==pts.length-1)out.push(pts.length-1);return out}
 const RIDEC=['#3d8bfd','#f76707','#40c057','#be4bdb','#fab005','#15aabf','#e64980','#94d82d'];
+/* 1.5.37: kłódka (na telefonie domyślnie zamknięta: jeden palec przewija stronę, mapę powiększa się dwoma palcami),
+   ⤢ cała trasa, ⛶ pełny ekran mapy (strona pod spodem stoi). Te same przyciski co w mapie Trasy. */
+function mapCtl(map,div,ll,pad){const touch=matchMedia('(pointer:coarse)').matches;let locked=touch,full=false,before=touch;
+if(!touch)L.control.zoom({position:'topright'}).addTo(map);
+let lb,fb;const apply=()=>{if(locked){map.dragging.disable();map.scrollWheelZoom.disable()}else{map.dragging.enable();map.scrollWheelZoom.enable()}map.touchZoom.enable();map.doubleClickZoom.enable();
+if(lb){lb.textContent=locked?'🔒':'🔓';lb.title=locked?'Mapa zablokowana – jeden palec przewija stronę. Dotknij, by przesuwać mapę':'Mapa odblokowana – dotknij, by blokować'}};
+const C=L.Control.extend({options:{position:'topright'},onAdd(){const d=L.DomUtil.create('div','mctl');L.DomEvent.disableClickPropagation(d);
+lb=L.DomUtil.create('button','',d);lb.type='button';lb.onclick=()=>{if(full)return;locked=!locked;apply()};
+const f=L.DomUtil.create('button','',d);f.type='button';f.textContent='⤢';f.title='Pokaż całą trasę';f.onclick=()=>map.fitBounds(L.latLngBounds(ll),{padding:[pad,pad]});
+fb=L.DomUtil.create('button','',d);fb.type='button';fb.textContent='⛶';fb.title='Pełny ekran mapy';fb.onclick=()=>{full=!full;
+if(full){before=locked;locked=false;document.body.classList.add('mfs');div.classList.add('mfull')}else{locked=before;document.body.classList.remove('mfs');div.classList.remove('mfull')}
+fb.textContent=full?'✕':'⛶';fb.title=full?'Zamknij pełny ekran':'Pełny ekran mapy';apply();setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds(ll),{padding:[pad,pad]})},60)};return d}});
+new C().addTo(map);apply()}
 function mapView(div,pts,m,o){o=o||{};const map=L.map(div,{zoomControl:false,attributionControl:true});
 /* 1.5.30: widok mapy ustawiony przed rysowaniem linii – bez niego Leaflet rzucał błąd i zostawał sam szkic trasy bez podkładu */
 map.fitBounds(L.latLngBounds(pts.map(p=>[p[0],p[1]])),{padding:[24,24]});
+mapCtl(map,div,pts.map(p=>[p[0],p[1]]),24);
 baseLayer(map,()=>{div.parentNode.insertBefore(el('p','mut','Podkład mapy niedostępny (brak internetu); sama trasa jest z karty.'),div.nextSibling)});
 const lay=L.layerGroup().addTo(map),ix=drawIdx(pts),rideOf=i=>{const b=o.bounds||[0];let k=0;while(k+1<b.length&&b[k+1]<=i)k++;return k};
 map._draw=mode=>{lay.clearLayers();let run=[],rc=null;const flush=()=>{if(run.length>1)L.polyline(run,{color:rc,weight:4,opacity:.95}).addTo(lay)};
