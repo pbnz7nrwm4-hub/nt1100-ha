@@ -28,6 +28,11 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.20 (ekran 5" 2.0.1)
+
+- Ekran 5" 2.0.1: w jeździe małe ikony stacji paliw i restauracji przy trasie (do 150 m od trasy przed
+  motocyklem; bez trasy wszystkie w pobliżu). Stacje mają ikonę dystrybutora zamiast litery „P”.
+
 ## Zmiany w 1.5.19 (ekran 5" jako główny)
 
 - Ekran 5" jest teraz głównym ekranem na kierownicy. Opis (rozdział „Ekran nawigacji”), instrukcja
