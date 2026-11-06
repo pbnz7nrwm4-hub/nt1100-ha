@@ -29,6 +29,10 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.34 (ceny paliw w panelu)
+- Na mapie w panelu (warstwa „Stacje”) i na liście „Po drodze” stacje paliw pokazują cenę Pb95 z Google (ten sam klucz co dla ekranu, w Ustawieniach nawigacji). Cena pojawia się w dymku stacji po kliknięciu, a na liście przy pierwszych sześciu stacjach. Pamięć ceny to 1 godzina, więc kolejne podglądy nie kosztują zapytań. Bez klucza lub bez ceny stacja wygląda jak dotąd.
+- W Ustawieniach nawigacji, pod kluczem Google, jest licznik zapytań do Google w bieżącym miesiącu (liczone są tylko zapytania, które naprawdę poszły, nie te z pamięci). Od 500 zapytań napis robi się czerwony. Alert budżetu nadal ustawia się w Google Cloud (Rozliczenia → Budżety i alerty).
+
 ## Zmiany w 1.5.33 (ekran 5" 2.0.4: odcinki trasy w kolorach wariantów)
 
 Ekran rysuje linię trasy w kolorach odcinków jak panel (szybko niebiesko, lekko kręto zielono, kręto pomarańczowo, bardzo kręto czerwono, fioletowa obwódka „Mojego planu”), na stronie Trasa pokazuje kolejne warianty, a na liście tras szkic wybranej trasy w tych kolorach; działa offline, bo warianty są w paczce trasy na karcie. Droga powrotu liczona bez internetu jest teraz turkusowa, żeby nie myliła się z fioletem planu.

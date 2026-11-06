@@ -1236,6 +1236,18 @@ class NavServerTest(unittest.TestCase):
                 self.assertEqual(len(calls), 2)  # z pamięci
                 code, _ = self.jpost(self.iu + "/api/nav/fuel_prices", pl)
                 self.assertEqual(code, 401)
+                # 1.5.34: to samo z panelu (ingress, bez klucza ekranu), z tej samej pamięci
+                code, j = self.jpost(self.pu + "/api/nav/fuel_prices", pl)
+                self.assertEqual(code, 200, j)
+                self.assertEqual(j["prices"][0]["pb95"], 6.19)
+                self.assertEqual(len(calls), 2)
+                code, j = self.jpost(self.pu + "/api/nav/fuel_prices", {"places": "x"})
+                self.assertEqual(code, 400)
+                # licznik zapytań do Google: tylko te, które poszły (2 stacje z kluczem), nie z pamięci
+                code, j = self.jpost(self.pu + "/api/nav/settings", {})
+                self.assertEqual(code, 200, j)
+                self.assertEqual(j["google_usage"]["n"], 2)
+                self.assertEqual(j["google_usage"]["warn"], 500)
             finally:
                 navmod.http_json = o2
             # bez klucza: odpowiedź bez cen, nie błąd

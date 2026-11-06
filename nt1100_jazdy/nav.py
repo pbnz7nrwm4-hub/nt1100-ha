@@ -1353,6 +1353,21 @@ class Nav:
                         out.append(e)
         return out
 
+    # ---- licznik zapytań do Google (1.5.34): miesięczny, tylko zapytania, które naprawdę poszły (nie z pamięci)
+    GOOGLE_WARN = 500
+
+    def google_usage(self):
+        m = time.strftime("%Y-%m")
+        u = self._read(os.path.join(self.dir, "google_uzycie.json"), {})
+        if not isinstance(u, dict) or u.get("month") != m:
+            u = {"month": m, "n": 0}
+        return {"month": u["month"], "n": int(u.get("n") or 0), "warn": self.GOOGLE_WARN}
+
+    def _google_count(self):
+        u = self.google_usage()
+        u["n"] += 1
+        self._write(os.path.join(self.dir, "google_uzycie.json"), {"month": u["month"], "n": u["n"]})
+
     # ---- ceny paliw (1.5.23): Google Places, stacja po stacji, pamięć 1 h
     def fuel_prices(self, places):
         """[{lat, lon, name}] -> lista tej samej długości: {"text": "6,19 zł · 2 h temu",
@@ -1373,6 +1388,7 @@ class Nav:
                 out.append(c[1])
                 continue
             try:
+                self._google_count()
                 r = fuel_price_google(s["google_key"], lat, lon)
             except Exception as e:
                 log("ceny paliw:", e)
