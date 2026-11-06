@@ -282,6 +282,8 @@ if(v!==null&&v!==undefined&&v<5){if(still)continue;still=true;out.push(i);lk=i;c
 if(p[5]!==null&&q[5]!==null&&p[5]>q[5]&&d/(p[5]-q[5])>70&&d<5000)continue;out.push(i);lk=i}if(out[out.length-1]!==pts.length-1)out.push(pts.length-1);return out}
 const RIDEC=['#3d8bfd','#f76707','#40c057','#be4bdb','#fab005','#15aabf','#e64980','#94d82d'];
 function mapView(div,pts,m,o){o=o||{};const map=L.map(div,{zoomControl:false,attributionControl:true});
+/* 1.5.30: widok mapy ustawiony przed rysowaniem linii – bez niego Leaflet rzucał błąd i zostawał sam szkic trasy bez podkładu */
+map.fitBounds(L.latLngBounds(pts.map(p=>[p[0],p[1]])),{padding:[24,24]});
 baseLayer(map,()=>{div.parentNode.insertBefore(el('p','mut','Podkład mapy niedostępny (brak internetu); sama trasa jest z karty.'),div.nextSibling)});
 const lay=L.layerGroup().addTo(map),ix=drawIdx(pts),rideOf=i=>{const b=o.bounds||[0];let k=0;while(k+1<b.length&&b[k+1]<=i)k++;return k};
 map._draw=mode=>{lay.clearLayers();let run=[],rc=null;const flush=()=>{if(run.length>1)L.polyline(run,{color:rc,weight:4,opacity:.95}).addTo(lay)};
@@ -292,7 +294,7 @@ map._draw(o.mode||'lean');
 const dot=(i,f,t)=>{const k=L.circleMarker([pts[i][0],pts[i][1]],{radius:7,color:'#fff',weight:2,fillColor:f,fillOpacity:1}).addTo(map);if(t)k.bindTooltip(t,{permanent:true,direction:'top',offset:[0,-6],className:'lab'});return k};
 dot(0,'#2f9e44');dot(pts.length-1,'#1d2129');
 if(m.L!==undefined)dot(m.L,'#e03131','L '+fmt(-pts[m.L][2])+'°');if(m.R!==undefined)dot(m.R,'#e03131','P '+fmt(pts[m.R][2])+'°');if(m.V!==undefined)dot(m.V,'#1971c2',fmt(pts[m.V][3])+' km/h');
-map.fitBounds(L.latLngBounds(pts.map(p=>[p[0],p[1]])),{padding:[24,24]});return map}
+return map}
 async function place(lat,lon){const k='geo:'+lat.toFixed(3)+','+lon.toFixed(3);try{const c=localStorage.getItem(k);if(c)return c}catch(e){}
 const ac=new AbortController();setTimeout(()=>ac.abort(),4000);
 const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat='+lat+'&lon='+lon,{signal:ac.signal});const j=await r.json();const a=j.address||{};
