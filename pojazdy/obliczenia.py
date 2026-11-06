@@ -149,6 +149,10 @@ def odcinki(tankowania, ladowania=None, prad_od=None, korekta=None):
                 kwh = nowe
             o["kwh"] = round(kwh, 2)
             o["kwh100"] = round(kwh / o["km"] * 100, 2)
+            # zakres: bez korekty (ładowania z gniazdka) a z korektą przy pojemności brutto; prawda leży pomiędzy,
+            # bo użyteczna pojemność jest mniejsza od brutto, a przyrost z silnika i hamowania nie pochodzi z gniazdka
+            surowe = o.get("kwh_ladowano", kwh)
+            o["kwh_min"], o["kwh_max"] = round(min(kwh, surowe), 2), round(max(kwh, surowe), 2)
             o["koszt_pradu"] = round(kw, 2)
             o["ladowan"] = ile
             o["zl100"] = round((o["koszt_paliwa"] + kw) / o["km"] * 100, 2)
@@ -175,6 +179,9 @@ def srednie(odc, ile=None):
             kwh = sum(x["kwh"] for x in z)
             kpr = sum(x["koszt_pradu"] for x in z)
             kpz = sum(x["koszt_paliwa"] for x in z)
+            lo = sum(x.get("kwh_min", x["kwh"]) for x in z)
+            hi = sum(x.get("kwh_max", x["kwh"]) for x in z)
+            out.update(kwh100_od=round(lo / kmz * 100, 2), kwh100_do=round(hi / kmz * 100, 2))
             out.update(kwh100=round(kwh / kmz * 100, 2), kwh=round(kwh, 2), km_prad=round(kmz),
                        zl100=round((kpz + kpr) / kmz * 100, 2), zl100_paliwo=round(kpz / kmz * 100, 2),
                        zl100_prad=round(kpr / kmz * 100, 2))

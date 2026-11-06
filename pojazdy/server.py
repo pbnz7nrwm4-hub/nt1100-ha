@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -291,7 +291,24 @@ def statystyki(p, nazwa_okresu):
                        "koszt": round(sum(float(x.get("koszt") or 0) for x in lo), 2),
                        "koszt_wartosc": round(sum(float(x.get("koszt_wartosc") or 0) for x in lo), 2),
                        "sprawnosc": round(kwb / kws, 3) if kws > 0 else None, "ladowan": len(lo)}
+        out["pomiar_baterii"] = pomiar_baterii(p, l)
     return out
+
+
+def pomiar_baterii(p, ladowania):
+    """Na sucho: ile kWh z gniazdka idzie na 100 % wskaźnika baterii (z sesji, które mają % przed i po).
+    To jest dokładnie to, co mnoży korekta odcinka (pojemność ÷ sprawność), więc można ją kiedyś zastąpić pomiarem.
+    Ustawienie (pojemność brutto ÷ sprawność) pokazane obok do porównania; do obliczeń na razie NIE wchodzi."""
+    ses = [x for x in ladowania if not x.get("wykluczone") and x.get("zrodlo") != "ekran_auta"
+           and x.get("soc_od") is not None and x.get("soc_do") is not None and float(x.get("kwh") or 0) > 0
+           and float(x["soc_do"]) - float(x["soc_od"]) >= 10]
+    ustaw = None
+    if p.get("bateria_kwh"):
+        ustaw = round(float(p["bateria_kwh"]) / SPRAWNOSC_LADOWANIA, 2)
+    ds = sum(float(x["soc_do"]) - float(x["soc_od"]) for x in ses)
+    kwh = sum(float(x["kwh"]) for x in ses)
+    return {"sesji": len(ses), "kwh_na_100": round(kwh / ds * 100, 2) if ds > 0 else None, "ustawienie_kwh_na_100": ustaw,
+            "uwaga": "na sucho: do obliczeń wchodzi ustawienie, nie pomiar"}
 
 
 def historia(pid=None, typ=None, limit=400):
