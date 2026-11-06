@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.28"
+VERSION = "1.5.29"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))

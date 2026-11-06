@@ -25,6 +25,9 @@ class StronaTest(unittest.TestCase):
             html = f.read()
         scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
         self.assertTrue(scripts)
+        # 1.5.29: cały wyjazd ma te same wykresy i odtwarzanie co jedna jazda
+        self.assertIn("function rideCharts(", html)
+        self.assertIn("player(D,m,pts,xs,map,trk,CH)", html)
         with tempfile.TemporaryDirectory() as d:
             for i, js in enumerate(scripts):
                 p = os.path.join(d, "s%d.js" % i)
