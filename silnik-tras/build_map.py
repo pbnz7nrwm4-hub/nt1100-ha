@@ -36,7 +36,26 @@ Format kwadratu (little-endian):
          Część „tło” jest wtedy zawsze zapisana (choćby z zerami).
 Starsze czytniki kończą na punktach (albo na tle) i ignorują resztę pliku.
 
-manifest.json: {"format":1,"wersja":2,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...], ...}
+Od wersji mapy 3 obok kwadratów są pliki grafu tras g_<lat10>_<lon10>.ntg (nawigacja offline na
+ekranie, te same kwadraty 0,1°). Węzeł = skrzyżowanie (albo koniec drogi) leżące w tym kwadracie,
+krawędź = kawałek drogi między dwoma kolejnymi skrzyżowaniami, w kierunku, w którym wolno jechać.
+  "NTG1" u8 wersja=1 u8 0 i16 lat10 i16 lon10 u32 n_węzłów u32 n_kraw_głównych u32 n_kraw_bocznych
+  u32 n_zakazów
+  węzły (16 B): i32 lat1e6 i32 lon1e6 u32 pierwsza_główna u32 pierwsza_boczna
+         (krawędzie węzła i: od pierwsza[i] do pierwsza[i+1]-1, dla ostatniego do n_kraw)
+  krawędzie główne (drogi klasy 1–6 i łączniki 11–15), potem boczne (7–10); każda 22 B:
+         i8 dlat i8 dlon (kwadrat węzła końcowego minus ten kwadrat) u32 węzeł_końcowy (numer w tamtym
+         kwadracie) u16 długość_m u8 prędkość_kmh u8 klasa u8 flagi (1 płatna, 2 tunel, 4 rondo,
+         8 pod prąd geometrii drogi, 16 most) u8 nawierzchnia (0 utwardzona/nieznana, 1 szuter,
+         2 grunt) u8 priorytet_% (stały, z motocykl.json) u8 krętość×250 (odległość w linii prostej
+         / długość, jak curvature w GraphHopperze) u32 id_drogi (jak w .ntt) u16 pkt_od u16 pkt_do
+         (indeksy punktów tej drogi w .ntt kwadratu węzła początkowego; pkt_od > pkt_do = pod prąd)
+  zakazy skrętu (13 B): u32 węzeł (w tym kwadracie) u32 droga_z u32 droga_do u8 rodzaj
+         (1 = zakaz wjazdu z drogi_z w drogę_do, 2 = z drogi_z wolno tylko w drogę_do)
+
+manifest.json: {"format":1,"wersja":3,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
+"graph": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]}, ...}
+(lista grafu nazywa się „cells”, nie „files”, bo proste czytniki JSON na ekranie szukają pierwszego „files”).
 crc32 jak w zlib (binascii.crc32), dziesiętnie.
 """
 import binascii
@@ -51,8 +70,9 @@ import time
 
 FORMAT = 1
 # Wersja zawartości mapy: aktualizuj.sh przebudowuje kwadraty, gdy kontener ma starszą
-# (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B).
-MAP_VERSION = 2
+# (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B);
+# 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie.
+MAP_VERSION = 3
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -99,6 +119,24 @@ F_ONEWAY, F_UNPAVED, F_TOLL, F_ROUNDABOUT, F_FERRY, F_TUNNEL, F_BRIDGE, F_LIT = 
 
 UNPAVED = {"unpaved", "gravel", "dirt", "ground", "grass", "sand", "mud", "fine_gravel", "compacted",
            "earth", "cobblestone", "sett", "pebblestone", "woodchips", "rock", "unhewn_cobblestone"}
+
+# Graf tras dla ekranu (nawigacja offline). Prędkości jak domyślne „car_average_speed”
+# GraphHoppera; z limitem: 0,9 × limit. Reguły wyboru drogi (warianty, omijanie) stosuje ekran
+# tak samo jak dodatek w gh_custom_model (nav.py) – zob. nt1100_jazdy/graf.py.
+GRAPH_FORMAT = 1
+MAIN_CLASSES = {1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15}
+CLASS_KMH = {1: 100, 2: 70, 3: 65, 4: 60, 5: 50, 6: 30, 7: 30, 8: 20, 9: 15, 10: 5,
+             11: 70, 12: 65, 13: 60, 14: 50, 15: 40}
+G_TOLL, G_TUNNEL, G_ROUNDABOUT, G_REVERSE, G_BRIDGE = 1, 2, 4, 8, 16
+S_PAVED, S_GRAVEL, S_DIRT = 0, 1, 2
+SURF_GRAVEL = {"gravel", "fine_gravel", "compacted"}
+SURF_DIRT = {"unpaved", "dirt", "ground", "grass", "sand", "mud", "earth", "woodchips", "rock"}
+R_NO, R_ONLY = 1, 2
+EDGE_TMP = struct.Struct("<qqiiiiHBBBBBBqHH")   # krawędź w pliku roboczym (pełne id węzłów)
+EDGE_REC = struct.Struct("<bbIHBBBBBBIHH")     # krawędź w pliku .ntg (22 B)
+NODE_REC = struct.Struct("<iiII")
+RESTR_REC = struct.Struct("<IIIB")
+GRAPH_HEAD = struct.Struct("<4sBBhhIIII")
 
 # Rodzaje punktów.
 P_CAMERA, P_SECTION_START, P_SECTION_END = 1, 2, 3
@@ -520,6 +558,173 @@ def way_cells(pts):
     return cells
 
 
+def restriction_of(tags, members):
+    """Zakaz skrętu z relacji type=restriction: (węzeł, droga_z, droga_do, rodzaj) albo None.
+    Tylko „przez węzeł” (via = węzeł) i obowiązujące samochody/motocykle."""
+    v = tags.get("restriction:motorcycle") or tags.get("restriction:motorcar") or tags.get("restriction")
+    if not v or "motorcar" in (tags.get("except") or "") or "motorcycle" in (tags.get("except") or ""):
+        return None
+    if v.startswith("no_"):
+        kind = R_NO
+    elif v.startswith("only_"):
+        kind = R_ONLY
+    else:
+        return None
+    fr, via, to = members.get("from", []), members.get("via", []), members.get("to", [])
+    if len(fr) != 1 or len(via) != 1 or len(to) != 1 or not via[0].startswith("n") or \
+            not fr[0].startswith("w") or not to[0].startswith("w"):
+        return None
+    return int(via[0][1:]), int(fr[0][1:]), int(to[0][1:]), kind
+
+
+def surface_kind(tags):
+    surf = (tags.get("surface") or "").split(":")[0]
+    if surf in SURF_GRAVEL:
+        return S_GRAVEL
+    if surf in SURF_DIRT:
+        return S_DIRT
+    return S_PAVED
+
+
+def edge_kmh(cls, limit, surf):
+    v = 0.9 * limit if limit else CLASS_KMH.get(cls, 30)
+    if cls == 1:
+        v = min(v, 130)
+    if surf != S_PAVED:
+        v = min(v, 40)
+    return max(5, min(140, int(round(v))))
+
+
+def base_priority(cls, tags):
+    """Stały priorytet drogi (%), jak w silnik-tras/motocykl.json."""
+    p = 1.0
+    if cls in (7, 10):
+        p *= 0.6
+    if tags.get("tracktype") in ("grade3", "grade4", "grade5"):
+        p *= 0.1
+    return max(1, int(round(p * 100)))
+
+
+def graph_edges(f, wid, cls, flags, tags, limit, limit_back, pts, juncs):
+    """Krawędzie grafu z jednej drogi (między kolejnymi skrzyżowaniami) do pliku roboczego."""
+    surf = surface_kind(tags)
+    prio = base_priority(cls, tags)
+    gfl = (G_TOLL if flags & F_TOLL else 0) | (G_TUNNEL if flags & F_TUNNEL else 0) | \
+          (G_ROUNDABOUT if flags & F_ROUNDABOUT else 0) | (G_BRIDGE if flags & F_BRIDGE else 0)
+    kmh = edge_kmh(cls, limit, surf)
+    kmh_back = edge_kmh(cls, limit_back or limit, surf)
+    js = sorted(juncs)
+    n = 0
+    for (i0, n0), (i1, n1) in zip(js, js[1:]):
+        if n0 == n1 or i1 <= i0:
+            continue
+        length = 0.0
+        for a, b in zip(pts[i0:i1], pts[i0 + 1:i1 + 1]):
+            length += dist_m(a, b)
+        if length < 0.5:
+            continue
+        curv = int(round(250 * min(1.0, dist_m(pts[i0], pts[i1]) / length)))
+        lm = min(0xFFFF, int(round(length)))
+        a, b = pts[i0], pts[i1]
+        la, loa, lb, lob = (int(round(a[0] * 1e6)), int(round(a[1] * 1e6)), int(round(b[0] * 1e6)),
+                            int(round(b[1] * 1e6)))
+        f.write(EDGE_TMP.pack(n0, n1, la, loa, lb, lob, lm, kmh, cls, gfl, surf, prio, curv, wid, i0, i1))
+        n += 1
+        if not flags & F_ONEWAY:
+            f.write(EDGE_TMP.pack(n1, n0, lb, lob, la, loa, lm, kmh_back, cls, gfl | G_REVERSE, surf, prio, curv,
+                                  wid, i1, i0))
+            n += 1
+    return n
+
+
+def dist_m(a, b):
+    k = math.cos(math.radians((a[0] + b[0]) / 2))
+    return math.hypot((b[0] - a[0]) * 110540.0, (b[1] - a[1]) * 111320.0 * k)
+
+
+def build_graph(edges_tmp, restrictions, out):
+    """Składa graf z pliku roboczego krawędzi w pliki g_*.ntg (po kwadratach); zwraca część manifestu."""
+    t0 = time.time()
+    rec = EDGE_TMP.size
+    # 1. węzły: id -> kwadrat i numer w kwadracie (posortowane po id, żeby wynik był powtarzalny)
+    coords = {}
+    with open(edges_tmp, "rb") as f:
+        while True:
+            chunk = f.read(rec * 20000)
+            if not chunk:
+                break
+            for n0, n1, la, loa, lb, lob, *_ in EDGE_TMP.iter_unpack(chunk):
+                coords[n0] = (la << 32) | (loa & 0xFFFFFFFF)   # jedna liczba zamiast pary: mniej pamięci
+                coords[n1] = (lb << 32) | (lob & 0xFFFFFFFF)
+
+    def unpack(v):
+        lo = v & 0xFFFFFFFF
+        return v >> 32, lo - (1 << 32) if lo & 0x80000000 else lo
+    by_cell = collections.defaultdict(list)
+    for nid, v in coords.items():
+        la, lo = unpack(v)
+        by_cell[(la // 100000, lo // 100000)].append(nid)
+    index = {}
+    for key, ids in by_cell.items():
+        ids.sort()
+        for i, nid in enumerate(ids):
+            index[nid] = i
+    # 2. krawędzie do kwadratów węzła początkowego: (numer węzła, główna?, rekord)
+    edges = collections.defaultdict(bytearray)
+    with open(edges_tmp, "rb") as f:
+        while True:
+            chunk = f.read(rec * 20000)
+            if not chunk:
+                break
+            for n0, n1, la, loa, lb, lob, lm, kmh, cls, gfl, surf, prio, curv, wid, i0, i1 in \
+                    EDGE_TMP.iter_unpack(chunk):
+                k0 = (la // 100000, loa // 100000)
+                k1 = (lb // 100000, lob // 100000)
+                dla, dlo = k1[0] - k0[0], k1[1] - k0[1]
+                if not (-127 <= dla <= 127 and -127 <= dlo <= 127):
+                    continue
+                edges[k0] += struct.pack(">IB", index[n0], 0 if cls in MAIN_CLASSES else 1) + \
+                    EDGE_REC.pack(dla, dlo, index[n1], lm, kmh, cls, gfl, surf, prio, curv, wid & 0xFFFFFFFF,
+                                  i0, i1)
+    os.remove(edges_tmp)
+    restr = collections.defaultdict(list)
+    for via, fr, to, kind in restrictions:
+        if via in coords:
+            la, lo = unpack(coords[via])
+            restr[(la // 100000, lo // 100000)].append(RESTR_REC.pack(index[via], fr & 0xFFFFFFFF,
+                                                                      to & 0xFFFFFFFF, kind))
+    # 3. zapis po kwadratach
+    files = []
+    total = 0
+    step = 5 + EDGE_REC.size
+    for key in sorted(by_cell):
+        ids = by_cell[key]
+        buf = edges.pop(key, b"")
+        recs = sorted(buf[i:i + step] for i in range(0, len(buf), step))
+        main = [r for r in recs if r[4] == 0]
+        minor = [r for r in recs if r[4] == 1]
+        nodes = bytearray()
+        im = ib = 0
+        for i, nid in enumerate(ids):
+            la, lo = unpack(coords[nid])
+            nodes += NODE_REC.pack(la, lo, im, ib)
+            while im < len(main) and struct.unpack_from(">I", main[im])[0] == i:
+                im += 1
+            while ib < len(minor) and struct.unpack_from(">I", minor[ib])[0] == i:
+                ib += 1
+        rs = sorted(restr.get(key, []))
+        data = GRAPH_HEAD.pack(b"NTG1", GRAPH_FORMAT, 0, key[0], key[1], len(ids), len(main), len(minor), len(rs)) + \
+            bytes(nodes) + b"".join(bytes(r[5:]) for r in main) + b"".join(bytes(r[5:]) for r in minor) + b"".join(rs)
+        name = "g_%d_%d.ntg" % key
+        with open(os.path.join(out, name), "wb") as f:
+            f.write(data)
+        files.append([name, len(data), binascii.crc32(data)])
+        total += len(data)
+    print("graf: %d węzłów, %d kwadratów, %.1f MB (%.0f s)" % (len(coords), len(files), total / 1e6,
+                                                                time.time() - t0), flush=True)
+    return {"format": GRAPH_FORMAT, "bytes": total, "cells": files}
+
+
 def build(pbf, out, bbox=None):
     t0 = time.time()
     os.makedirs(out, exist_ok=True)
@@ -530,7 +735,7 @@ def build(pbf, out, bbox=None):
         src = os.path.join(work, "wycinek.pbf")
         run(["osmium", "extract", "-b", bbox, pbf, "-o", src, "--overwrite", "-s", "smart"])
     roads = os.path.join(work, "drogi.pbf")
-    run(["osmium", "tags-filter", src, "w/highway=" + ROAD_FILTER, "r/type=enforcement"] + NODE_FILTER +
+    run(["osmium", "tags-filter", src, "w/highway=" + ROAD_FILTER, "r/type=enforcement,restriction"] + NODE_FILTER +
         ["-o", roads, "--overwrite"])
 
     # 1. węzły używane przez >= 2 drogi = skrzyżowania (sort -n | uniq -d)
@@ -565,6 +770,7 @@ def build(pbf, out, bbox=None):
 
     # 2. odcinkowe pomiary: relacje enforcement z from/to
     sections = {}  # node id -> (kind, limit, pair)
+    restrictions = []  # (węzeł, droga_z, droga_do, rodzaj) – zakazy skrętu dla grafu tras
     pair_no = 0
     with subprocess.Popen(["osmium", "cat", roads, "-t", "relation", "-f", "opl"], stdout=subprocess.PIPE,
                           text=True) as p:
@@ -581,6 +787,11 @@ def build(pbf, out, bbox=None):
                         if "@" in m:
                             ref, role = m.split("@", 1)
                             members.setdefault(role, []).append(ref)
+            if tags.get("type") == "restriction":
+                r = restriction_of(tags, members)
+                if r:
+                    restrictions.append(r)
+                continue
             if tags.get("type") != "enforcement":
                 continue
             if tags.get("enforcement") not in ("average_speed", "maxspeed", "section_control"):
@@ -634,6 +845,9 @@ def build(pbf, out, bbox=None):
                            stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
     opl_line = None
     nways = npts = npoints = 0
+    edges_tmp = os.path.join(work, "krawedzie.bin")
+    etmp = open(edges_tmp, "wb")
+    nedges = 0
     for line in exp.stdout:
         line = line.lstrip("\x1e")
         if not line.startswith("{"):
@@ -729,12 +943,15 @@ def build(pbf, out, bbox=None):
             continue
         for key in way_cells(pts):
             cell(key).add_way(wid, cls, flags, limit, limit_back, name, ref, pts, juncs)
+        if refs_ids and len(refs_ids) == len(pts):
+            nedges += graph_edges(etmp, wid, cls, flags, tags, limit, limit_back, pts, juncs)
         nways += 1
         npts += len(pts)
         if nways % 100000 == 0:
             print("dróg: %d, punktów dróg: %d (%.0f s)" % (nways, npts, time.time() - t0), flush=True)
     exp.wait()
     opl.kill()
+    etmp.close()
     for nid, (kind, limit, pair) in sections.items():
         if nid in section_pts:
             lat, lon = section_pts[nid]
@@ -745,7 +962,7 @@ def build(pbf, out, bbox=None):
     add_background(src, work, cell)
     add_terrain(src, work, cell, cells)
 
-    # 5. zapis
+    # 5. zapis kwadratów (pamięć po nich zwalniamy przed składaniem grafu)
     files = []
     total = 0
     lats = [k[0] for k in cells]
@@ -755,11 +972,16 @@ def build(pbf, out, bbox=None):
         n, crc = cells[key].write(os.path.join(out, name))
         files.append([name, n, crc])
         total += n
+    cells.clear()
+
+    # 6. graf tras do nawigacji offline (pliki g_*.ntg)
+    graph = build_graph(edges_tmp, restrictions, out)
+    print("graf tras: %d krawędzi, %d zakazów skrętu" % (nedges, len(restrictions)), flush=True)
     manifest = {
         "format": FORMAT, "wersja": MAP_VERSION, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
         "source": os.path.basename(pbf), "ways": nways, "points": npoints, "bytes": total,
         "bbox": [min(lats) / CELL, min(lons) / CELL, (max(lats) + 1) / CELL, (max(lons) + 1) / CELL] if cells else None,
-        "files": files,
+        "files": files, "graph": graph,
     }
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f)

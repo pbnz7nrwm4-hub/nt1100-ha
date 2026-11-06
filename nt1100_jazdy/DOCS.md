@@ -28,6 +28,21 @@ gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował wła
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
 
+## Zmiany w 1.5.21 (graf tras do nawigacji offline)
+
+- Kontener dokłada do mapy na kartę **graf tras** (pliki `g_*.ntg` obok kwadratów mapy, mapa
+  w wersji 3). Z nim ekran 5" będzie liczył trasę sam, bez internetu: z wyborem wariantu (szybko,
+  lekko, kręto, bardzo kręto) i omijania (autostrady, płatne, gruntowe, szutrowe) według tych samych
+  suwaków co planer. Graf ma też jednokierunkowe i zakazy skrętu. Korków offline nie ma; gdy ekran
+  ma internet, może zapytać dodatek o trasę z silnika w domu.
+- Kontener sam przebuduje mapę po aktualizacji skryptów (raz, ok. godziny). Mapa na kartę
+  urośnie o graf, szacunkowo o kilkaset MB dla całej Polski. Dodatek pobierze go razem z mapą,
+  doda do paczki ZIP na kartę i do pobierania przez Wi-Fi (tylko zmienione kwadraty).
+- Program ekranu, który z grafu korzysta, przyjdzie w osobnej wersji ekranu. Do tego czasu graf
+  leży na karcie i nic nie zmienia.
+- Dla sprawdzenia: `/api/nav/offline?from=lat,lon&to=lat,lon&variant=kreto&avoid=autostrady`
+  liczy trasę tak, jak policzy ją ekran (długość, czas, punkty).
+
 ## Zmiany w 1.5.20 (ekran 5" 2.0.1)
 
 - Ekran 5" 2.0.1: w jeździe małe ikony stacji paliw i restauracji przy trasie (do 150 m od trasy przed

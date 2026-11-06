@@ -789,6 +789,74 @@ class NavServerTest(unittest.TestCase):
             self.jpost(self.pu + "/api/nav/settings", {"map_url": "", "home": None})
 
 
+    def test_11b_offline_graph_sync_and_route(self):
+        """Graf tras (mapa 3): pobierany z kontenera, w manifeście ekranu, w ZIP; trasa offline."""
+        import gzip
+        import zipfile
+        nv = srv.navapi.NAV
+        root = tempfile.mkdtemp(dir=TMP)
+        out = os.path.join(root, "mapa")
+        os.makedirs(out)
+        a, m, b = (50.05, 19.95), (50.05, 20.0), (50.05, 20.05)
+        c = build_map.Cell((500, 199))
+        c2 = build_map.Cell((500, 200))
+        for cell in (c, c2):
+            cell.add_way(7, 4, 0, 0, 0, "Prosta", "", [a, m, b], [(0, 11), (1, 12), (2, 13)])
+        files = []
+        for cell in (c, c2):
+            n, crc = cell.write(os.path.join(out, ntt.cell_name(cell.key)))
+            files.append([ntt.cell_name(cell.key), n, crc])
+        tmp = os.path.join(root, "kraw.bin")
+        with open(tmp, "wb") as f:
+            build_map.graph_edges(f, 7, 4, 0, {}, 0, 0, [a, m, b], [(0, 11), (1, 12), (2, 13)])
+        graph = build_map.build_graph(tmp, [], out)
+        with open(os.path.join(out, "manifest.json"), "w") as f:
+            json.dump({"format": 1, "wersja": 3, "built": "2026-11-06", "bytes": sum(x[1] for x in files),
+                       "files": files, "graph": graph}, f)
+        ms = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(MS.H, directory=root))
+        threading.Thread(target=ms.serve_forever, daemon=True).start()
+        try:
+            self.jpost(self.pu + "/api/nav/settings", {"map_url": "http://127.0.0.1:%d" % ms.server_address[1]})
+            code, j = self.jpost(self.pu + "/api/nav/map/sync", {"force": True})
+            self.assertTrue(j["ok"], j)
+            self.assertEqual(j["files"], 4)                       # 2 kwadraty mapy + 2 grafu
+            self.assertTrue(os.path.exists(os.path.join(nv.map_dir, "g_500_199.ntg")))
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/manifest.json?klucz=" + KEY)
+            mf = json.loads(body)
+            self.assertEqual(sorted(f[0] for f in mf["files"]), ["c_500_199.ntt", "c_500_200.ntt"])
+            self.assertEqual(sorted(f[0] for f in mf["graph"]["cells"]), ["g_500_199.ntg", "g_500_200.ntg"])
+            raw = open(os.path.join(nv.map_dir, "g_500_199.ntg"), "rb").read()
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/g_500_199.ntg.gz?klucz=" + KEY)
+            self.assertEqual((code, gzip.decompress(body)), (200, raw))
+            code, body, _ = self.req(self.iu + "/api/nav/mapa/g_500_199.ntg?klucz=" + KEY)
+            self.assertEqual((code, body), (200, raw))
+            # trasa offline jak na ekranie
+            code, body, _ = self.req(self.pu + "/api/nav/offline?from=50.05,19.951&to=50.05,20.049&variant=szybko")
+            j = json.loads(body)
+            self.assertTrue(j["ok"], j)
+            self.assertAlmostEqual(j["km"], 7.15, delta=0.2)
+            self.assertEqual(len(j["pts"]), 3)
+            code, body, _ = self.req(self.pu + "/api/nav/offline?from=x")
+            self.assertEqual(code, 400)
+            # ekran 5" dostaje ustawienia do liczenia offline
+            code, body, _ = self.req(self.iu + "/api/nav/ping?k=ekran5", headers={"X-Klucz": KEY})
+            off = json.loads(body)["offline"]
+            self.assertIn("kreto", off["curvy"])
+            self.assertIsInstance(off["avoid"], list)
+            code, body, _ = self.req(self.iu + "/api/nav/ping", headers={"X-Klucz": KEY})
+            self.assertNotIn("offline", json.loads(body))
+            # ZIP na kartę z grafem
+            for _ in range(100):
+                code, body, h = self.req(self.pu + "/api/nav/mapa.zip")
+                if code == 200:
+                    break
+                time.sleep(0.1)
+            names = zipfile.ZipFile(io.BytesIO(body)).namelist()
+            self.assertIn("mapa/g_500_200.ntg", names)
+        finally:
+            ms.shutdown()
+            self.jpost(self.pu + "/api/nav/settings", {"map_url": ""})
+
     def test_12_skip_town_and_round_trip_by_time(self):
         self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu})
         FakeGraphHopper.calls = []
