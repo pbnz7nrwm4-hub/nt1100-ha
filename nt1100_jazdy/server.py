@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.18"
+VERSION = "1.5.19"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -732,8 +732,10 @@ def versions(reload_store=False):
     box = device_version(s.get("box_fw"), (firmware_offer() or {}).get("version"),
                          int(s["box_seen"] / 1000) if s.get("box_seen") else None)
     sc = (navapi.NAV.screen_position() if navapi.NAV else None) or {}
-    screen = device_version(sc.get("fw"), (navapi.screen_firmware_offer() or {}).get("version"),
+    kind = navapi.screen_kind_of(sc.get("fw"))
+    screen = device_version(sc.get("fw"), (navapi.screen_firmware_offer(kind) or {}).get("version"),
                             sc.get("t_seen") or sc.get("t"))
+    screen["kind"] = kind
     url = navapi.NAV.settings()["engine_url"] if navapi.NAV else ""
     engine = {"configured": bool(url), "alive": engine_alive(url) if url else False}
     return {"addon": addon, "box": box, "screen": screen, "engine": engine}
