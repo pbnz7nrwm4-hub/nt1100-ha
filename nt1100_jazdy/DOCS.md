@@ -23,10 +23,21 @@ Cztery zakładki na dole ekranu:
   wersje oprogramowania.
 - **Ustawienia**: wszystkie ustawienia w zwijanych grupach, razem z ustawieniami nawigacji.
 
-**Mapa** jest wektorowa, w barwach dodatku (ciemna albo jasna według motywu panelu), z cieniowaniem
+**Mapa** w panelu jest wektorowa, w barwach dodatku (ciemna albo jasna według motywu panelu), z cieniowaniem
 gór oraz szczytami i przełęczami. Gdy silnik tras w kontenerze zbudował własne kafelki, mapa
 pochodzi w całości z domu (przez dodatek); wcześniej korzysta z OpenFreeMap, a bez internetu
 dla przeglądarki ze zwykłej mapy OpenStreetMap.
+
+## Zmiany w 1.5.19 (ekran 5" jako główny)
+
+- Ekran 5" jest teraz głównym ekranem na kierownicy. Opis (rozdział „Ekran nawigacji”), instrukcja
+  instalacji i lista problemów dotyczą go w pierwszej kolejności. Ekran 2,8" zszedł z motocykla;
+  jego opis został niżej jako „Ekran 2,8" (poprzedni)”.
+- Tryb **Samochód**: przy policzonej trasie pierwszy jest teraz przycisk „Wyślij na ekran” (ekran 5"
+  ma własny GPS, więc prowadzi też w aucie bez skrzynki). „🚗 Jadę (OsmAnd)” zostaje jako zapas.
+- Karta „Wersje oprogramowania” porównuje ekran z właściwą paczką (5" z `ekran5`, 2,8" z `ekran`)
+  i podaje, gdzie na danym ekranie jest „Sprawdź wersję”.
+- Ekran 5" nie był jeszcze sprawdzony na biurku ani w jeździe.
 
 ## Zmiany w 1.5.18 (ekran 5")
 
@@ -97,7 +108,8 @@ albo w Menu → „Sprawdź wersję” → „Aktualizuj 1.1.3”.
 Zakładka **Motocykl** → karta „Wersje oprogramowania” pokazuje w jednym miejscu dodatek, skrzynkę,
 ekran i silnik tras: zainstalowaną wersję, najnowszą i co zrobić, gdy jest nowsza (żółta kropka,
 u góry strony znaczek „nowa wersja”). Aktualizujesz tylko dodatek: skrzynka pobiera swoją wersję
-sama w domowym Wi-Fi, a ekran z Menu → Sprawdź wersję → Aktualizuj.
+sama w domowym Wi-Fi, a ekran z zakładki Menu → Sprawdź wersję → Aktualizuj (ekran 2,8":
+przytrzymaj ekran → Menu).
 
 ## Urządzenie NT1100 (MQTT)
 
@@ -125,7 +137,7 @@ Bez MQTT najważniejsze czujniki `sensor.nt1100_*` są ustawiane bezpośrednio (
 
 ## Nawigacja (zakładka „Trasy”)
 
-Planowanie tras dla ekranu nawigacji na kierownicy. Trasy liczy silnik tras w kontenerze
+Planowanie tras dla ekranu nawigacji na kierownicy (ekran 5", także w samochodzie). Trasy liczy silnik tras w kontenerze
 Proxmox (katalog `silnik-tras/` w repozytorium, instrukcja w jego README); bez niego działa
 wczytywanie plików GPX (np. z Kurvigera).
 
@@ -138,8 +150,10 @@ wczytywanie plików GPX (np. z Kurvigera).
   autostrad i promów; trasa okrężna o zadanej długości.
 - **Motocykl / samochód**: przełącznik na górze „Nowa trasa”. W samochodzie liczona jest
   najszybsza trasa (inne warianty można włączyć ręcznie), skrót „jedź do”, objazdy i powroty
-  na trasę też liczą się najszybciej, a ekran nie pokazuje wyniku zakrętu.
-- **Jazda autem z OsmAnd (korki)**: w trybie samochód przycisk „🚗 Jadę (OsmAnd)” zapisuje
+  na trasę też liczą się najszybciej, a ekran nie pokazuje wyniku zakrętu. Główna droga w aucie:
+  „Wyślij na ekran” i ekran 5" przełożony do samochodu (prowadzi na własnym GPS).
+- **Zapas: jazda z OsmAnd (korki)** – gdy ekranu nie ma pod ręką. W trybie samochód przycisk
+  „🚗 Jadę (OsmAnd)” zapisuje
   trasę i otwiera arkusz udostępniania (wybierz OsmAnd). Potem dodatek co „Sprawdzanie korków”
   minut patrzy na korki (TomTom) przed telefonem – pozycja z aplikacji Home Assistant
   (`device_tracker` telefonu; domyślnie ten od celu powiadomień, można wpisać w Ustawienia
@@ -149,7 +163,7 @@ wczytywanie plików GPX (np. z Kurvigera).
   Jeśli objazd nie jest szybszy, powiadomienie mówi, żeby zostać na trasie. Ten sam korek
   nie wraca co kilka minut. Sprawdzanie kończy się samo 800 m od celu (albo po 8 h,
   albo „Zakończ” na pasku nad punktami). iPhone nie pozwala podmienić trasy w OsmAnd w tle.
-  GPX z dodatku (motocykl i samochód) ma manewry w zapisie OsmAnd (skręty, ronda z numerem
+  GPX z dodatku (motocykl i samochód) ma też manewry w zapisie OsmAnd (skręty, ronda z numerem
   zjazdu) i czas przy każdym punkcie, więc OsmAnd prowadzi głosowo po trasie z dodatku bez
   „Dołącz do dróg” i pokazuje dobry czas przyjazdu.
 - **Ulubione miejsca** (szkoła, praca...): gwiazdka ☆ przy wyniku wyszukiwania albo przy punkcie
@@ -205,9 +219,49 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Ustawienia nawigacji**: adresy silnika i mapy, klucz TomTom, domyślny wariant,
   próg pochyłu dla wyniku zakrętu, częstość korków, próg zjazdu z trasy, dom.
 
-### Ekran nawigacji
+### Ekran nawigacji (5")
 
-Ekran na kierownicy dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
+Główny ekran na kierownicy to ekran 5" (oprogramowanie 2.x). Ma własny GPS, więc prowadzi także
+bez skrzynki (np. przełożony do samochodu). Na motocyklu skrzynka (od 1.4.4) dosyła mu przez
+Bluetooth swoją pozycję i dane z motocykla (obroty, bieg, gaz, temperatura, kody błędów); skrzynka
+zaczyna nadawać ok. 20 s po włączeniu zapłonu. Trasę, mapę, ustawienia i nowe oprogramowanie
+ekran dostaje z dodatku (port 8098, ten sam klucz co skrzynka), w domu przez Wi-Fi, w trasie przez
+hotspot telefonu.
+
+**Pierwsze uruchomienie.** Program wgrywa się raz kablem USB-C (obraz pełny `ekran5-…-full.bin`
+leży razem ze źródłami, nie ma go w tym repozytorium). Ekran bez ustawień otwiera sieć Wi-Fi
+„NT1100-Ekran” (hasło pokazuje sam ekran, przy każdym wejściu w ustawienia nowe). Na stronie
+`http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu (`http://IP-HA:8098`),
+adres spoza domu i klucz; tam też jasność, wygląd (ciemny / jasny w dzień / jasny), telefon
+i dźwięki. Mapa: paczka ZIP na kartę (zakładka Motocykl → „Ekran i mapa”). Później dodatek sam
+oferuje nowsze oprogramowanie (`ekran5.bin`), a w domu wgrywa na kartę ulubione i ostatnie trasy.
+
+**Zakładki na postoju**: Trasa, Pogoda, Dom, Motocykl, Muzyka, Telefon, Menu.
+- **Trasa**: Objazd 1 km (korek, roboty), Objazd 5 km (zamknięta droga), Pomiń punkt, Inna trasa
+  (z karty, bez internetu), Stacja, Jedzenie, Do domu, Koniec (usunięcie trasy: przytrzymaj 2 s).
+- **Pogoda**: prognoza na trasie z planowania (deszcz, wiatr, temperatura).
+- **Dom**: brama i garaż (encje z Ustawień → Planowanie i dom), drugi dotyk = Stop. Blisko domu
+  (poniżej 300 m i 15 km/h) te przyciski pojawiają się same.
+- **Motocykl**: dane ze skrzynki i kody błędów; **Muzyka** i **Telefon**: z iPhone’a.
+- **Menu**: jasność, Pobierz mapę, Sprawdź wersję / Aktualizuj, dźwięk, Ustawienia Wi-Fi, Demo trasy,
+  Restart.
+
+**W jeździe** przytrzymanie ekranu 1,5 s otwiera stronę Trasa z dużymi przyciskami.
+Mapa jest lekko pochylona, z drzewkami, numerami dróg i terenem z mapy na karcie; gdy ekran nie
+nadąża z rysowaniem, sam przechodzi na płaską. W jeździe kurs jest u góry, na postoju północ.
+
+**Telefon**: iPhone → Ustawienia → Bluetooth → „NT1100 Ekran 5” → zezwól na powiadomienia.
+Odpowiedź na wiadomość głosem przez Siri w kasku.
+
+**Zasilanie**: ekran gaśnie, gdy skrzynka milczy 3 min (30 min przy ładowaniu) albo po 10 min postoju,
+i budzi się dotykiem, gdy skrzynka znów nadaje albo gdy ruszysz. Zgaszony na samej baterii wyłącza się
+całkiem po 20 min, a na zasilaniu 12 V po 6 h.
+
+### Ekran 2,8" (poprzedni)
+
+Zszedł z motocykla (zostaje na ekranie 1.1.3, paczka `ekran`). Opis poniżej dotyczy tylko jego.
+
+Ekran 2,8" dostaje pozycję ze skrzynki (od oprogramowania skrzynki 1.4.1), a trasę,
 mapę i ustawienia z dodatku (port 8098, ten sam klucz co skrzynka). Pierwsze uruchomienie:
 ekran otwiera własną sieć Wi-Fi „NT1100-Ekran” (hasło pokazuje sam ekran; od ekranu 1.1.3 przy każdym
 uruchomieniu ustawień jest nowe, 8 cyfr, wcześniej stałe `nt1100ekran`); na stronie

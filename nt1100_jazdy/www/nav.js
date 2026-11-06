@@ -349,8 +349,8 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
     const b=el('button','pri','Wyślij „'+vn+'” na ekran');b.onclick=async ev=>{ev.stopPropagation();b.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:true});msg(P.msg,'trasa „'+s.route.name+'” zapisana; ekran pobierze ją przy najbliższym połączeniu','ok');NV.data=await J('api/nav/routes');routesCard(null)}catch(e){msg(P.msg,e.message,'bad');b.disabled=false}};
     const sv=el('button',null,'Zapisz');sv.title='zapisz bez wysyłania na ekran';sv.onclick=async ev=>{ev.stopPropagation();sv.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});NV.data=await J('api/nav/routes');routesCard(null);msg(P.msg,'trasa „'+s.route.name+'” zapisana w „Moich trasach”','ok')}catch(e){msg(P.msg,e.message,'bad');sv.disabled=false}};
     const g=el('button',null,'GPX');g.title='zapisz i udostępnij plik GPX';g.onclick=async ev=>{ev.stopPropagation();g.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});NV.data=await J('api/nav/routes');routesCard(null);await shareGpx(s.id,s.route.name);msg(P.msg,'trasa „'+s.route.name+'” zapisana (bez wysyłania na ekran)','ok')}catch(e){msg(P.msg,e.message,'bad')}g.disabled=false};
-    const dr=el('button','pri','🚗 Jadę (OsmAnd)');dr.title='zapisz, otwórz w OsmAnd i pilnuj korków po drodze';dr.onclick=async ev=>{ev.stopPropagation();dr.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});await startDrive(s.id,s.route.name)}catch(e){msg(P.msg,e.message,'bad')}dr.disabled=false};
-    if(NV.data.settings.vehicle==='auto')ac.append(dr,sv,g);else ac.append(b,sv,g);d.append(ac);d.onclick=()=>pick(i);cards.push(d);P.out.append(d)}
+    const dr=el('button',null,'🚗 Jadę (OsmAnd)');dr.title='zapas bez ekranu: zapisz, otwórz w OsmAnd i pilnuj korków po drodze';dr.onclick=async ev=>{ev.stopPropagation();dr.disabled=true;try{const s=await post('api/nav/send',{token:j.token,variant:r.variant,name:P.name.value||r.name,current:false});await startDrive(s.id,s.route.name)}catch(e){msg(P.msg,e.message,'bad')}dr.disabled=false};
+    if(NV.data.settings.vehicle==='auto')ac.append(b,dr,sv,g);else ac.append(b,sv,g);d.append(ac);d.onclick=()=>pick(i);cards.push(d);P.out.append(d)}
   if(bnds.length)fitRoute(L.latLngBounds(bnds));if(order.length){pick(order[0]);sheet('mid');setTimeout(()=>P.out.scrollIntoView({behavior:'smooth',block:'start'}),250)}}
 
 /* ---- GPX: arkusz udostępniania na telefonie (Wiadomości, WhatsApp, Pliki), na komputerze pobranie */
@@ -374,7 +374,7 @@ function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='
     const gx=el('button',null,'GPX');gx.title='pobierz albo udostępnij plik GPX';gx.onclick=()=>shareGpx(r.id,r.name).catch(e=>alert(e.message));
     const rm=el('button','warn','Usuń');rm.onclick=async()=>{if(!confirm('Usunąć trasę „'+(r.name||r.id)+'”?'))return;try{await post('api/nav/delete',{id:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){alert(e.message)}};
     const sm=el('button',null,'Symulacja');sm.title='Przejazd trasy na niby: mapa i podgląd ekranu z kierownicy';sm.onclick=()=>simulate(r);
-    const jd=el('button',null,'🚗 Jadę');jd.title='otwórz w OsmAnd i pilnuj korków po drodze';jd.onclick=()=>startDrive(r.id,r.name).catch(e=>alert(e.message));
+    const jd=el('button',null,'🚗 Jadę (OsmAnd)');jd.title='zapas bez ekranu: otwórz w OsmAnd i pilnuj korków po drodze';jd.onclick=()=>startDrive(r.id,r.name).catch(e=>alert(e.message));
     if(NV.data.settings.vehicle==='auto')a.append(sh,jd,gx,rm);else a.append(sh,sm,cu,gx,rm);row.append(tx,a);RC.append(row)}}
 /* ---- jazda autem z OsmAnd: dodatek pilnuje korków i wysyła powiadomienie z objazdem */
 async function startDrive(id,name){const j=await post('api/nav/drive',{id});NV.data.drive=j.drive;renderDrive();
@@ -493,8 +493,8 @@ function settingsCard(V){const S=NV.data.settings;const k0=el('div','card');k0.a
   const eu=field(k,'Silnik tras (kontener Proxmox, np. http://192.168.1.50:8989)','url',null,S.engine_url);
   const mu=field(k,'Mapa na kartę (ten sam kontener, np. http://192.168.1.50:8988)','url',null,S.map_url);
   const tk=field(k,'Klucz TomTom (korki; puste = wyłączone)','password',null,'',S.tomtom_key);
-  const kp=grp('Planowanie i dom');const kc=grp('Jazda autem (OsmAnd): korki i objazdy');const ke=grp('Ekran w trasie');k=ke;
-  kc.append(el('p','mut','Po „🚗 Jadę (OsmAnd)” dodatek co tyle minut, ile „Sprawdzanie korków”, patrzy na korki przed telefonem (TomTom). Gdy objazd jest szybszy, przychodzi powiadomienie z nową trasą do otwarcia w OsmAnd.'));
+  const kp=grp('Planowanie i dom');const kc=grp('Jazda autem z OsmAnd (zapas bez ekranu): korki i objazdy');const ke=grp('Ekran w trasie');k=ke;
+  kc.append(el('p','mut','W aucie najpierw „Wyślij na ekran” (ekran 5" ma własny GPS). Gdy ekranu nie ma: po „🚗 Jadę (OsmAnd)” dodatek co tyle minut, ile „Sprawdzanie korków”, patrzy na korki przed telefonem (TomTom). Gdy objazd jest szybszy, przychodzi powiadomienie z nową trasą do otwarcia w OsmAnd.'));
   const pt=field(kc,'Telefon (encja z pozycją; puste = z celu powiadomień: '+(NV.data.phone_entity||'brak')+')','text',null,S.phone_tracker);pt.placeholder='device_tracker.iphone';
   const ca=field(kc,'Powiadom od opóźnienia (min)','number',null,S.car_alert_min);
   const dv=field(kp,'Domyślny wariant (skrót „jedź do…” z iPhone’a)','select',NV.data.variants,S.default_variant);

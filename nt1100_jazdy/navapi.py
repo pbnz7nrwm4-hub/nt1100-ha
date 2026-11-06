@@ -821,6 +821,14 @@ def screen_kind(q):
     return k if k in SCREEN_KINDS else "ekran"
 
 
+def screen_kind_of(fw):
+    """Paczka dla ekranu o zgłoszonej wersji: 2.x = ekran 5", starsze = 2,8"."""
+    try:
+        return "ekran5" if int(str(fw or "").split(".")[0]) >= 2 else "ekran"
+    except ValueError:
+        return "ekran"
+
+
 def screen_firmware_offer(kind="ekran"):
     if SRV is None:  # nawigacja jeszcze nie wystartowała
         return None

@@ -29,14 +29,21 @@ na Twojej domenie. Bez niego skrzynka wysyła jazdy tylko z domowego Wi-Fi.
    (skrzynka **tylko słucha**, nic nie wysyła do motocykla); zasilanie z gniazda,
    które gaśnie z zapłonem.
 
-## 3. Ekran nawigacji
+## 3. Ekran nawigacji (5")
 
-1. Pierwsze wgranie – kablem (instrukcja przy ekranie). Później z dodatku: Menu → Sprawdź wersję → Aktualizuj.
-2. Ekran bez ustawień otwiera sieć **NT1100-Ekran**; połącz się i otwórz `http://192.168.4.1`.
+1. Pierwsze wgranie – raz, kablem USB-C (obraz pełny ze źródłami). Później z dodatku:
+   na postoju zakładka **Menu** → Sprawdź wersję → Aktualizuj (w domowym Wi-Fi).
+2. Ekran bez ustawień otwiera sieć **NT1100-Ekran** (hasło pokazuje ekran); połącz się i otwórz
+   `http://192.168.4.1`.
 3. Wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu, adres spoza domu i klucz.
 4. Mapa na kartę: panel dodatku → Motocykl → **Ekran i mapa** → paczka ZIP → rozpakuj na kartę
    ekranu (folder `mapa`). Dalej ekran dociąga zmiany sam.
-5. Telefon: iPhone → Ustawienia → Bluetooth → „NT1100 Ekran” → zezwól na powiadomienia.
+5. Telefon: iPhone → Ustawienia → Bluetooth → „NT1100 Ekran 5” → zezwól na powiadomienia.
+6. Brama i garaż (opcjonalnie): panel → Ustawienia → Planowanie i dom → pola „Brama” i „Garaż”.
+7. Ekran ma własny GPS. Skrzynka (od 1.4.4) dosyła mu przez Bluetooth dane z motocykla, bez parowania.
+
+Ekran 2,8" (poprzedni) ustawia się tak samo, ale aktualizację otwiera przytrzymanie ekranu → Menu,
+a w Bluetooth nazywa się „NT1100 Ekran”.
 
 ## 4. Silnik tras (kontener w Proxmoxie)
 

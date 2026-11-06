@@ -9,11 +9,11 @@
 │  GPS, czujnik ruchu,     │  jazdy     │  dodatek „NT1100 Jazdy”                │
 │  dane z motocykla (CAN,  │  port 8098 │   • panel w menu (Ingress, port 8099)  │
 │  tylko słucha), karta SD │            │   • odbiór jazd i paczek (port 8098)   │
-│        │ pozycja         │            │   • urządzenie NT1100 (MQTT)           │
-│        ▼ (radio)         │            │   • powiadomienia, pogoda, serwis      │
-│ EKRAN NAWIGACJI          │◀────────── │   • planer tras, mapa, korki           │
-│  trasa, mapa z karty,    │  trasa,    └───────────────┬────────────────────────┘
-│  telefon przez Bluetooth │  mapa, fw                  │ sieć domowa
+│        │ pozycja, silnik │            │   • urządzenie NT1100 (MQTT)           │
+│        ▼ (Bluetooth)     │            │   • powiadomienia, pogoda, serwis      │
+│ EKRAN NAWIGACJI 5"       │◀────────── │   • planer tras, mapa, korki, brama    │
+│  własny GPS, trasa, mapa │  trasa,    └───────────────┬────────────────────────┘
+│  z karty, telefon (BT)   │  mapa, fw                  │ sieć domowa
 └──────────────────────────┘  port 8098                 ▼
                                         ┌────────────────────────────────────────┐
                                         │ SILNIK TRAS (kontener w Proxmoxie)     │
@@ -25,8 +25,11 @@
 - **Skrzynka** zapisuje jazdę na kartę (surowy zapis `.mtl`), po jeździe liczy z niego ślad
   (`.trk`), miniaturę (`.thm`), podsumowanie (`.json`) i raport (`.rep`). Po powrocie do domu
   (albo przez hotspot telefonu) wysyła je do dodatku. Ma własną stronę WWW (sieć Wi-Fi „NT1100”).
-- **Ekran** na kierownicy dostaje pozycję ze skrzynki, a trasę, mapę, ustawienia i nowe
-  oprogramowanie z dodatku. W trasie pyta dodatek o objazdy i korki (przez hotspot).
+- **Ekran** 5" na kierownicy ma własny GPS (działa też w samochodzie, bez skrzynki); na motocyklu
+  skrzynka dosyła mu przez Bluetooth pozycję i dane silnika. Trasę, mapę, ustawienia, stan bramy
+  i nowe oprogramowanie dostaje z dodatku. W trasie pyta dodatek o objazdy i korki (przez hotspot).
+  Poprzedni ekran 2,8" brał pozycję tylko ze skrzynki (radio ESP-NOW) i ma osobną paczkę `ekran`.
+- **OsmAnd** na telefonie to zapas: dodatek daje GPX z manewrami i w aucie pilnuje korków.
 - **Dodatek** przechowuje jazdy, pokazuje je w panelu, tworzy encje w Home Assistant,
   planuje trasy i rozsyła oprogramowanie.
 - **Silnik tras** liczy trasy i buduje mapę z danych OpenStreetMap (raz w miesiącu).
@@ -40,7 +43,8 @@
 | telefon → panel dodatku | przez Home Assistant (Ingress) | logowanie Home Assistant |
 | dodatek → silnik tras | `http://IP-KONTENERA:8989` i `:8988` | tylko sieć domowa |
 | link GPX z powiadomienia | `/api/nav/trasa.gpx?...&t=...` | podpis tylko dla tej trasy i jej wersji |
-| skrzynka/ekran ← nowe oprogramowanie | `/api/fw/bin`, `/api/nav/fw/bin` | plik zaszyfrowany i podpisany; urządzenie przyjmuje tylko podpisany |
+| skrzynka/ekran ← nowe oprogramowanie | `/api/fw/bin`, `/api/nav/fw/bin` (`&k=ekran5` dla ekranu 5") | plik zaszyfrowany i podpisany; urządzenie przyjmuje tylko podpisany |
+| ekran 5" → brama / garaż | `POST /api/nav/dom` | klucz; dodatek przełącza encję z Ustawień |
 
 ## Gdzie leżą dane
 
