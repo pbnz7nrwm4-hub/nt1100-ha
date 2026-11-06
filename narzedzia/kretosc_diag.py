@@ -2,7 +2,7 @@
 """Diagnoza wariantów krętości: liczy te same trasy w każdym wariancie i porównuje, jak kręte wyszły.
 
 Uruchom tam, gdzie widać silnik tras (np. kontener Claude):
-    python3 narzedzia/kretosc_diag.py http://192.168.1.29:8989 [--kandydaci]
+    python3 narzedzia/kretosc_diag.py http://192.168.1.29:8989 [--kandydaci] [--kreto]
 
 Dla każdej trasy i wariantu: km, minuty, °/km tak jak w dodatku („deg_km”), °/km bez skrętów
 na skrzyżowaniach („zakręty”), udział klas dróg. --kandydaci dokłada próbne ustawienia modelu.
@@ -91,6 +91,11 @@ def main():
             models = {"teraz": n.gh_custom_model(v, [])}
             if cand:
                 models.update(kandydaci(n, v, []))
+            if "--kreto" in sys.argv and v == "kreto":
+                # próbne suwaki „kręto” (glowne/zakrety/dluzej), reszta jak dziś
+                for g, z, dl in ((90, 80, 60), (95, 80, 70), (90, 100, 60)):
+                    nk = nav.Nav(tmp, tmp, lambda g=g, z=z, dl=dl: {"engine_url": url, "curvy": {"kreto": {"glowne": g, "zakrety": z, "dluzej": dl}}})
+                    models["k%d/%d/%d" % (g, z, dl)] = nk.gh_custom_model(v, [])
             for mname, cm in models.items():
                 body = {"points": [[a[1], a[0]], [b[1], b[0]]], "profile": "motocykl", "locale": "pl",
                         "instructions": True, "points_encoded": False, "calc_points": True,
@@ -101,7 +106,7 @@ def main():
                     m = {"blad": str(e)[:120]}
                 m.update(trasa=name, wariant=v, model=mname)
                 out.append(m)
-                print("  %-7s %-6s %6s km %4s min  °/km %4s  zakręty %4s  skrzyż. %4s  %s" % (
+                print("  %-7s %-10s %6s km %4s min  °/km %4s  zakręty %4s  skrzyż. %4s  %s" % (
                     v, mname, m.get("km"), m.get("min"), m.get("deg_km"), m.get("zakrety_km"),
                     m.get("skrzyzowania_km"), m.get("klasy", m.get("blad"))))
     with open("kretosc_diag.json", "w") as f:

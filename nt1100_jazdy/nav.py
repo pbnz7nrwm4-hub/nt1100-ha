@@ -673,7 +673,7 @@ class Nav:
         # fotoradary i odcinki
         route["cameras"] = self.cameras_along(pts, cum)
         # krętość (jak dla jazd): suma zmian kierunku co 50 m na km
-        route["curvy"] = curviness(pts, cum, self.settings()["curvy_levels"])
+        route["curvy"] = curviness(pts, cum, self.settings()["curvy_levels"], instr if instructions else None)
         # pogoda dla punktów trasy
         route["weather"] = []
         if with_weather:
@@ -1710,21 +1710,34 @@ class Nav:
         return None
 
 
-def curviness(pts, cum, levels=None):
-    """Krętość jak dla jazd: suma zmian kierunku (próbki co 50 m) na km."""
+JUNCTION_TURNS = (T_LEFT, T_SHARP_L, T_RIGHT, T_SHARP_R, T_UTURN, T_ROUNDABOUT)
+
+
+def curviness(pts, cum, levels=None, turns=None):
+    """Krętość jak dla jazd: suma zmian kierunku (próbki co 50 m) na km.
+    1.5.27: gdy znane są skręty z silnika tras (turns), skręty na skrzyżowaniach (±40 m) się nie liczą –
+    trasa przez wsie z wieloma skrętami pod kątem prostym nie wychodzi „krętsza” od drogi z zakrętami."""
+    jd = sorted(cum[t["idx"]] for t in (turns or []) if t.get("type") in JUNCTION_TURNS and 0 <= t.get("idx", -1) < len(cum))
     if cum[-1] < 500:
         return None
     samples = []
     want = 0.0
     for i, c in enumerate(cum):
         if c >= want:
-            samples.append(pts[i])
+            samples.append((pts[i], c))
             want = c + 50.0
     total = 0.0
+    k = 0
     for i in range(2, len(samples)):
-        d = abs(ntt.angle_diff(ntt.bearing(samples[i - 2], samples[i - 1]), ntt.bearing(samples[i - 1], samples[i])))
-        if d >= 4:
-            total += d
+        d = abs(ntt.angle_diff(ntt.bearing(samples[i - 2][0], samples[i - 1][0]), ntt.bearing(samples[i - 1][0], samples[i][0])))
+        if d < 4:
+            continue
+        c = samples[i - 1][1]
+        while k < len(jd) and jd[k] < c - 40:
+            k += 1
+        if k < len(jd) and abs(jd[k] - c) < 40:
+            continue
+        total += d
     per_km = total / (cum[-1] / 1000.0)
     return {"deg_km": int(per_km), "level": curvy_name(per_km, levels)}
 
