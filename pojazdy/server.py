@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -32,7 +32,27 @@ WWW = os.environ.get("PJ_WWW", os.path.join(HERE, "www"))
 PORT = int(os.environ.get("PJ_PORT", "8099"))
 PEERS = set(os.environ.get("PJ_PEERS", "172.30.32.2").split(","))
 SUPERVISOR = os.environ.get("PJ_SUPERVISOR", "http://supervisor")
-TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
+
+
+def token():
+    """Klucz do API Home Assistant od Supervisora: zmienna środowiska albo plik s6
+    (przy starcie przez /init zmienne kontenera bywają tylko w /run/s6/container_environment)."""
+    for k in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+        if os.environ.get(k):
+            return os.environ[k].strip()
+    for d in ("/run/s6/container_environment", "/var/run/s6/container_environment"):
+        for k in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+            try:
+                with open(os.path.join(d, k), encoding="utf-8") as f:
+                    v = f.read().strip()
+                if v:
+                    return v
+            except OSError:
+                pass
+    return ""
+
+
+TOKEN = token()
 PETLA = os.environ.get("PJ_PETLA", "1") == "1"  # testy wyłączają pętlę w tle
 
 DOMYSLNE = {
@@ -78,6 +98,9 @@ def teraz_lok():
 # ---------------------------------------------------------------- Home Assistant
 
 def ha_call(method, path, body=None, timeout=20):
+    global TOKEN
+    if not TOKEN:
+        TOKEN = token()
     if not TOKEN:
         return None
     req = urllib.request.Request(
@@ -302,8 +325,13 @@ def ceny_teraz():
 
 def synchronizuj_ladowania():
     """Nowe, zakończone sesje ładowania z liczników -> tabela ladowania."""
-    if not TOKEN:
-        STAN["sync_blad"] = "brak połączenia z Home Assistant"
+    if not TOKEN and not token():
+        STAN["sync_blad"] = "brak klucza do Home Assistant (SUPERVISOR_TOKEN) – zrestartuj dodatek; jeśli zostaje, wyślij dziennik dodatku"
+        return 0
+    try:
+        ha_call("GET", "/core/api/")
+    except Exception as e:
+        STAN["sync_blad"] = "Home Assistant nie odpowiada: %s" % e
         return 0
     teraz = datetime.now(timezone.utc)
     kursor = ld.utc(ust("ladowania_od"))
@@ -840,7 +868,7 @@ def uruchom():
 
 def main():
     srv = uruchom()
-    log("Pojazdy %s – panel na porcie %d" % (VERSION, srv.server_address[1]))
+    log("Pojazdy %s – panel na porcie %d, klucz do HA: %s" % (VERSION, srv.server_address[1], "jest" if TOKEN else "BRAK"))
     if PETLA:
         threading.Thread(target=petla, daemon=True).start()
     srv.serve_forever()

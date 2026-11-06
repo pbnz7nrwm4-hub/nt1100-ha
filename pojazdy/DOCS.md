@@ -3,6 +3,13 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.0.1
+
+- Dodatek szuka klucza do Home Assistant także tam, gdzie zostawia go system startowy kontenera
+  (w 1.0.0 u części instalacji ładowania się nie wczytywały: „brak połączenia z Home Assistant”).
+- Pod „Ładowania automatycznie” jest teraz dokładny powód, gdy coś nie działa; w dzienniku dodatku
+  przy starcie wpis „klucz do HA: jest / BRAK”.
+
 ## Co robi
 
 - **Tankowania** dodajesz ręcznie (pomarańczowy przycisk „+ Tankowanie”): data, przebieg, litry, cena
