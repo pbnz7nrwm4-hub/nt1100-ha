@@ -24,6 +24,8 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
   wraca na trasę z bliska i prowadzi „Do domu” po przejechanej drodze.
 - Nowa trasa, objazd z domu, korki, ceny paliw i pogoda na bieżąco – tylko z hotspotem iPhone'a
   (w ustawieniach ekranu wpisany hotspot i adres spoza domu).
+  iPhone: Ustawienia → Osobisty hotspot → **„Maksymalna zgodność” włączone** (ekran słyszy tylko 2,4 GHz;
+  bez tego iPhone 16e nadaje w 5 GHz i ekran się nie łączy – sprawdzone 8.11.2026).
 - Skrzynka zapisuje jazdę na kartę; wyśle ją przez hotspot albo po powrocie do domu.
 
 **Po powrocie**
@@ -44,7 +46,8 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
-## Zmiany w 1.5.41 (ekran 2.3.0)
+## Zmiany w 1.5.41 (ekran 2.3.1)
+- W dodatku jest ekran 2.3.1: Menu → „Aktualizuj 2.3.1” pobiera go przez Wi-Fi albo hotspot. Nowe: podgląd trasy przed startem (mapa, miejscowości, przystanki), ustawienia wpisywane na samym ekranie (Menu → Ustawienia), w Menu stan modułu GPS („moduł milczy” albo liczba satelitów).
 - GPX dla BMW: w „Zapisanych trasach” pozycja „GPX dla BMW (Connected)” zapisuje trasę w układzie aplikacji BMW Motorrad Connected (punkty start, po drodze, cel; krętość i omijanie; cały ślad drogi), do wczytania w nawigacji BMW.
 - Wczytanie pliku GPX z aplikacji BMW: punkty z trasy BMW stają się punktami po drodze, a jej krętość i omijanie (płatne, gruntowe, autostrady, promy) przechodzą na trasę.
 - Mapa 6 w całości na ekran: dodatek pobiera z kontenera i podaje ekranowi także warstwy z oddali (l1–l4), znaki (pasy, kierunki) i wysokości; ekran 2.3.0 pobiera najpierw spisy adresów i warstwy, potem kwadraty od najbliższego, wznawia przerwane pobieranie i pomija pliki, które już ma.
@@ -445,7 +448,8 @@ leży razem ze źródłami, nie ma go w tym repozytorium). Ekran bez ustawień o
 „NT1100-Ekran” (hasło pokazuje sam ekran, przy każdym wejściu w ustawienia nowe). Na stronie
 `http://192.168.4.1` wpisz Wi-Fi domowe, hotspot telefonu, adres dodatku w domu (`http://IP-HA:8098`),
 adres spoza domu i klucz; tam też jasność, wygląd (ciemny / jasny w dzień / jasny), telefon
-i dźwięki. Mapa: paczka ZIP na kartę (zakładka Motocykl → „Ekran i mapa”). Później dodatek sam
+i dźwięki. Od ekranu 2.3.1 te same pola (Wi-Fi, hotspot, adresy, klucz) można sprawdzić i poprawić na samym
+ekranie: Menu → Ustawienia (hasła ukryte do „Pokaż hasła”, „Zapisz” uruchamia ekran ponownie). Mapa: paczka ZIP na kartę (zakładka Motocykl → „Ekran i mapa”). Później dodatek sam
 oferuje nowsze oprogramowanie (`ekran5.bin`), a w domu wgrywa na kartę ulubione i ostatnie trasy.
 
 **Zakładki na postoju**: Trasa, Pogoda, Dom, Motocykl, Muzyka, Telefon, Menu.
