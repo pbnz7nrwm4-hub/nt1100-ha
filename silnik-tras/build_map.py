@@ -1494,7 +1494,10 @@ def build(pbf, out, bbox=None):
                 continue
             if tags.get("type") != "enforcement":
                 continue
-            if tags.get("enforcement") not in ("average_speed", "maxspeed", "section_control"):
+            # Tylko odcinkowe. enforcement=maxspeed to w OSM zwykły fotoradar (relacja: device + from/to,
+            # ok. 100–200 m przed nim) – liczony jako odcinek dawał „ODCINKOWY POMIAR” przy stałym fotoradarze
+            # (Adrian 8.11, 18:45 i 18:53). Jego urządzenie i tak jest węzłem highway=speed_camera.
+            if tags.get("enforcement") not in ("average_speed", "section_control"):
                 continue
             fr, to = members.get("from", []), members.get("to", [])
             if not fr or not to or not fr[0].startswith("n") or not to[0].startswith("n"):
