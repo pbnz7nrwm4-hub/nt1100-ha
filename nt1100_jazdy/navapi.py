@@ -1021,6 +1021,31 @@ def calendar_when(t, now, with_time):
     return d + (" %d:%02d" % (lt.tm_hour, lt.tm_min) if with_time else "")
 
 
+# 1.5.40 (ekran 2.2.1, Adrian 8.11: "online = widzi Wi-Fi, ma połączenie z dodatkiem i z silnikiem tras"):
+# whether the route engine answers /health, checked in the background at most once a minute so the
+# ping of the screen never waits for it (the engine may stand during the nightly map rebuild)
+_ENGINE = {"ok": None, "at": 0.0, "busy": False}
+ENGINE_CHECK_S = 60
+
+
+def engine_status():
+    url = NAV.settings()["engine_url"]
+    if not url:
+        return False
+    now = time.time()
+    if not _ENGINE["busy"] and now - _ENGINE["at"] > ENGINE_CHECK_S:
+        _ENGINE["busy"] = True
+
+        def check():
+            try:
+                _ENGINE["ok"] = SRV.engine_alive(url)
+            finally:
+                _ENGINE["at"] = time.time()
+                _ENGINE["busy"] = False
+        threading.Thread(target=check, daemon=True).start()
+    return _ENGINE["ok"]
+
+
 def screen_routes(idx, n=8):
     """Trasy do wyboru na postoju (ekran 5"): ostatnie n, bieżąca pierwsza."""
     rs = sorted(idx.get("routes") or [], key=lambda r: (-(r.get("created") or 0), -r["id"]))
@@ -1101,7 +1126,9 @@ def screen_get(h, path, q):
                    "traffic": bool(s["tomtom_key"]),
                    "fw": (screen_firmware_offer(screen_kind(q)) or {}).get("version") or "",
                    # ekran 5": dom (brama, garaż) i trasy do wyboru na postoju
-                   "home": screen_home(), "routes": screen_routes(idx)}
+                   "home": screen_home(), "routes": screen_routes(idx),
+                   # 1.5.40: the route engine answers (None = not checked yet)
+                   "engine": engine_status()}
             # 1.5.23: kalendarz domu na postoju (3 najbliższe wydarzenia)
             if s["calendar_entity"]:
                 out["calendar"] = calendar_next(s["calendar_entity"])
