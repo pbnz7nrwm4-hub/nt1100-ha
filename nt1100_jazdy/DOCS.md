@@ -44,6 +44,11 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.41 (ekran 2.3.0)
+- GPX dla BMW: w „Zapisanych trasach” pozycja „GPX dla BMW (Connected)” zapisuje trasę w układzie aplikacji BMW Motorrad Connected (punkty start, po drodze, cel; krętość i omijanie; cały ślad drogi), do wczytania w nawigacji BMW.
+- Wczytanie pliku GPX z aplikacji BMW: punkty z trasy BMW stają się punktami po drodze, a jej krętość i omijanie (płatne, gruntowe, autostrady, promy) przechodzą na trasę.
+- Ping ekranu 5" niesie ustawienia planisty i ulubione; ekran trzyma je na karcie do „Jedź do…” bez internetu.
+
 ## Zmiany w 1.5.40 (ekran 2.2.1)
 - Ekran Tab5 pokazuje na pasku u góry ikonę serwera: zielona = silnik tras liczy trasy (korki, alternatywy z serwera), pomarańczowa = dodatek odpowiada, silnik nie (np. w nocy w czasie przebudowy mapy), szara = brak połączenia, trasy liczy ekran z karty. Dodatek sprawdza silnik w tle najwyżej raz na minutę.
 

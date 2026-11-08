@@ -607,6 +607,9 @@ def page_get(h, path, q):
             r = NAV.route(int(q.get("id", "0")))
             if not r:
                 return h.send(404, "brak trasy", "text/plain") or True
+            if q.get("bmw") == "1":   # 1.5.41: in the layout of BMW Motorrad Connected (a colleague's navigation)
+                return h.send(200, nav.to_gpx_bmw(r).encode(), "application/gpx+xml",
+                              {"Content-Disposition": gpx_disposition((r.get("name") or "trasa") + "_BMW")}) or True
             return h.send(200, nav.to_gpx(r, osmand=q.get("plain") != "1").encode(), "application/gpx+xml",
                           {"Content-Disposition": gpx_disposition(r.get("name"))}) or True
         if path == "/api/nav/search":
