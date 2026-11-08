@@ -95,6 +95,10 @@ mapa_aktualna() {
 }
 buduj_mape() {
   etap "mapa na ekran" 2
+  # Budowa mapy (Python, 1–3 GB) obok silnika tras (Java do PAMIEC) nie mieści się w RAM kontenera:
+  # silnik szedł do swapu i potem nie liczył tras. Na czas budowy silnik stoi; wraca też po błędzie (trap).
+  systemctl stop nt1100-trasy.service || true
+  trap 'systemctl start nt1100-trasy.service || true' EXIT
   rm -rf "$KAT/www/mapa.nowa"
   python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.nowa"
   rm -rf "$KAT/www/mapa.stara"
@@ -102,6 +106,7 @@ buduj_mape() {
   mv "$KAT/www/mapa.nowa" "$KAT/www/mapa"
   rm -rf "$KAT/www/mapa.stara"
   systemctl start nt1100-mapa.service
+  systemctl start nt1100-trasy.service || true
 }
 
 if [ "${1:-}" = "--sprawdz" ]; then
