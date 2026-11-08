@@ -206,6 +206,23 @@ class GeometryTest(unittest.TestCase):
         back = nav.parse_gpx(nav.to_gpx(route).encode())
         self.assertEqual(len(back["pts"]), len(pts))
 
+    def test_gpx_bmw_round_trip(self):
+        # 1.5.41: the layout of BMW Motorrad Connected (Adrian's file Poprad - Bierun, 8.11): trk = road,
+        # rte = named stops, cnrd:routeOptions -> variant and avoidances
+        pts = l_shape()
+        route = {"name": "Próbna", "pts": pts, "variant": "kreto", "avoid": ["platne", "gruntowe"],
+                 "waypoints": [{"idx": len(pts) // 2, "name": "Huty"}]}
+        x = nav.to_gpx_bmw(route)
+        self.assertIn('creator="BMW Motorrad Connected"', x)
+        self.assertIn('windingness="medium"', x)
+        self.assertIn('tollRoads="forbid" dirtRoads="forbid"', x)
+        self.assertIn('motorways="allow"', x)
+        g = nav.parse_gpx(x.encode())
+        self.assertEqual(len(g["pts"]), len(pts))
+        self.assertEqual(g["variant"], "kreto")
+        self.assertEqual(g["avoid"], ["platne", "gruntowe"])
+        self.assertEqual([w["name"] for w in g["wpts"]], ["Huty"])
+
     def test_pack_ntr_header(self):
         pts = nav.densify(l_shape(), 30)
         cum = nav.cum_dist(pts)

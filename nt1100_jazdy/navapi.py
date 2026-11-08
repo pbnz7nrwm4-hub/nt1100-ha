@@ -607,6 +607,9 @@ def page_get(h, path, q):
             r = NAV.route(int(q.get("id", "0")))
             if not r:
                 return h.send(404, "brak trasy", "text/plain") or True
+            if q.get("bmw") == "1":   # 1.5.41: in the layout of BMW Motorrad Connected (a colleague's navigation)
+                return h.send(200, nav.to_gpx_bmw(r).encode(), "application/gpx+xml",
+                              {"Content-Disposition": gpx_disposition((r.get("name") or "trasa") + "_BMW")}) or True
             return h.send(200, nav.to_gpx(r, osmand=q.get("plain") != "1").encode(), "application/gpx+xml",
                           {"Content-Disposition": gpx_disposition(r.get("name"))}) or True
         if path == "/api/nav/search":
@@ -1153,7 +1156,7 @@ def screen_get(h, path, q):
             if not m:
                 return h.send(404, {"ok": False, "error": "brak mapy"}) or True
             return h.send(200, m) or True
-        if path.startswith("/api/nav/mapa/") and path[-7:] in (".ntt.gz", ".ntg.gz", ".nta.gz"):
+        if path.startswith("/api/nav/mapa/") and path[-7:] in (".ntt.gz", ".ntg.gz", ".nta.gz", ".ntn.gz", ".nth.gz"):
             p = NAV.map_gz(path.rsplit("/", 1)[1][:-3])
             if not p:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True

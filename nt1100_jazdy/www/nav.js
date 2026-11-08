@@ -530,7 +530,7 @@ function results(j){P.out.textContent='';for(const v of Object.keys(j.errors||{}
   if(bnds.length)fitRoute(L.latLngBounds(bnds));if(order.length){pick(order[0]);sheet('mid');setTimeout(()=>P.out.scrollIntoView({behavior:'smooth',block:'start'}),250)}}
 
 /* ---- GPX: arkusz udostępniania na telefonie (Wiadomości, WhatsApp, Pliki), na komputerze pobranie */
-async function shareGpx(id,name,osm){const r=await fetch('api/nav/gpx?id='+id);if(!r.ok)throw new Error('nie udało się pobrać GPX');const blob=await r.blob();
+async function shareGpx(id,name,osm,bmw){const r=await fetch('api/nav/gpx?id='+id+(bmw?'&bmw=1':''));if(bmw)name=(name||'trasa')+'_BMW';if(!r.ok)throw new Error('nie udało się pobrać GPX');const blob=await r.blob();
   const PL={ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z',Ą:'A',Ć:'C',Ę:'E',Ł:'L',Ń:'N',Ó:'O',Ś:'S',Ź:'Z',Ż:'Z'};
   const fn=((name||'trasa').replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g,c=>PL[c]).replace(/[^\w.\-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'trasa')+'.gpx';
   const file=new File([blob],fn,{type:'application/gpx+xml'});
@@ -550,7 +550,7 @@ function routesCard(V){if(!RC){RC=el('div','card');V.append(RC)}RC.textContent='
     const setCur=async()=>{try{await post('api/nav/current',{id:r.id===d.current?0:r.id});NV.data=await J('api/nav/routes');routesCard(null);toast(r.id===d.current?'Zdjęto z ekranu':'Ekran pobierze trasę przy najbliższym połączeniu')}catch(e){toast(e.message)}};
     const cu=auto?el('button',null,'🚗 Jadę'):el('button',r.id===d.current?null:'pri',r.id===d.current?'Zdejmij':'Na ekran');cu.type='button';cu.onclick=auto?()=>startDrive(r.id,r.name).catch(e=>toast(e.message)):setCur;
     const mo=ib(ICO.more,'więcej');mo.onclick=()=>actSheet(r.name||('trasa '+r.id),[
-      ['Pokaż na mapie',show],auto?['Na ekran / zdejmij z ekranu',setCur]:['Symulacja przejazdu',()=>simulate(r)],['Udostępnij GPX',()=>shareGpx(r.id,r.name).catch(e=>toast(e.message))],
+      ['Pokaż na mapie',show],auto?['Na ekran / zdejmij z ekranu',setCur]:['Symulacja przejazdu',()=>simulate(r)],['Udostępnij GPX',()=>shareGpx(r.id,r.name).catch(e=>toast(e.message))],['GPX dla BMW (Connected)',()=>shareGpx(r.id,r.name,false,true).catch(e=>toast(e.message))],
       ['Usuń trasę',async()=>{if(!confirm('Usunąć trasę „'+(r.name||r.id)+'”?'))return;try{await post('api/nav/delete',{id:r.id});NV.data=await J('api/nav/routes');routesCard(null)}catch(e){toast(e.message)}},'warn']]);
     a.append(cu,mo);row.append(tx,a);RC.append(row)}
   RC.append(dm)}

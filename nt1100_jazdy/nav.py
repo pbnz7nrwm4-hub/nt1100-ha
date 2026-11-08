@@ -49,9 +49,10 @@ GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGH
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
 # pliki mapy z kontenera: kwadraty .ntt i (od mapy 3) graf tras .ntg
-MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta")
+MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta"
+                      r"|l[1-4]_-?\d+_-?\d+\.ntt|n_-?\d+_-?\d+\.ntn|h_-?\d+_-?\d+\.nth")
 # części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
-MAP_EXTRA = ("graph", "addr")
+MAP_EXTRA = ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys")   # 1.5.41: części mapy 6 (ekran 2.3.0)
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
@@ -348,6 +349,28 @@ def parse_gpx(data):
                     rte_turns.append(nm)
             if pts:
                 break
+    # BMW Motorrad Connected (2.3.0): <trk> = the road, <rte> = the named stops (start, via, end) with
+    # <cnrd:routeOptions windingness ...><cnrd:avoidances .../> -> our variant and avoidances
+    bmw = {}
+    for rte in [e for e in root.iter() if tag(e) == "rte"]:
+        for el in rte.iter():
+            if tag(el) == "routeOptions":
+                bmw["windingness"] = el.get("windingness") or ""
+            elif tag(el) == "avoidances":
+                bmw["avoid"] = [k for k, v in el.attrib.items() if v == "forbid"]
+        if pts and not rte_turns:
+            rpts = [p for p in rte if tag(p) == "rtept"]
+            for p in rpts[1:-1]:
+                nm = ""
+                for c in p:
+                    if tag(c) == "name" and (c.text or "").strip():
+                        nm = (c.text or "").strip()
+                if not nm:
+                    for c in p:
+                        if tag(c) == "desc" and (c.text or "").strip():
+                            nm = (c.text or "").strip()
+                wpts.append({"lat": float(p.get("lat")), "lon": float(p.get("lon")), "name": nm[:40]})
+        break
     for w in [e for e in root.iter() if tag(e) == "wpt"]:
         nm = ""
         for c in w:
@@ -358,7 +381,19 @@ def parse_gpx(data):
         raise ValueError("plik GPX nie ma trasy (trk/rte)")
     if len(pts) > 200000:
         raise ValueError("za dużo punktów w GPX")
-    return {"name": name[:40], "pts": pts, "wpts": wpts, "rte_turns": rte_turns}
+    out = {"name": name[:40], "pts": pts, "wpts": wpts, "rte_turns": rte_turns}
+    if bmw:
+        out["variant"] = BMW_VARIANT.get(bmw.get("windingness", ""), None)
+        out["avoid"] = [BMW_AVOID[a] for a in bmw.get("avoid", []) if a in BMW_AVOID]
+    return out
+
+
+# BMW Motorrad Connected: windingness of the planner -> our variant. Only "medium" is seen in a real file
+# (Adrian's Poprad - Bierun, 8.11); "low"/"high" are the other values of the app's slider (to be checked on
+# a colleague's file).
+BMW_VARIANT = {"low": "lekko", "medium": "kreto", "high": "bardzo"}
+BMW_WIND = {"lekko": "low", "kreto": "medium", "bardzo": "high"}
+BMW_AVOID = {"motorways": "autostrady", "tollRoads": "platne", "dirtRoads": "gruntowe", "ferries": "promy"}
 
 
 # Skręty w zapisie OsmAnd (TurnType): z nimi OsmAnd prowadzi głosowo po naszej trasie
@@ -405,6 +440,46 @@ def to_gpx(route, osmand=False):
         out.append('<trkpt lat="%.6f" lon="%.6f"/>' % (p[0], p[1]))
     out.append("</trkseg></trk></gpx>")
     return "\n".join(out)
+
+
+def to_gpx_bmw(route):
+    """GPX w układzie BMW Motorrad Connected (jak plik z aplikacji BMW): <rte> z punktami start, po drodze,
+    cel (name), rozszerzenie cnrd z długością, czasem, krętością i omijaniem, potem <trk> z całą drogą.
+    Nawigacja BMW (Connected) wczytuje taki plik jak własną zaplanowaną trasę."""
+    pts = route["pts"]
+    name = esc(route.get("name") or "Trasa")
+    times = route.get("times") or []
+    length = 0.0
+    for a, b in zip(pts, pts[1:]):
+        k = math.cos(math.radians((a[0] + b[0]) / 2))
+        length += math.hypot((b[0] - a[0]) * 110540.0, (b[1] - a[1]) * 111320.0 * k)
+    dur = int(times[-1]) if len(times) == len(pts) and times else int(length / 1000.0 / RT_KMH.get(route.get("variant"), 50) * 3600)
+    av = set(route.get("avoid") or [])
+    def fa(*keys):
+        return "forbid" if av & set(keys) else "allow"
+    wind = BMW_WIND.get(route.get("variant"), "low")
+    out = ["<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>"
+           '<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="BMW Motorrad Connected" '
+           'xmlns:cnrd="http://www.bmw-motorrad.com/CNRD/1/0">',
+           "<metadata><name>%s</name></metadata>" % name,
+           '<rte><name>%s</name><extensions><cnrd:PlannedRouteExtension durationInSeconds="%d" lengthInMeters="%d">'
+           '<cnrd:routeOptions windingness="%s" hilliness="ignore" optimization="%s">'
+           '<cnrd:avoidances motorways="%s" tunnels="allow" ferries="%s" tollRoads="%s" dirtRoads="%s" />'
+           "</cnrd:routeOptions></cnrd:PlannedRouteExtension></extensions>"
+           % (name, dur, int(length), wind, "eco",
+              fa("autostrady"), fa("promy"), fa("platne"), fa("gruntowe", "szutrowe"))]
+    stops = [(pts[0], "Start")]
+    for w in sorted(route.get("waypoints") or [], key=lambda w: w["idx"]):
+        if 0 < w["idx"] < len(pts) - 1:
+            stops.append((pts[w["idx"]], w.get("name") or ""))
+    stops.append((pts[-1], "Cel"))
+    for p, nm in stops:
+        out.append('<rtept lat="%.6f" lon="%.6f">%s</rtept>' % (p[0], p[1], "<name>%s</name>" % esc(nm) if nm else ""))
+    out.append("</rte><trk><name>%s</name><trkseg>" % name)
+    for p in pts:
+        out.append('<trkpt lat="%.6f" lon="%.6f" />' % (p[0], p[1]))
+    out.append("</trkseg></trk></gpx>")
+    return "".join(out)
 
 
 def to_gpx_osmand(route, start=None):
@@ -1098,7 +1173,9 @@ class Nav:
             if d is not None and d < 100:
                 near.append((i, {"lat": w["lat"], "lon": w["lon"], "name": w["name"]}))
         wps = [w for _, w in sorted(near, key=lambda x: x[0])]
-        route = self.build_route(g["pts"], name or g["name"], "gpx", None, wps)
+        route = self.build_route(g["pts"], name or g["name"], "gpx", None, wps, variant=g.get("variant"))
+        if g.get("avoid") is not None:
+            route["avoid"] = g["avoid"]   # BMW: its avoidances stay for rerouting on the road
         return route
 
     def reroute(self, rid, lat, lon, heading=None, skip_waypoint=False, avoid_km=None):
@@ -1640,8 +1717,8 @@ class Nav:
         cen = (home["lat"], home["lon"]) if home else None
 
         def key(f):
-            if f[0] in ("a_index.nta", "a_poi.nta"):
-                return (-1, f[0])                    # spisy miejscowości i miejsc najpierw
+            if f[0] in ("a_index.nta", "a_poi.nta") or f[0][0] == "l":
+                return (-1, f[0])                    # spisy miejscowości i miejsc, warstwy z oddali najpierw
             c = "c_" + f[0][2:-4] + ".ntt"             # g_/a_ w kolejności swojego kwadratu mapy
             if c in first:
                 return (first[c], 0)
