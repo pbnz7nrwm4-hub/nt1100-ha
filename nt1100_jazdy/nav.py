@@ -49,9 +49,10 @@ GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGH
             4: T_FINISH, 5: T_WAYPOINT, 6: T_ROUNDABOUT, -7: T_KEEP_L, 7: T_KEEP_R, -8: T_UTURN, 8: T_UTURN,
             -98: T_UTURN, 101: T_FERRY}
 # pliki mapy z kontenera: kwadraty .ntt i (od mapy 3) graf tras .ntg
-MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta")
+MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta"
+                      r"|l[1-4]_-?\d+_-?\d+\.ntt|n_-?\d+_-?\d+\.ntn|h_-?\d+_-?\d+\.nth")
 # części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
-MAP_EXTRA = ("graph", "addr")
+MAP_EXTRA = ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys")   # 1.5.41: części mapy 6 (ekran 2.3.0)
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
@@ -1716,8 +1717,8 @@ class Nav:
         cen = (home["lat"], home["lon"]) if home else None
 
         def key(f):
-            if f[0] in ("a_index.nta", "a_poi.nta"):
-                return (-1, f[0])                    # spisy miejscowości i miejsc najpierw
+            if f[0] in ("a_index.nta", "a_poi.nta") or f[0][0] == "l":
+                return (-1, f[0])                    # spisy miejscowości i miejsc, warstwy z oddali najpierw
             c = "c_" + f[0][2:-4] + ".ntt"             # g_/a_ w kolejności swojego kwadratu mapy
             if c in first:
                 return (first[c], 0)

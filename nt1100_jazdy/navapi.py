@@ -1156,7 +1156,7 @@ def screen_get(h, path, q):
             if not m:
                 return h.send(404, {"ok": False, "error": "brak mapy"}) or True
             return h.send(200, m) or True
-        if path.startswith("/api/nav/mapa/") and path[-7:] in (".ntt.gz", ".ntg.gz", ".nta.gz"):
+        if path.startswith("/api/nav/mapa/") and path[-7:] in (".ntt.gz", ".ntg.gz", ".nta.gz", ".ntn.gz", ".nth.gz"):
             p = NAV.map_gz(path.rsplit("/", 1)[1][:-3])
             if not p:
                 return h.send(404, {"ok": False, "error": "brak pliku"}) or True
