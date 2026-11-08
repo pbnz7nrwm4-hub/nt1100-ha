@@ -44,6 +44,9 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.40 (ekran 2.2.1)
+- Ekran Tab5 pokazuje na pasku u góry ikonę serwera: zielona = silnik tras liczy trasy (korki, alternatywy z serwera), pomarańczowa = dodatek odpowiada, silnik nie (np. w nocy w czasie przebudowy mapy), szara = brak połączenia, trasy liczy ekran z karty. Dodatek sprawdza silnik w tle najwyżej raz na minutę.
+
 ## Zmiany w 1.5.39
 - Formularz trasy: strzałki w górę i w dół przy każdym przystanku zamieniają go z sąsiednim (trasa liczy się od nowa).
 - Karta „Trwa jazda w OsmAnd” wyjaśnia, że nowa trasa nie zastąpi trwającej jazdy, i ma przycisk „Zakończ jazdę”.
