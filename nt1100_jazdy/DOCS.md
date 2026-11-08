@@ -46,8 +46,8 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
-## Zmiany w 1.5.41 (ekran 2.3.1)
-- W dodatku jest ekran 2.3.1: Menu → „Aktualizuj 2.3.1” pobiera go przez Wi-Fi albo hotspot. Nowe: podgląd trasy przed startem (mapa, miejscowości, przystanki), ustawienia wpisywane na samym ekranie (Menu → Ustawienia), w Menu stan modułu GPS („moduł milczy” albo liczba satelitów).
+## Zmiany w 1.5.41 (ekran 2.3.2)
+- W dodatku jest ekran 2.3.2: Menu → „Aktualizuj 2.3.2” pobiera go przez Wi-Fi albo hotspot. Nowe: podgląd trasy przed startem (mapa, miejscowości, przystanki), ustawienia wpisywane na samym ekranie (Menu → Ustawienia), w Menu stan modułu GPS („moduł milczy” albo liczba satelitów), w „Jedź do…” przycisk Ulubione z pełną listą i wybór startu (GPS, ostatnia pozycja albo dowolny adres – także bez GPS).
 - GPX dla BMW: w „Zapisanych trasach” pozycja „GPX dla BMW (Connected)” zapisuje trasę w układzie aplikacji BMW Motorrad Connected (punkty start, po drodze, cel; krętość i omijanie; cały ślad drogi), do wczytania w nawigacji BMW.
 - Wczytanie pliku GPX z aplikacji BMW: punkty z trasy BMW stają się punktami po drodze, a jej krętość i omijanie (płatne, gruntowe, autostrady, promy) przechodzą na trasę.
 - Mapa 6 w całości na ekran: dodatek pobiera z kontenera i podaje ekranowi także warstwy z oddali (l1–l4), znaki (pasy, kierunki) i wysokości; ekran 2.3.0 pobiera najpierw spisy adresów i warstwy, potem kwadraty od najbliższego, wznawia przerwane pobieranie i pomija pliki, które już ma.
