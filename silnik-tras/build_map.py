@@ -72,11 +72,34 @@ hotele, widoki, przełęcze, serwisy, ładowarki – rodzaje jak punkty .ntt, ta
          i miejscowość, do szukania słowami), napis nazwa, napis miejscowość (addr:city albo najbliższa ze
          spisu adresów do 10 km), u8 rodzaj, i32 lat1e6, i32 lon1e6. W manifeście w "addr" (cells).
 
-manifest.json: {"format":1,"wersja":5,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
+Od wersji mapy 6 (wszystko obok, starsze pliki bez zmian – obecny ekran i dodatek czytają je jak dotąd):
+- warstwy szczegółów l<poziom>_<lat10>_<lon10>.ntt (poziomy 1–4, patrz LODS): ten sam format NTT1 co kwadrat,
+  ale kwadrat ma bok LODS[i]["size"] × 0,1° (klucz = róg południowo-zachodni w 0,1°), drogi tylko ważniejszych
+  klas, połączone w dłuższe linie (poziomy 2–4) i uproszczone, bez skrzyżowań (id drogi 0) i bez punktów; teren,
+  woda, rzeki i miejscowości tylko większe. Priorytety napisów są w danych: nazwę ulicy ma tylko droga dość długa
+  na danym poziomie (poziom 1), na poziomach 2–4 tylko numery dróg (ref) i miejscowości od progu rangi.
+  Ekran wybiera poziom z oddalenia: c_ do ok. 2 m/piksel, potem l1 (do 5), l2 (15), l3 (50), l4 (200).
+- znaki n_<lat10>_<lon10>.ntn (pasy ruchu, kierunki z drogowskazów, numery zjazdów):
+  "NTN1" u8 wersja=1 u8 0 i16 lat10 i16 lon10 u32 n_napisów u32 bajty_napisów, napisy jak w .ntt,
+  u32 n_znaków, znaki (11 B): u32 id_drogi (jak w .ntt) u8 kierunek (0 = na końcu drogi w kierunku jej
+  punktów, 1 = na początku, jadąc pod prąd geometrii) u16 pasy (turn:lanes, np. "left|through|right")
+  u16 kierunki (destination, np. "Kraków;Tarnów") u16 numery (destination:ref, np. "A4;S7");
+  u32 n_zjazdów, zjazdy (14 B): i32 lat1e6 i32 lon1e6 u16 numer (ref węzła motorway_junction) u16 nazwa u16 0.
+  Znak leży w kwadracie punktu, przy którym obowiązuje (koniec albo początek drogi).
+- w grafie .ntg flaga krawędzi 32 = droga „tylko dojazd” (access/motor_vehicle=destination).
+- wysokości h_<lat10>_<lon10>.nth (profil trasy i cieniowanie gór, z kafelków DEM kontenera www/dem):
+  "NTH1" u8 wersja=1 u8 0 i16 lat10 i16 lon10 u16 nx u16 ny i16 min_m i16 max_m, potem nx × ny i16 wysokość
+  w metrach (-32768 = brak), wiersze od północy, kolumny od zachodu, środek próbki j,i:
+  lat = (lat10 + 1) / 10 − (j + 0,5) × 0,1 / ny, lon = lon10 / 10 + (i + 0,5) × 0,1 / nx.
+W manifeście części "lod1".."lod4" ({"format":1,"level","size_deg","max_mpp","bytes","cells"}), "znaki" i "wys"
+(lista plików zawsze pod "cells", jak "graph").
+
+manifest.json: {"format":1,"wersja":6,"built":"RRRR-MM-DD","bytes":N,"files":[[nazwa, bajty, crc32], ...],
 "graph": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]}, "addr": {...}}
 (lista grafu nazywa się „cells”, nie „files”, bo proste czytniki JSON na ekranie szukają pierwszego „files”).
 crc32 jak w zlib (binascii.crc32), dziesiętnie.
 """
+import array
 import binascii
 import collections
 import json
@@ -86,13 +109,15 @@ import struct
 import subprocess
 import sys
 import time
+import zlib
 
 FORMAT = 1
 # Wersja zawartości mapy: aktualizuj.sh przebudowuje kwadraty, gdy kontener ma starszą
 # (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B);
 # 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie; 4 = + adresy (a_*.nta);
-# 5 = + spis nazwanych miejsc (a_poi.nta).
-MAP_VERSION = 5
+# 5 = + spis nazwanych miejsc (a_poi.nta); 6 = + warstwy szczegółów, znaki (pasy, kierunki, zjazdy),
+# droga „tylko dojazd” w grafie, wysokości.
+MAP_VERSION = 6
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -147,7 +172,7 @@ GRAPH_FORMAT = 1
 MAIN_CLASSES = {1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15}
 CLASS_KMH = {1: 100, 2: 70, 3: 65, 4: 60, 5: 50, 6: 30, 7: 30, 8: 20, 9: 15, 10: 5,
              11: 70, 12: 65, 13: 60, 14: 50, 15: 40}
-G_TOLL, G_TUNNEL, G_ROUNDABOUT, G_REVERSE, G_BRIDGE = 1, 2, 4, 8, 16
+G_TOLL, G_TUNNEL, G_ROUNDABOUT, G_REVERSE, G_BRIDGE, G_DESTINATION = 1, 2, 4, 8, 16, 32
 S_PAVED, S_GRAVEL, S_DIRT = 0, 1, 2
 SURF_GRAVEL = {"gravel", "fine_gravel", "compacted"}
 SURF_DIRT = {"unpaved", "dirt", "ground", "grass", "sand", "mud", "earth", "woodchips", "rock"}
@@ -173,7 +198,7 @@ POI_TAGS = (
     (("amenity", "charging_station"), P_CHARGING), (("shop", "motorcycle"), P_MOTO_SHOP),
     (("shop", "motorcycle_repair"), P_MOTO_SHOP), (("tourism", "picnic_site"), P_PICNIC),
 )
-NODE_FILTER = ["n/highway=speed_camera"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
+NODE_FILTER = ["n/highway=speed_camera,motorway_junction"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_FILTER = ["nwr/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_TOWN_M = 10000  # bez addr:city: najbliższa miejscowość ze spisu adresów, jeśli nie dalej
 
@@ -182,6 +207,35 @@ IMPLICIT = {"PL:urban": 50, "PL:rural": 90, "PL:motorway": 140, "PL:expressway":
             "CZ:urban": 50, "CZ:rural": 90, "CZ:motorway": 130, "SK:urban": 50, "SK:rural": 90, "SK:motorway": 130,
             "DE:urban": 50, "DE:rural": 100, "LT:urban": 50, "LT:rural": 90, "UA:urban": 50, "UA:rural": 90,
             "BY:urban": 60, "BY:rural": 90}
+
+
+# Warstwy szczegółów (mapa 6). Liczby: rozmiar kwadratu × 0,1°, do jakiego oddalenia (m/piksel) ekran używa
+# warstwy, klasy dróg, uproszczenie (stopnie, ok. 1 piksel przy tym oddaleniu), napisy ulic od długości drogi (m),
+# numery dróg dla klas, teren {rodzaj: min m²} i jego uproszczenie, woda min m², rzeki, miejscowości (rodzaje, min
+# ranga: 40 × log10(mieszkańców), 100 ≈ 300 osób, 160 = 10 tys.).
+_ALL_ROADS = set(CLASSES.values())
+_MAIN = {1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15}
+LODS = (
+    {"level": 1, "size": 1, "mpp": 5, "classes": _ALL_ROADS - {8, 9}, "tol": 0.00003, "merge": False, "names": 100,
+     "refs": _MAIN, "terrain": {T_FOREST: 50000, T_GRASS: 50000, T_HOMES: 50000, T_INDUSTRY: 50000, T_WETLAND: 50000,
+                               T_CEMETERY: 20000, T_SPORT: 20000},
+     "ttol": 0.00005, "water": 20000, "rivers": {R_RIVER, R_CANAL}, "places": {PL_CITY, PL_TOWN, PL_VILLAGE}, "rank": 0},
+    {"level": 2, "size": 2, "mpp": 15, "classes": _MAIN, "tol": 0.0001, "merge": True, "names": None,
+     "refs": {1, 2, 3, 4, 11, 12, 13}, "terrain": {T_FOREST: 200000, T_HOMES: 200000, T_INDUSTRY: 500000,
+                                                     T_WETLAND: 500000, T_GRASS: 500000},
+     "ttol": 0.00015, "water": 50000, "rivers": {R_RIVER}, "places": {PL_CITY, PL_TOWN, PL_VILLAGE}, "rank": 100},
+    {"level": 3, "size": 5, "mpp": 50, "classes": {1, 2, 3, 4, 11, 12, 13}, "tol": 0.0003, "merge": True,
+     "names": None, "refs": {1, 2, 3}, "terrain": {T_FOREST: 1000000, T_HOMES: 1000000},
+     "ttol": 0.0005, "water": 500000, "rivers": {R_RIVER}, "places": {PL_CITY, PL_TOWN}, "rank": 0},
+    {"level": 4, "size": 10, "mpp": 200, "classes": {1, 2, 3, 11, 12}, "tol": 0.001, "merge": True, "names": None,
+     "refs": {1, 2}, "terrain": {T_FOREST: 10000000, T_HOMES: 5000000},
+     "ttol": 0.002, "water": 5000000, "rivers": {R_RIVER}, "places": {PL_CITY, PL_TOWN}, "rank": 160},
+)
+LOD_MAX_PTS = 60000       # dłuższe połączone linie dzielone (u16 n_pkt w formacie)
+HEIGHT_N = 100            # próbek na bok kwadratu 0,1° (ok. 110 × 70 m)
+HEIGHT_ZOOM = 10          # kafelki DEM: piksel ok. 100 m na szerokości Polski
+SIGN_REC = struct.Struct("<IBHHH")
+EXIT_REC = struct.Struct("<iiHHH")
 
 
 def parse_maxspeed(v):
@@ -221,8 +275,9 @@ def cell_of(lat, lon):
 
 
 class Cell:
-    def __init__(self, key):
+    def __init__(self, key, prefix="t"):
         self.key = key
+        self.prefix = prefix
         self.strings = {}
         self.string_bytes = bytearray()
         self.offsets = []
@@ -299,7 +354,7 @@ class Cell:
         """Teren całej Polski nie mieści się w pamięci kontenera: odkłada go na dysk."""
         if not self.terrain:
             return
-        self.terrain_file = os.path.join(folder, "t_%d_%d.bin" % self.key)
+        self.terrain_file = os.path.join(folder, "%s_%d_%d.bin" % ((self.prefix,) + tuple(self.key)))
         with open(self.terrain_file, "ab") as f:
             f.write(self.terrain)
         self.terrain = bytearray()
@@ -431,6 +486,376 @@ def line_pieces(pts):
     return out
 
 
+def lod_key(lat, lon, size):
+    return math.floor(lat * CELL / size) * size, math.floor(lon * CELL / size) * size
+
+
+def lod_box(key, size, margin):
+    return (key[0] / CELL - margin, key[1] / CELL - margin, (key[0] + size) / CELL + margin,
+            (key[1] + size) / CELL + margin)
+
+
+def lod_box_cells(s, w, n, e, size):
+    a, b = lod_key(s, w, size), lod_key(n, e, size)
+    for la in range(a[0], b[0] + 1, size):
+        for lo in range(a[1], b[1] + 1, size):
+            yield la, lo
+
+
+def lod_way_cells(pts, size):
+    """Kwadraty warstwy, przez które przechodzi linia (każdy odcinek: jego prostokąt)."""
+    keys = set()
+    for a, b in zip(pts, pts[1:]):
+        keys.update(lod_box_cells(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]), size))
+    return keys
+
+
+def lod_line_pieces(pts, size):
+    out = {}
+    for a, b in zip(pts, pts[1:]):
+        for key in lod_box_cells(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]), size):
+            runs = out.setdefault(key, [])
+            if runs and runs[-1][-1] == a:
+                runs[-1].append(b)
+            else:
+                runs.append([a, b])
+    return out
+
+
+def line_length_m(pts):
+    return sum(dist_m(a, b) for a, b in zip(pts, pts[1:]))
+
+
+def merge_lines(lines):
+    """Łączy linie o wspólnych końcach w dłuższe (kolejność punktów może się odwrócić).
+    lines: listy punktów (krotki liczb całkowitych); zwraca nowe listy."""
+    ends = collections.defaultdict(list)
+    for i, l in enumerate(lines):
+        ends[l[0]].append(i)
+        ends[l[-1]].append(i)
+    used = [False] * len(lines)
+    out = []
+
+    def take(p):
+        for j in ends.get(p, ()):
+            if not used[j]:
+                used[j] = True
+                l = lines[j]
+                return l if l[0] == p else l[::-1]
+        return None
+    for i, l in enumerate(lines):
+        if used[i]:
+            continue
+        used[i] = True
+        cur = list(l)
+        while True:
+            nxt = take(cur[-1])
+            if nxt is None:
+                break
+            cur.extend(nxt[1:])
+        while True:
+            prv = take(cur[0])
+            if prv is None:
+                break
+            cur[0:0] = prv[::-1][:-1]
+        out.append(cur)
+    return out
+
+
+class Lod:
+    """Warstwy szczegółów l1..l4 (mapa 6): zbierane razem z pełnymi kwadratami, zapisywane na końcu."""
+
+    def __init__(self):
+        self.cells = {lv["level"]: {} for lv in LODS}
+        self.lines = {lv["level"]: collections.defaultdict(list) for lv in LODS if lv["merge"]}
+
+    def cell(self, lv, key):
+        cs = self.cells[lv["level"]]
+        c = cs.get(key)
+        if c is None:
+            c = cs[key] = Cell(key, "l%d" % lv["level"])
+        return c
+
+    def way(self, cls, name, ref, pts):
+        length = None
+        for lv in LODS:
+            if cls not in lv["classes"]:
+                continue
+            sp = simplify(pts, lv["tol"])
+            if len(sp) < 2:
+                continue
+            nm = ""
+            if lv["names"] and name:
+                if length is None:
+                    length = line_length_m(pts)
+                if length >= lv["names"]:
+                    nm = name
+            rf = ref if cls in lv["refs"] else ""
+            keys = lod_way_cells(sp, lv["size"])
+            if lv["merge"]:
+                flat = array.array("i")
+                for lat, lon in sp:
+                    flat.append(int(round(lat * 1e6)))
+                    flat.append(int(round(lon * 1e6)))
+                for k in keys:
+                    self.lines[lv["level"]][k].append((cls, rf, nm, flat))
+            else:
+                for k in keys:
+                    for part in range(0, len(sp) - 1, LOD_MAX_PTS - 1):
+                        self.cell(lv, k).add_way(0, cls, 0, 0, 0, nm, rf, sp[part:part + LOD_MAX_PTS], [])
+
+    def place(self, lat, lon, kind, rank, name):
+        for lv in LODS:
+            if kind in lv["places"] and rank >= lv["rank"]:
+                self.cell(lv, lod_key(lat, lon, lv["size"])).add_place(lat, lon, kind, rank, name)
+
+    def _ring(self, lv, ring, tol):
+        pts = simplify(ring + ring[:1], tol)[:-1]
+        if len(pts) < 3:
+            return
+        lats = [p[0] for p in pts]
+        lons = [p[1] for p in pts]
+        margin = CLIP_MARGIN * lv["size"]
+        for key in lod_box_cells(min(lats), min(lons), max(lats), max(lons), lv["size"]):
+            part = clip_ring(pts, *lod_box(key, lv["size"], margin))
+            if len(part) >= 3:
+                yield key, part
+
+    def water(self, kind, name, ring, area):
+        for lv in LODS:
+            if area >= lv["water"]:
+                for key, part in self._ring(lv, ring, lv["ttol"]):
+                    self.cell(lv, key).add_water(kind, name, part)
+
+    def river(self, kind, name, pts):
+        for lv in LODS:
+            if kind not in lv["rivers"]:
+                continue
+            sp = simplify(pts, lv["ttol"])
+            for key, runs in lod_line_pieces(sp, lv["size"]).items():
+                for r in runs:
+                    self.cell(lv, key).add_river(kind, name, r)
+
+    def terrain(self, kind, ring, area):
+        n = 0
+        for lv in LODS:
+            need = lv["terrain"].get(kind & 0x7F)
+            if not need or area < need:
+                continue
+            for key, part in self._ring(lv, ring, lv["ttol"]):
+                self.cell(lv, key).add_terrain(kind, part)
+                n += 1
+        return n
+
+    def spill(self, folder):
+        for cs in self.cells.values():
+            for c in cs.values():
+                c.spill_terrain(folder)
+
+    def write(self, out):
+        """Zapisuje warstwy; zwraca części manifestu {"lod1": {...}, ...}."""
+        parts = {}
+        for lv in LODS:
+            level = lv["level"]
+            if lv["merge"]:
+                for key, items in self.lines[level].items():
+                    groups = collections.defaultdict(list)
+                    for cls, rf, nm, flat in items:
+                        groups[(cls, rf, nm)].append(tuple(zip(flat[0::2], flat[1::2])))
+                    for (cls, rf, nm), lines in sorted(groups.items()):
+                        for l in merge_lines(lines):
+                            sp = simplify([(a / 1e6, b / 1e6) for a, b in l], lv["tol"])
+                            for part in range(0, len(sp) - 1, LOD_MAX_PTS - 1):
+                                self.cell(lv, key).add_way(0, cls, 0, 0, 0, nm, rf, sp[part:part + LOD_MAX_PTS], [])
+                self.lines[level].clear()
+            files = []
+            total = 0
+            cs = self.cells[level]
+            for key in sorted(cs):
+                name = "l%d_%d_%d.ntt" % ((level,) + tuple(key))
+                n, crc = cs[key].write(os.path.join(out, name))
+                files.append([name, n, crc])
+                total += n
+            cs.clear()
+            parts["lod%d" % level] = {"format": FORMAT, "level": level, "size_deg": lv["size"] / CELL,
+                                      "max_mpp": lv["mpp"], "bytes": total, "cells": files}
+            print("warstwa %d: %d kwadratów, %.1f MB" % (level, len(files), total / 1e6), flush=True)
+        return parts
+
+
+class Signs:
+    """Pasy ruchu, kierunki z drogowskazów i numery zjazdów (pliki n_*.ntn, mapa 6)."""
+
+    def __init__(self):
+        self.cells = {}
+
+    def _cell(self, key):
+        c = self.cells.get(key)
+        if c is None:
+            c = self.cells[key] = {"strings": {}, "bytes": bytearray(), "offsets": [], "signs": bytearray(),
+                                   "nsigns": 0, "exits": bytearray(), "nexits": 0}
+        return c
+
+    @staticmethod
+    def _string(c, s):
+        if not s:
+            return 0xFFFF
+        s = s[:120]
+        i = c["strings"].get(s)
+        if i is None:
+            if len(c["offsets"]) >= 0xFFFE:
+                return 0xFFFF
+            i = len(c["offsets"])
+            c["strings"][s] = i
+            c["offsets"].append(len(c["bytes"]))
+            c["bytes"] += s.encode("utf-8") + b"\0"
+        return i
+
+    def sign(self, lat, lon, wid, direction, lanes, dest, dest_ref):
+        if not (lanes or dest or dest_ref):
+            return
+        c = self._cell(cell_of(lat, lon))
+        c["signs"] += SIGN_REC.pack(wid & 0xFFFFFFFF, direction, self._string(c, lanes), self._string(c, dest),
+                                    self._string(c, dest_ref))
+        c["nsigns"] += 1
+
+    def exit(self, lat, lon, ref, name):
+        if not (ref or name):
+            return
+        c = self._cell(cell_of(lat, lon))
+        c["exits"] += EXIT_REC.pack(int(round(lat * 1e6)), int(round(lon * 1e6)), self._string(c, ref),
+                                    self._string(c, name), 0)
+        c["nexits"] += 1
+
+    def write(self, out):
+        files = []
+        total = 0
+        for key in sorted(self.cells):
+            c = self.cells[key]
+            data = struct.pack("<4sBBhhII", b"NTN1", 1, 0, key[0], key[1], len(c["offsets"]), len(c["bytes"])) + \
+                struct.pack("<%dI" % len(c["offsets"]), *c["offsets"]) + bytes(c["bytes"]) + \
+                struct.pack("<I", c["nsigns"]) + bytes(c["signs"]) + struct.pack("<I", c["nexits"]) + bytes(c["exits"])
+            name = "n_%d_%d.ntn" % key
+            with open(os.path.join(out, name), "wb") as f:
+                f.write(data)
+            files.append([name, len(data), binascii.crc32(data)])
+            total += len(data)
+        self.cells.clear()
+        print("znaki: %d kwadratów, %.1f MB" % (len(files), total / 1e6), flush=True)
+        return {"format": 1, "bytes": total, "cells": files}
+
+
+def png_rgb(path):
+    """Czyta PNG 8 bitów RGB/RGBA bez przeplotu (kafelki DEM Terrarium); zwraca (szer, wys, bpp, piksele)."""
+    with open(path, "rb") as f:
+        b = f.read()
+    if b[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    pos, idat, w = 8, [], None
+    while pos + 8 <= len(b):
+        n, typ = struct.unpack(">I4s", b[pos:pos + 8])
+        body = b[pos + 8:pos + 8 + n]
+        if typ == b"IHDR":
+            w, h, depth, ctype, _, _, inter = struct.unpack(">IIBBBBB", body)
+            if depth != 8 or ctype not in (2, 6) or inter:
+                return None
+            bpp = 3 if ctype == 2 else 4
+        elif typ == b"IDAT":
+            idat.append(body)
+        elif typ == b"IEND":
+            break
+        pos += 12 + n
+    if w is None:
+        return None
+    raw = zlib.decompress(b"".join(idat))
+    stride = w * bpp
+    out = bytearray(h * stride)
+    prev = bytearray(stride)
+    p = 0
+    for y in range(h):
+        ft = raw[p]
+        line = bytearray(raw[p + 1:p + 1 + stride])
+        p += 1 + stride
+        if ft == 1:
+            for i in range(bpp, stride):
+                line[i] = (line[i] + line[i - bpp]) & 255
+        elif ft == 2:
+            line = bytearray((a + c) & 255 for a, c in zip(line, prev))
+        elif ft == 3:
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 255
+        elif ft == 4:
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0
+                c = prev[i - bpp] if i >= bpp else 0
+                up = prev[i]
+                pa, pb, pc = abs(up - c), abs(a - c), abs(a + up - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else up if pb <= pc else c)) & 255
+        out[y * stride:(y + 1) * stride] = line
+        prev = line
+    return w, h, bpp, out
+
+
+def build_heights(dem, keys, out):
+    """Wysokości na kwadrat 0,1° z kafelków DEM (Terrarium) kontenera; zwraca część manifestu albo None."""
+    t0 = time.time()
+    z = HEIGHT_ZOOM
+    if not os.path.isdir(os.path.join(dem, str(z))):
+        print("wysokości: brak kafelków %s/%d – pomijam" % (dem, z), flush=True)
+        return None
+    cache = collections.OrderedDict()
+    scale = (1 << z) * 256
+
+    def tile(tx, ty):
+        k = (tx, ty)
+        if k in cache:
+            cache.move_to_end(k)
+            return cache[k]
+        p = os.path.join(dem, str(z), str(tx), "%d.png" % ty)
+        t = None
+        if os.path.exists(p):
+            try:
+                t = png_rgb(p)
+            except (zlib.error, struct.error, ValueError):
+                t = None
+        cache[k] = t
+        if len(cache) > 64:
+            cache.popitem(last=False)
+        return t
+    files = []
+    total = 0
+    n = HEIGHT_N
+    for key in sorted(keys):
+        hs = array.array("h")
+        for j in range(n):
+            lat = (key[0] + 1) / CELL - (j + 0.5) / CELL / n
+            r = math.radians(lat)
+            py = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * scale
+            for i in range(n):
+                lon = key[1] / CELL + (i + 0.5) / CELL / n
+                px = (lon + 180) / 360 * scale
+                t = tile(int(px) >> 8, int(py) >> 8)
+                if not t:
+                    hs.append(-32768)
+                    continue
+                w, h, bpp, pix = t
+                o = ((int(py) & 255) * w + (int(px) & 255)) * bpp
+                v = pix[o] * 256 + pix[o + 1] + pix[o + 2] / 256.0 - 32768
+                hs.append(max(-32767, min(32767, int(round(v)))))
+        known = [v for v in hs if v != -32768]
+        if not known:
+            continue
+        data = struct.pack("<4sBBhhHHhh", b"NTH1", 1, 0, key[0], key[1], n, n, min(known), max(known)) + hs.tobytes()
+        name = "h_%d_%d.nth" % key
+        with open(os.path.join(out, name), "wb") as f:
+            f.write(data)
+        files.append([name, len(data), binascii.crc32(data)])
+        total += len(data)
+    print("wysokości: %d kwadratów, %.1f MB (%.0f s)" % (len(files), total / 1e6, time.time() - t0), flush=True)
+    return {"format": 1, "n": n, "zoom": z, "bytes": total, "cells": files}
+
+
 def place_rank(kind, population):
     try:
         pop = int(str(population).replace(" ", "").split(";")[0])
@@ -439,7 +864,7 @@ def place_rank(kind, population):
     return max(1, min(255, int(round(math.log10(max(pop, 10)) * 40))))
 
 
-def add_background(src, work, cell):
+def add_background(src, work, cell, lod=None):
     """Woda, rzeki i miejscowości (do rysowania tła na ekranie)."""
     t0 = time.time()
     wpbf = os.path.join(work, "woda.pbf")
@@ -459,7 +884,10 @@ def add_background(src, work, cell):
                 kind = PLACES.get(tags.get("place"))
                 if kind and name:
                     lon, lat = geom["coordinates"]
-                    cell(cell_of(lat, lon)).add_place(lat, lon, kind, place_rank(kind, tags.get("population")), name)
+                    rank = place_rank(kind, tags.get("population"))
+                    cell(cell_of(lat, lon)).add_place(lat, lon, kind, rank, name)
+                    if lod:
+                        lod.place(lat, lon, kind, rank, name)
                     npl += 1
             elif gt == "LineString":
                 kind = {"river": R_RIVER, "canal": R_CANAL}.get(tags.get("waterway"))
@@ -469,6 +897,8 @@ def add_background(src, work, cell):
                 for key, runs in line_pieces(pts).items():
                     for r in runs:
                         cell(key).add_river(kind, name, r)
+                if lod:
+                    lod.river(kind, name, pts)
                 nr += 1
             elif gt in ("Polygon", "MultiPolygon"):
                 if tags.get("natural") != "water" and tags.get("landuse") != "reservoir":
@@ -477,8 +907,13 @@ def add_background(src, work, cell):
                 for poly in polys:
                     for ri, ring in enumerate(poly):
                         pts = [(c[1], c[0]) for c in ring[:-1]]
-                        if len(pts) < 3 or ring_area_m2(pts) < WATER_MIN_M2:
+                        if len(pts) < 3:
                             continue
+                        area = ring_area_m2(pts)
+                        if area < WATER_MIN_M2:
+                            continue
+                        if lod:
+                            lod.water(W_WATER if ri == 0 else W_ISLAND, name if ri == 0 else "", pts, area)
                         pts = simplify(pts + pts[:1], WATER_TOL)[:-1]
                         if len(pts) < 3:
                             continue
@@ -516,7 +951,7 @@ def add_ring(cell, kind, pts):
     return n
 
 
-def add_terrain(src, work, cell, cells):
+def add_terrain(src, work, cell, cells, lod=None):
     """Lasy, łąki, osiedla, przemysł, mokradła, cmentarze (mapa w stylu B)."""
     t0 = time.time()
     tpbf = os.path.join(work, "teren.pbf")
@@ -551,12 +986,16 @@ def add_terrain(src, work, cell, cells):
                     if area < (HOLE_MIN_M2 if ri else TERRAIN_MIN_M2[kind]):
                         continue
                     nparts += add_ring(cell, (kind | T_HOLE) if ri else kind, pts)
+                    if lod:
+                        nparts += lod.terrain((kind | T_HOLE) if ri else kind, pts, area)
                     if ri:
                         nh += 1
                 na += 1
             if nparts - spilled > SPILL_PARTS:
                 for c in cells.values():
                     c.spill_terrain(work)
+                if lod:
+                    lod.spill(work)
                 spilled = nparts
     if exp.returncode:
         raise subprocess.CalledProcessError(exp.returncode, "osmium export (teren)")
@@ -603,6 +1042,10 @@ def restriction_of(tags, members):
     return int(via[0][1:]), int(fr[0][1:]), int(to[0][1:]), kind
 
 
+def access_of(tags):
+    return tags.get("motor_vehicle") or tags.get("motorcar") or tags.get("vehicle") or tags.get("access")
+
+
 def surface_kind(tags):
     surf = (tags.get("surface") or "").split(":")[0]
     if surf in SURF_GRAVEL:
@@ -637,6 +1080,8 @@ def graph_edges(f, wid, cls, flags, tags, limit, limit_back, pts, juncs):
     prio = base_priority(cls, tags)
     gfl = (G_TOLL if flags & F_TOLL else 0) | (G_TUNNEL if flags & F_TUNNEL else 0) | \
           (G_ROUNDABOUT if flags & F_ROUNDABOUT else 0) | (G_BRIDGE if flags & F_BRIDGE else 0)
+    if access_of(tags) == "destination":
+        gfl |= G_DESTINATION
     kmh = edge_kmh(cls, limit, surf)
     kmh_back = edge_kmh(cls, limit_back or limit, surf)
     js = sorted(juncs)
@@ -1098,6 +1543,8 @@ def build(pbf, out, bbox=None):
                            bufsize=1 << 20)
     exp = subprocess.Popen(["osmium", "export", roads, "-f", "geojsonseq", "--add-unique-id=type_id"],
                            stdout=subprocess.PIPE, text=True, bufsize=1 << 20)
+    lod = Lod()
+    signs = Signs()
     opl_line = None
     nways = npts = npoints = 0
     edges_tmp = os.path.join(work, "krawedzie.bin")
@@ -1114,6 +1561,9 @@ def build(pbf, out, bbox=None):
             nid = int(fid[1:])
             if nid in sections:
                 continue  # dodane niżej z relacji
+            if tags.get("highway") == "motorway_junction":
+                signs.exit(lat, lon, tags.get("ref") or "", tags.get("name") or "")
+                continue
             if tags.get("highway") == "speed_camera":
                 cell(cell_of(lat, lon)).add_point(nid, lat, lon, P_CAMERA, parse_maxspeed(tags.get("maxspeed")),
                                                   "", 0)
@@ -1135,7 +1585,7 @@ def build(pbf, out, bbox=None):
             continue
         if hw == "service" and tags.get("service") in SKIP_SERVICE:
             continue
-        acc = tags.get("motor_vehicle") or tags.get("motorcar") or tags.get("vehicle") or tags.get("access")
+        acc = access_of(tags)
         if acc in ("no", "private", "agricultural", "forestry", "delivery", "customers") and \
                 tags.get("motorcycle") not in ("yes", "designated"):
             continue
@@ -1198,6 +1648,16 @@ def build(pbf, out, bbox=None):
             continue
         for key in way_cells(pts):
             cell(key).add_way(wid, cls, flags, limit, limit_back, name, ref, pts, juncs)
+        lod.way(cls, name, ref, pts)
+        fwd = (tags.get("turn:lanes:forward") or tags.get("turn:lanes") or "",
+               tags.get("destination:forward") or tags.get("destination") or "",
+               tags.get("destination:ref:forward") or tags.get("destination:ref") or "")
+        bwd = (tags.get("turn:lanes:backward") or "", tags.get("destination:backward") or "",
+               tags.get("destination:ref:backward") or "")
+        if oneway == "-1":
+            fwd, bwd = bwd, fwd   # punkty drogi są już odwrócone
+        signs.sign(pts[-1][0], pts[-1][1], wid, 0, *fwd)
+        signs.sign(pts[0][0], pts[0][1], wid, 1, *bwd)
         if refs_ids and len(refs_ids) == len(pts):
             nedges += graph_edges(etmp, wid, cls, flags, tags, limit, limit_back, pts, juncs)
         nways += 1
@@ -1214,8 +1674,8 @@ def build(pbf, out, bbox=None):
             npoints += 1
 
     # 4. tło dla ekranu: woda, rzeki, miejscowości; teren do mapy w stylu B
-    add_background(src, work, cell)
-    add_terrain(src, work, cell, cells)
+    add_background(src, work, cell, lod)
+    add_terrain(src, work, cell, cells, lod)
 
     # 5. zapis kwadratów (pamięć po nich zwalniamy przed składaniem grafu)
     files = []
@@ -1227,7 +1687,10 @@ def build(pbf, out, bbox=None):
         n, crc = cells[key].write(os.path.join(out, name))
         files.append([name, n, crc])
         total += n
+    keys = list(cells)
     cells.clear()
+    extra = lod.write(out)
+    extra["znaki"] = signs.write(out)
 
     # 6. adresy do wyboru celu offline (pliki a_*.nta)
     addr, towns = add_addresses(src, work, out)
@@ -1238,12 +1701,17 @@ def build(pbf, out, bbox=None):
     # 7. graf tras do nawigacji offline (pliki g_*.ntg)
     graph = build_graph(edges_tmp, restrictions, out)
     print("graf tras: %d krawędzi, %d zakazów skrętu" % (nedges, len(restrictions)), flush=True)
+    # 8. wysokości (kafelki DEM pobiera dem.py do www/dem obok katalogu mapy)
+    hs = build_heights(os.path.join(os.path.dirname(os.path.abspath(out)), "dem"), keys, out)
+    if hs:
+        extra["wys"] = hs
     manifest = {
         "format": FORMAT, "wersja": MAP_VERSION, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
         "source": os.path.basename(pbf), "ways": nways, "points": npoints, "bytes": total,
-        "bbox": [min(lats) / CELL, min(lons) / CELL, (max(lats) + 1) / CELL, (max(lons) + 1) / CELL] if cells else None,
+        "bbox": [min(lats) / CELL, min(lons) / CELL, (max(lats) + 1) / CELL, (max(lons) + 1) / CELL] if lats else None,
         "files": files, "graph": graph, "addr": addr,
     }
+    manifest.update(extra)
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f)
     for name in os.listdir(work):
