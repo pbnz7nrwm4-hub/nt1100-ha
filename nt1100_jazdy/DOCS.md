@@ -46,6 +46,9 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.43
+- Paczka ZIP zrobiona przed 1.5.42 (stary układ `mapa/`) nie jest już podawana: dodatek robi ją od nowa w układzie `m6`.
+
 ## Zmiany w 1.5.42 (ekran 5" 2.5.0)
 - Paczka ZIP mapy na kartę ma nowy układ: folder `m6` z podfolderami (np. `m6/c/500/c_500_199.ntt`), po kilkadziesiąt plików w folderze. Mapa 6 ma ponad 26 tys. plików; w jednym folderze karta szukała każdego pliku do 2,5 s, ekran się ciął i restartował. Ekran od 2.5.0 czyta tylko `m6`; stary folder `mapa` można z karty skasować.
 - Fotoradary zwykłe nie są już liczone jako odcinkowe (po przebudowie mapy w kontenerze).

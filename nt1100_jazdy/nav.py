@@ -1756,7 +1756,8 @@ class Nav:
         m = self.map.manifest()
         z = self.zip_path()
         st = self.state.get("map_zip") or {}
-        ready = bool(m) and os.path.exists(z) and st.get("built") == m.get("built") and st.get("bytes") == m.get("bytes")
+        ready = bool(m) and os.path.exists(z) and st.get("built") == m.get("built") and st.get("bytes") == m.get("bytes") \
+            and st.get("layout") == "m6"   # 1.5.43: a ZIP from before 1.5.42 (flat mapa/) is made again
         return {"ready": ready, "mb": round(os.path.getsize(z) / 1e6, 1) if ready else 0,
                 "working": bool(getattr(self, "_zipping", False))}
 
@@ -1786,7 +1787,7 @@ class Nav:
                         z.write(p, self.card_path(f[0]))
                 z.writestr("m6/manifest.json", json.dumps(m))
             os.replace(tmp, self.zip_path())
-            self.save_state(map_zip={"built": m.get("built"), "bytes": m.get("bytes"), "t": int(time.time())})
+            self.save_state(map_zip={"built": m.get("built"), "bytes": m.get("bytes"), "t": int(time.time()), "layout": "m6"})
             log("paczka mapy na kartę gotowa: %.0f MB" % (os.path.getsize(self.zip_path()) / 1e6))
             return True
         except Exception as e:
