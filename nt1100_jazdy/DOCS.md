@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.42 (ekran 5" 2.5.0)
+- Paczka ZIP mapy na kartę ma nowy układ: folder `m6` z podfolderami (np. `m6/c/500/c_500_199.ntt`), po kilkadziesiąt plików w folderze. Mapa 6 ma ponad 26 tys. plików; w jednym folderze karta szukała każdego pliku do 2,5 s, ekran się ciął i restartował. Ekran od 2.5.0 czyta tylko `m6`; stary folder `mapa` można z karty skasować.
+- Fotoradary zwykłe nie są już liczone jako odcinkowe (po przebudowie mapy w kontenerze).
+
 ## Zmiany w 1.5.41 (ekran 2.3.2)
 - W dodatku jest ekran 2.3.2: Menu → „Aktualizuj 2.3.2” pobiera go przez Wi-Fi albo hotspot. Nowe: podgląd trasy przed startem (mapa, miejscowości, przystanki), ustawienia wpisywane na samym ekranie (Menu → Ustawienia), w Menu stan modułu GPS („moduł milczy” albo liczba satelitów), w „Jedź do…” przycisk Ulubione z pełną listą i wybór startu (GPS, ostatnia pozycja albo dowolny adres – także bez GPS).
 - GPX dla BMW: w „Zapisanych trasach” pozycja „GPX dla BMW (Connected)” zapisuje trasę w układzie aplikacji BMW Motorrad Connected (punkty start, po drodze, cel; krętość i omijanie; cały ślad drogi), do wczytania w nawigacji BMW.
@@ -423,7 +427,7 @@ wczytywanie plików GPX (np. z Kurvigera).
 - **Mapa na kartę ekranu**: dodatek pobiera ją z kontenera (raz dziennie sprawdza nowszą), za
   każdym razem tylko kwadraty, które się zmieniły (suma kontrolna w manifeście). Pierwsze wgranie
   najszybciej z paczki ZIP: zakładka Motocykl → „Ekran i mapa” → paczka ZIP na kartę, rozpakuj ją na
-  kartę ekranu (folder `mapa`). Dalej ekran dociąga w domu po Wi-Fi tylko zmienione kwadraty,
+  kartę ekranu (od 1.5.42 folder `m6` z podfolderami; ekran 5" od 2.5.0). Dalej ekran dociąga w domu po Wi-Fi tylko zmienione kwadraty,
   najpierw okolicę domu i bieżącej trasy. Mapa ekranu ma też wodę, rzeki i nazwy miejscowości.
 - **Przebudowa w kontenerze**: w tej samej karcie widać etap (np. „mapa do przeglądarki 3/5”)
   i czas od startu; w tym czasie trasy mogą się nie liczyć.

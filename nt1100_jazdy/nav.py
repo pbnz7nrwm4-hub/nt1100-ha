@@ -1760,8 +1760,16 @@ class Nav:
         return {"ready": ready, "mb": round(os.path.getsize(z) / 1e6, 1) if ready else 0,
                 "working": bool(getattr(self, "_zipping", False))}
 
+    @staticmethod
+    def card_path(name):
+        """1.5.42: miejsce pliku na karcie ekranu 5" od 2.5.0 – m6/<rodzaj>/<szerokość>/<plik>
+        (26 tys. plików w jednym folderze: każde otwarcie na karcie FAT czytało cały folder, 2,5 s).
+        To samo co hw::mapFile w ekranie i tools/mapa_na_karte.py."""
+        m = re.match(r"^([a-z0-9]{1,3})_(-?\d+)_", name)
+        return "m6/%s/%s/%s" % (m.group(1), m.group(2), name) if m else "m6/" + name
+
     def map_zip(self):
-        """Paczka ZIP całej mapy do rozpakowania na kartę ekranu (folder mapa/)."""
+        """Paczka ZIP całej mapy do rozpakowania na kartę ekranu (1.5.42: folder m6/ z podfolderami)."""
         import zipfile
         if getattr(self, "_zipping", False):
             return False
@@ -1775,8 +1783,8 @@ class Nav:
                 for f in m.get("files", []) + [c for part in MAP_EXTRA for c in ((m.get(part) or {}).get("cells") or [])]:
                     p = os.path.join(self.map_dir, f[0])
                     if os.path.exists(p):
-                        z.write(p, "mapa/" + f[0])
-                z.writestr("mapa/manifest.json", json.dumps(m))
+                        z.write(p, self.card_path(f[0]))
+                z.writestr("m6/manifest.json", json.dumps(m))
             os.replace(tmp, self.zip_path())
             self.save_state(map_zip={"built": m.get("built"), "bytes": m.get("bytes"), "t": int(time.time())})
             log("paczka mapy na kartę gotowa: %.0f MB" % (os.path.getsize(self.zip_path()) / 1e6))
