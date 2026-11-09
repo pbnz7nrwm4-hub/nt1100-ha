@@ -34,7 +34,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import navapi  # noqa: E402
 
-VERSION = "1.5.41"
+# 1.5.44: the number comes from the add-on build (BUILD_VERSION from config.yaml), so the page footer
+# never shows a stale version again; the literal is only a fallback for tests and local runs.
+VERSION = os.environ.get("NT1100_VERSION") or "1.5.44"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))

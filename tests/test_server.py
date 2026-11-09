@@ -231,5 +231,19 @@ class ServerTest(unittest.TestCase):
                     self.assertNotIn(h, banned, "%s: nazwa czesci w pliku" % name)
 
 
+class VersionFallbackTest(unittest.TestCase):
+    """1.5.44: the fallback number in server.py must match config.yaml (the footer showed 1.5.41 on 1.5.43)."""
+
+    def test_fallback_matches_config(self):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "nt1100_jazdy")
+        with open(os.path.join(root, "config.yaml"), encoding="utf-8") as f:
+            cfg = [l.split('"')[1] for l in f if l.startswith("version:")][0]
+        with open(os.path.join(root, "server.py"), encoding="utf-8") as f:
+            line = [l for l in f if l.startswith("VERSION = ")][0]
+        self.assertIn('"%s"' % cfg, line)
+        with open(os.path.join(root, "Dockerfile"), encoding="utf-8") as f:
+            self.assertIn("NT1100_VERSION=$BUILD_VERSION", f.read())
+
+
 if __name__ == "__main__":
     unittest.main()

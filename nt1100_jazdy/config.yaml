@@ -1,5 +1,5 @@
 name: NT1100 Jazdy
-version: "1.5.43"
+version: "1.5.44"
 slug: nt1100_jazdy
 description: Jazdy ze skrzynki telemetrycznej Hondy NT1100 - strona jazd, urzadzenie NT1100 przez MQTT, pogoda, serwis i powiadomienia
 arch:
