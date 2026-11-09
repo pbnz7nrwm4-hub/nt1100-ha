@@ -116,8 +116,9 @@ FORMAT = 1
 # (także gdy dane OSM się nie zmieniły). 1 = drogi, punkty, tło; 2 = + teren (styl B);
 # 3 = + graf tras (g_*.ntg) do nawigacji offline na ekranie; 4 = + adresy (a_*.nta);
 # 5 = + spis nazwanych miejsc (a_poi.nta); 6 = + warstwy szczegółów, znaki (pasy, kierunki, zjazdy),
-# droga „tylko dojazd” w grafie, wysokości.
-MAP_VERSION = 6
+# droga „tylko dojazd” w grafie, wysokości; 7 = + sieci przeskoków dla ekranu 2.8.0 (siec.py: pliki
+# <profil>_<lat10>_<lon10>.nto, długie trasy offline bez wczytywania całego grafu).
+MAP_VERSION = 7
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -1708,6 +1709,13 @@ def build(pbf, out, bbox=None):
     hs = build_heights(os.path.join(os.path.dirname(os.path.abspath(out)), "dem"), keys, out)
     if hs:
         extra["wys"] = hs
+    # 9. sieci przeskoków (ekran 2.8.0, decyzje k2–k3 z 9.11): z gotowych plików g_*.ntg; błąd nie psuje mapy
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import siec
+        extra["siec"] = siec.build(out, out)
+    except Exception as e:  # noqa: BLE001 - mapa bez sieci działa jak w wersji 6
+        print("sieci przeskoków: BŁĄD %s – mapa bez nich (ekran liczy całym grafem)" % e, flush=True)
     manifest = {
         "format": FORMAT, "wersja": MAP_VERSION, "cell_deg": 1.0 / CELL, "built": time.strftime("%Y-%m-%d"),
         "source": os.path.basename(pbf), "ways": nways, "points": npoints, "bytes": total,

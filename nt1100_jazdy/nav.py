@@ -53,7 +53,7 @@ MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta
                       r"|l[1-4]_-?\d+_-?\d+\.ntt|n_-?\d+_-?\d+\.ntn|h_-?\d+_-?\d+\.nth")
 # części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
 GH_TIMEOUT_MS = 20000   # 1.5.46 (e5): bezpiecznik jednego zapytania do silnika tras
-MAP_EXTRA = ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys")   # 1.5.41: części mapy 6 (ekran 2.3.0)
+MAP_EXTRA = ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys", "siec")   # 1.5.41: części mapy 6 (ekran 2.3.0); 1.5.47: + siec (mapa 7, ekran 2.8.0)
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
 WX_TTL = 900
