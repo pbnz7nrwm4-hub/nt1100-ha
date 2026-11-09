@@ -14,7 +14,8 @@ Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
   GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz, graf .ntg.gz, adresy .nta.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS),
        /api/nav/search?q&lat&lon (szukanie celu przez hotspot)
-  POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę)
+  POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę),
+       /api/nav/mapa/roznice (1.5.45: ekran wysyła listę plików z karty, dodatek odsyła, co pobrać i usunąć)
 """
 import json
 import os
@@ -53,6 +54,34 @@ def init(server):
     threading.Thread(target=map_loop, daemon=True).start()
     threading.Thread(target=drive_loop, daemon=True).start()
     return NAV
+
+
+SYNC_LOCK = threading.Lock()      # tylko stan „kiedy ostatnio”
+SYNC_RUN = threading.Lock()       # trwa pobieranie (minuty) – osobno, żeby ping nie czekał
+SYNC_LAST = {"t": 0}
+SYNC_EVERY_S = 3600
+
+
+def request_map_sync(reason):
+    """1.5.45: ekran ma nowszą mapę niż dodatek – dodatek sam pobiera ją z kontenera (najwyżej raz na godzinę)."""
+    now = time.time()
+    with SYNC_LOCK:
+        if now - SYNC_LAST["t"] < SYNC_EVERY_S:
+            return False
+        SYNC_LAST["t"] = now
+
+    def run():
+        if not SYNC_RUN.acquire(blocking=False):
+            return
+        try:
+            SRV.log("mapa: pobieram nowszą z kontenera (%s)" % reason)
+            NAV.map_sync()
+        except Exception as e:
+            SRV.log("mapa: pobieranie nieudane:", e)
+        finally:
+            SYNC_RUN.release()
+    threading.Thread(target=run, daemon=True).start()
+    return True
 
 
 def map_loop():
@@ -1082,6 +1111,9 @@ def note_screen(h, q):
         extra["route"] = int(SRV.num(q.get("route")) or 0)
         extra["route_version"] = int(SRV.num(q.get("ver")) or 0)
     extra["map"] = (q.get("map") or "")[:16]
+    mine = (NAV.map.manifest() or {}).get("built") or ""
+    if extra["map"] and mine and extra["map"] > mine:   # 1.5.45: karta ekranu nowsza niż dodatek
+        request_map_sync("ekran ma mapę z " + extra["map"])
     extra["ip"] = h.client_address[0]
     extra["via"] = h.source()
     if lat is not None and lon is not None and (lat or lon):
@@ -1216,11 +1248,35 @@ def fuel_prices_reply(h, j):
     return h.send(200, {"ok": True, "prices": prices}) or True
 
 
+def map_diff_text(d):
+    """Odpowiedź dla ekranu wierszami (ekran nie parsuje JSON-a kilkudziesięciu tysięcy plików)."""
+    out = ["built %s" % (d.get("built") or "-"), "stan %s" % d["stan"], "gz %d" % (1 if d.get("gz") else 0),
+           "pobierz %d %d" % (len(d["get"]), d.get("bytes", 0)), "usun %d" % len(d["remove"])]
+    out += ["+ %s %d %d" % (f[0], f[1] or 0, f[2] or 0) for f in d["get"]]
+    out += ["- %s" % n for n in d["remove"]]
+    return "\n".join(out) + "\n"
+
+
+def map_diff_reply(h, body):
+    try:
+        text = (body or b"").decode("utf-8", "replace")
+    except Exception:
+        text = ""
+    d = NAV.screen_map_diff(text)
+    if d["stan"] == "nowsza":
+        request_map_sync("ekran ma mapę z " + d.get("screen_built", ""))
+    SRV.log("mapa dla ekranu: %s, pobrać %d (%.1f MB), usunąć %d" % (d["stan"], len(d["get"]), d.get("bytes", 0) / 1e6,
+                                                                   len(d["remove"])))
+    return h.send(200, map_diff_text(d).encode(), "text/plain; charset=utf-8")
+
+
 def screen_post(h, path, q, body):
     if not path.startswith("/api/nav/"):
         return False
     if not screen_authorized(h, q):
         return h.send(401, {"ok": False, "error": "zly klucz"}) or True
+    if path == "/api/nav/mapa/roznice":
+        return map_diff_reply(h, body) or True
     try:
         j = json.loads(body or b"{}")
     except ValueError:
