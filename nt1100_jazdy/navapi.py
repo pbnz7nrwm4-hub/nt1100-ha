@@ -1006,6 +1006,43 @@ def home_press(which):
     return {"ok": True, "service": dom + "." + svc, "home": screen_home()}
 
 
+WX_HERE_BUSY = set()
+
+
+def weather_here(lat, lon, hours=4):
+    """1.5.46 (ekran 2.7.0, pkt 16): pogoda w miejscu ekranu na teraz i kolejne godziny, do pustego panelu bez trasy.
+    Tylko z pamięci (ping nie czeka na Open-Meteo): brak w pamięci = pobranie w tle, odpowiedź przy następnym pingu."""
+    if not SRV.weather_on():
+        return None
+    key = (round(lat, 1), round(lon, 1))
+    with nav.WX_LOCK:
+        hit = key in nav.WX_CACHE and time.time() - nav.WX_CACHE[key][0] <= nav.WX_TTL
+    pts = [(lat, lon)] * (hours + 1)
+    times = [h * 3600 for h in range(hours + 1)]
+    if hit:
+        try:
+            return [{"t": w["t"], "temp": w["temp"], "rain_prob": w["rain_prob"], "code": w["code"], "wind": w["wind"]}
+                    for w in NAV.weather_along(pts, None, times)]
+        except Exception as e:  # noqa: BLE001 – pogoda nie może zepsuć pingu
+            SRV.log("pogoda tutaj:", e)
+            return None
+    with nav.WX_LOCK:
+        if key in WX_HERE_BUSY:
+            return None
+        WX_HERE_BUSY.add(key)
+
+    def fetch():
+        try:
+            NAV.weather_along(pts, None, times)
+        except Exception as e:  # noqa: BLE001
+            SRV.log("pogoda tutaj (pobranie):", e)
+        finally:
+            with nav.WX_LOCK:
+                WX_HERE_BUSY.discard(key)
+    threading.Thread(target=fetch, daemon=True).start()
+    return None
+
+
 def calendar_next(ent, n=3, now=None):
     """Najbliższe wydarzenia z kalendarza HA (3 dni), po polsku: [{"when": "dziś 14:00", "title": ...}]."""
     import datetime
@@ -1168,10 +1205,14 @@ def screen_get(h, path, q):
             # 1.5.23: kalendarz domu na postoju (3 najbliższe wydarzenia)
             if s["calendar_entity"]:
                 out["calendar"] = calendar_next(s["calendar_entity"])
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
             if screen_kind(q) == "ekran5":
                 # nawigacja offline na ekranie: te same suwaki wariantów i omijanie co w planerze
                 out["offline"] = screen_offline_settings(s)
-            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+                if lat is not None and lon is not None and (lat or lon):
+                    wx = weather_here(lat, lon)
+                    if wx:
+                        out["wx_here"] = wx
             if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
                 try:
                     out["traffic_now"] = NAV.traffic(route["id"], lat, lon)

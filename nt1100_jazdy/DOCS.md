@@ -51,6 +51,7 @@ Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 - Zamknięte drogi z TomToma (ten sam klucz co korki) są pokazywane zawsze, także bez opóźnienia, i pierwsze na liście.
 - Eksport GPX dla BMW ma punkty kształtu (300 m za skrętem na inną drogę, nie gęściej niż co 8 km), żeby nawigacja kolegi przeliczając trasę jechała tą samą drogą. Nasz odczyt GPX ich nie traktuje jak przystanków.
 - Kopia z ekranu: dom zapisany na ekranie, oceny jazd i dzienniki z karty ekranu trafiają do dodatku (`nawigacja/kopia-ekranu.json`, `nawigacja/dziennik-ekranu/`).
+- Pogoda w miejscu ekranu (teraz i 4 kolejne godziny) w odpowiedzi na ping, do pustego panelu bez trasy. Ping nie czeka na prognozę: pierwsza przychodzi przy następnym pingu (pamiętana 15 min).
 - Silnik tras: każde zapytanie ma limit 20 s; po nim ekran liczy trasę sam z mapy na karcie. Przy nowej instalacji silnika (lub pełnej przebudowie grafu) włącza się tryb LM, szybszy dla tras krętych.
 
 ## Zmiany w 1.5.45

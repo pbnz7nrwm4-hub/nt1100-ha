@@ -748,6 +748,38 @@ class NavServerTest(unittest.TestCase):
         code, _, _ = self.req(self.iu + "/api/nav/dziennik?plik=..%2Fx&klucz=" + KEY, b"x", {}, "POST")
         self.assertEqual(code, 400)
 
+    def test_07c_weather_here_in_ping(self):
+        # 1.5.46 (ekran 2.7.0, pkt 16): the weather where the screen is, for the empty panel; the ping never waits for
+        # Open-Meteo (first ping: fetched in the background, the next one carries it)
+        hourly = {"time": [time.strftime("%Y-%m-%dT%H:00", time.gmtime(time.time() + h * 3600)) for h in range(-2, 30)]}
+        for k in ("temperature_2m", "precipitation_probability", "precipitation", "weather_code", "wind_speed_10m", "wind_gusts_10m"):
+            hourly[k] = [7] * len(hourly["time"])
+        seen = []
+
+        def fake(url, timeout=0):
+            seen.append(url)
+            return {"hourly": hourly}
+        orig, orig_on = nav.http_json, srv.WEATHER_ON
+        nav.http_json, srv.WEATHER_ON = fake, True
+        nav.WX_CACHE.clear()
+        try:
+            u = self.iu + "/api/nav/ping?klucz=" + KEY + "&k=ekran5&lat=50.11&lon=19.21"
+            code, body, _ = self.req(u)
+            self.assertEqual(code, 200)
+            self.assertNotIn("wx_here", json.loads(body))
+            for _ in range(50):
+                if seen and (round(50.11, 1), round(19.21, 1)) in nav.WX_CACHE:
+                    break
+                time.sleep(0.05)
+            j = json.loads(self.req(u)[1])
+            self.assertEqual(len(j["wx_here"]), 5)
+            self.assertEqual((j["wx_here"][0]["temp"], j["wx_here"][0]["rain_prob"]), (7, 7))
+            self.assertEqual(len(seen), 1)
+            self.assertNotIn("wx_here", json.loads(self.req(self.iu + "/api/nav/ping?klucz=" + KEY + "&lat=50.11&lon=19.21")[1]))
+        finally:
+            nav.http_json, srv.WEATHER_ON = orig, orig_on
+            nav.WX_CACHE.clear()
+
     def test_07_screen_log_and_compliance(self):
         pts = l_shape()
         seg = "".join('<trkpt lat="%.6f" lon="%.6f"></trkpt>' % p for p in pts)
