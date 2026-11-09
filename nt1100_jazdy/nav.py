@@ -1733,6 +1733,60 @@ class Nav:
                 out[part] = dict(m[part], cells=sorted(m[part].get("cells", []), key=key))
         return out
 
+    def screen_map_diff(self, text):
+        """1.5.45 (ustalenie 8.11): ekran wysyła, co ma na karcie, dodatek decyduje, co dociągnąć i co usunąć.
+
+        Wejście (tekst): `built <data mapy na karcie>`, opcjonalnie `pos <lat> <lon>`, potem wiersze
+        `<plik> <bajty> <crc>` (jak /m6/stan.txt ekranu; crc 0 = nieznane, wtedy porównanie po rozmiarze).
+        Mapy nigdy nie cofamy: gdy karta ma nowszą mapę niż dodatek, odpowiedź jest pusta (stan „nowsza”).
+        """
+        have, built, pos = {}, "", None
+        for line in text.splitlines():
+            a = line.split()
+            if len(a) == 2 and a[0] == "built":
+                built = a[1][:16]
+            elif len(a) == 3 and a[0] == "pos":
+                try:
+                    pos = (float(a[1]), float(a[2]))
+                except ValueError:
+                    pos = None
+            elif len(a) == 3 and MAP_FILE.fullmatch(a[0]) and a[1].isdigit() and a[2].isdigit():
+                have[a[0]] = (int(a[1]), int(a[2]))
+        m = self.screen_manifest()
+        if not m:
+            return {"stan": "brak", "built": "", "get": [], "remove": []}
+        mb = m.get("built") or ""
+        if built and mb and built > mb:   # daty ISO: kolejność tekstu = kolejność czasu
+            return {"stan": "nowsza", "built": mb, "screen_built": built, "get": [], "remove": []}
+        files = [list(f[:3]) for f in m.get("files", [])]
+        for part in MAP_EXTRA:
+            if isinstance(m.get(part), dict):
+                files += [list(f[:3]) for f in m[part].get("cells", [])]
+        seen, want = set(), []
+        for f in files:
+            if len(f) < 3 or f[0] in seen or not MAP_FILE.fullmatch(str(f[0])):
+                continue
+            seen.add(f[0])
+            h = have.get(f[0])
+            if h and h[0] == f[1] and (not h[1] or f[2] is None or h[1] == f[2]):
+                continue
+            want.append(f)
+        if pos:   # najbliższe pozycji ekranu najpierw (spisy i warstwy z oddali przed wszystkim)
+            k = math.cos(math.radians(pos[0]))
+            sub = {"c": 0, "g": 1e-7, "n": 2e-7, "h": 3e-7}
+
+            def key(f):
+                n = f[0]
+                if n in ("a_index.nta", "a_poi.nta") or n[0] == "l":
+                    return -1
+                a = n[2:-4].split("_")
+                la, lo = (int(a[0]) + 0.5) / 10, (int(a[1]) + 0.5) / 10
+                return (la - pos[0]) ** 2 + ((lo - pos[1]) * k) ** 2 + sub.get(n[0], 4e-7)
+            want.sort(key=key)
+        remove = sorted(n for n in have if n not in seen)
+        return {"stan": "ok", "built": mb, "gz": True, "get": want, "remove": remove,
+                "bytes": sum(f[1] or 0 for f in want)}
+
     def map_gz(self, name):
         """Kwadrat spakowany gzip (do szybszej wysyłki na ekran); pamiętany obok mapy."""
         p = self.map_file(name)

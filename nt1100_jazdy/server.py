@@ -36,7 +36,7 @@ import navapi  # noqa: E402
 
 # 1.5.44: the number comes from the add-on build (BUILD_VERSION from config.yaml), so the page footer
 # never shows a stale version again; the literal is only a fallback for tests and local runs.
-VERSION = os.environ.get("NT1100_VERSION") or "1.5.44"
+VERSION = os.environ.get("NT1100_VERSION") or "1.5.45"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1603,7 +1603,8 @@ class Ingest(Base):
                 self.close_connection = True
                 return self.send(401, {"ok": False, "error": "zly klucz"})
             try:
-                body = self.read_body(1024 * 1024)
+                # 1.5.45: lista plików mapy z karty ekranu (26 tys. wierszy ≈ 0,9 MB)
+                body = self.read_body((8 if path == "/api/nav/mapa/roznice" else 1) * 1024 * 1024)
             except ValueError as e:
                 self.close_connection = True
                 return self.send(413, {"ok": False, "error": str(e)})

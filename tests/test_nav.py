@@ -869,6 +869,44 @@ class NavServerTest(unittest.TestCase):
             self.assertEqual((code, gzip.decompress(body)), (200, raw))
             code, _, _ = self.req(self.iu + "/api/nav/mapa/manifest.json.gz?klucz=" + KEY)
             self.assertEqual(code, 404)
+            # 1.5.45: the screen sends what its card has, the add-on says what to fetch and remove
+            raw0 = open(os.path.join(nv.map_dir, "c_500_199.ntt"), "rb").read()
+            card = "built 2026-10-02\npos 50.05 19.95\nc_500_199.ntt %d %d\nc_520_210.ntt 5 7\nc_999_999.ntt 3 0\n" % (
+                len(raw0), binascii.crc32(raw0))
+
+            def diff(text):
+                code, body, _ = self.req(self.iu + "/api/nav/mapa/roznice?klucz=" + KEY, text.encode(), {}, "POST")
+                self.assertEqual(code, 200)
+                return body.decode().splitlines()
+            lines = diff(card)
+            self.assertEqual(lines[:5], ["built 2026-11-02", "stan ok", "gz 1", "pobierz 1 %d" % len(raw), "usun 1"])
+            self.assertEqual(lines[5:], ["+ c_520_210.ntt %d %d" % (len(raw), binascii.crc32(raw)), "- c_999_999.ntt"])
+            # crc 0 (unknown, e.g. after a copy from the computer): the size decides
+            lines = diff("built 2026-11-02\nc_500_199.ntt %d 0\nc_520_210.ntt %d %d\n" % (len(raw0), len(raw), binascii.crc32(raw)))
+            self.assertEqual(lines[1:5], ["stan ok", "gz 1", "pobierz 0 0", "usun 0"])
+            # empty card: everything, nearest to the screen first (Kraków area: c_500_199 before c_520_210)
+            lines = diff("built -\npos 50.05 19.95\n")
+            self.assertEqual([x.split()[1] for x in lines[5:]], ["c_500_199.ntt", "c_520_210.ntt"])
+            # never back: the card has a newer map than the add-on - nothing to do, the add-on fetches its own
+            calls = []
+            old = srv.navapi.NAV.map_sync
+            srv.navapi.NAV.map_sync = lambda *a, **k: calls.append(1)
+            srv.navapi.SYNC_LAST["t"] = 0
+            try:
+                lines = diff("built 2026-11-09\nc_500_199.ntt 1 1\n")
+                self.assertEqual(lines[:5], ["built 2026-11-02", "stan nowsza", "gz 0", "pobierz 0 0", "usun 0"])
+                for _ in range(50):
+                    if calls:
+                        break
+                    time.sleep(0.05)
+                self.assertEqual(calls, [1])
+                diff("built 2026-11-09\n")          # at most once an hour
+                time.sleep(0.2)
+                self.assertEqual(calls, [1])
+            finally:
+                srv.navapi.NAV.map_sync = old
+            code, _, _ = self.req(self.iu + "/api/nav/mapa/roznice", b"built -\n", {}, "POST")
+            self.assertEqual(code, 401)
             # ZIP for the SD card: prepared in the background, then downloadable
             for _ in range(100):
                 code, body, h = self.req(self.pu + "/api/nav/mapa.zip")

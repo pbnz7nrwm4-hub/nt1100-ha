@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.45
+- Mapa na ekran 5": ekran wysyła dodatkowi listę plików ze swojej karty, a dodatek odpowiada, co dociągnąć i co usunąć (najbliższe pozycji ekranu najpierw). Ekran sam niczego nie porównuje (od ekranu 2.6.4).
+- Mapy nigdy nie cofamy: gdy na karcie jest nowsza mapa niż w dodatku, dodatek nic nie wysyła i sam pobiera nowszą mapę z kontenera (najwyżej raz na godzinę).
+
 ## Zmiany w 1.5.44
 - Numer wersji na dole strony jest brany z wersji dodatku (wcześniej był wpisany na sztywno i pokazywał 1.5.41).
 
