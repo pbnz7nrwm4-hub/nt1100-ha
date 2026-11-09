@@ -878,8 +878,8 @@ class NavServerTest(unittest.TestCase):
                 time.sleep(0.1)
             self.assertEqual(code, 200)
             z = zipfile.ZipFile(io.BytesIO(body))
-            self.assertEqual(sorted(z.namelist()), ["mapa/c_500_199.ntt", "mapa/c_520_210.ntt", "mapa/manifest.json"])
-            self.assertEqual(z.read("mapa/c_520_210.ntt"), raw)
+            self.assertEqual(sorted(z.namelist()), ["m6/c/500/c_500_199.ntt", "m6/c/520/c_520_210.ntt", "m6/manifest.json"])
+            self.assertEqual(z.read("m6/c/520/c_520_210.ntt"), raw)
             code, body, _ = self.req(self.pu + "/api/nav/routes")
             self.assertTrue(json.loads(body)["zip"]["ready"])
         finally:
@@ -972,8 +972,8 @@ class NavServerTest(unittest.TestCase):
                     break
                 time.sleep(0.1)
             names = zipfile.ZipFile(io.BytesIO(body)).namelist()
-            self.assertIn("mapa/g_500_200.ntg", names)
-            self.assertIn("mapa/a_index.nta", names)
+            self.assertIn("m6/g/500/g_500_200.ntg", names)
+            self.assertIn("m6/a_index.nta", names)
         finally:
             ms.shutdown()
             self.jpost(self.pu + "/api/nav/settings", {"map_url": ""})
