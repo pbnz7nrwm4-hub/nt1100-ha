@@ -56,6 +56,7 @@ def init(server):
     return NAV
 
 
+SCREEN_LOGS = ("funkcje.txt", "zdarzenia.txt", "awarie.txt", "dotyk.txt", "pamiec.txt")
 SYNC_LOCK = threading.Lock()      # tylko stan „kiedy ostatnio”
 SYNC_RUN = threading.Lock()       # trwa pobieranie (minuty) – osobno, żeby ping nie czekał
 SYNC_LAST = {"t": 0}
@@ -1277,6 +1278,13 @@ def screen_post(h, path, q, body):
         return h.send(401, {"ok": False, "error": "zly klucz"}) or True
     if path == "/api/nav/mapa/roznice":
         return map_diff_reply(h, body) or True
+    if path == "/api/nav/dziennik":
+        # 1.5.46 (a12, kopia z ekranu): dopisanie kawałka dziennika z karty ekranu (tekst)
+        name = str(q.get("plik") or "")
+        if name not in SCREEN_LOGS:
+            return h.send(400, {"ok": False, "error": "zly plik"}) or True
+        n = NAV.screen_log_append(name, body or b"")
+        return h.send(200, {"ok": True, "bytes": n}) or True
     try:
         j = json.loads(body or b"{}")
     except ValueError:
@@ -1290,6 +1298,28 @@ def screen_post(h, path, q, body):
             r = NAV.reroute(rid, lat, lon, SRV.num(j.get("heading")), bool(j.get("skip")), SRV.num(j.get("avoid_km")))
             return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
                                 "min": int(r["time_s"] / 60)}) or True
+        if path == "/api/nav/alt":
+            # 1.5.46: „Inna trasa” z ekranu, z internetem (kręto / mniej / szybciej z korkami / inną drogą)
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            if lat is None or lon is None:
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            try:
+                a = NAV.alternatives(int(j.get("id") or 0), lat, lon, SRV.num(j.get("heading")), str(j.get("mode") or ""))
+            except RuntimeError as e:
+                SRV.log("inna trasa (%s): %s" % (j.get("mode"), e))
+                return h.send(200, {"ok": False, "error": str(e)[:80]}) or True
+            out = {"ok": True, "id": a["id"], "version": a["version"], "mode": a["mode"], "variant": a["variant"],
+                   "calc_s": a["calc_s"], "traffic": a["traffic"]}
+            for side in ("now", "new"):
+                for k, v in a[side].items():
+                    out[side + "_" + k] = v if v is not None else -1
+            SRV.log("inna trasa (%s): teraz %.1f km %d min (+%d korki), nowa %.1f km %d min (+%d), liczona %.1f s"
+                    % (a["mode"], a["now"]["km"], a["now"]["min"], a["now"]["delay_min"], a["new"]["km"], a["new"]["min"],
+                       a["new"]["delay_min"], a["calc_s"]))
+            return h.send(200, out) or True
+        if path == "/api/nav/kopia":
+            # 1.5.46 (a12): kopia tego, co ma tylko ekran: dom zapisany na ekranie i oceny jazd
+            return h.send(200, NAV.screen_backup(j if isinstance(j, dict) else {})) or True
         if path == "/api/nav/via":
             # ekran: zjazd do wybranego miejsca (stacja, jedzenie) i powrót na trasę
             lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))

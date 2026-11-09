@@ -14,7 +14,15 @@ graphhopper:
     - name: motocykl
       custom_model_files: [motocykl.json]
   profiles_ch: []
-  profiles_lm: []
+  # 1.5.46 (e3, Adrian 9.11 „rób”): tryb LM (landmarki) przyspiesza trasy z custom_model w zapytaniu.
+  # Warunki LM (docs/core/profiles.md): w zapytaniu multiply_by tylko 0–1 (nav.py gh_custom_model tak liczy)
+  # i distance_influence nie mniejsze niż w profilu – dlatego motocykl.json ma distance_influence 0.
+  # Wchodzi przy pełnej budowie grafu (nowa instalacja / miesięczna aktualizacja), import trwa dłużej.
+  profiles_lm:
+    - profile: motocykl
+  prepare.lm.landmarks: 16
+  # 1.5.46 (e5): bezpiecznik zapytania po stronie silnika (dodatek wysyła też timeout_ms w każdym zapytaniu)
+  routing.timeout_ms: 20000
   routing.max_visited_nodes: 12000000
   routing.non_ch.max_waypoint_distance: 1500000
   routing.round_trip.max_distance: 1600000

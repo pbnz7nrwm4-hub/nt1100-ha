@@ -46,6 +46,13 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.46 (ekran 5" 2.7.0)
+- „Inna trasa” z ekranu z internetem pyta dodatek: bardziej kręto, mniej kręto, szybciej (z korkami TomToma) albo inną drogą (alternatywa silnika tras). Ekran pokazuje porównanie z obecną trasą (km, minuty, korki, zamknięcia); nowa trasa staje się bieżąca dopiero po „Jedź”.
+- Zamknięte drogi z TomToma (ten sam klucz co korki) są pokazywane zawsze, także bez opóźnienia, i pierwsze na liście.
+- Eksport GPX dla BMW ma punkty kształtu (300 m za skrętem na inną drogę, nie gęściej niż co 8 km), żeby nawigacja kolegi przeliczając trasę jechała tą samą drogą. Nasz odczyt GPX ich nie traktuje jak przystanków.
+- Kopia z ekranu: dom zapisany na ekranie, oceny jazd i dzienniki z karty ekranu trafiają do dodatku (`nawigacja/kopia-ekranu.json`, `nawigacja/dziennik-ekranu/`).
+- Silnik tras: każde zapytanie ma limit 20 s; po nim ekran liczy trasę sam z mapy na karcie. Przy nowej instalacji silnika (lub pełnej przebudowie grafu) włącza się tryb LM, szybszy dla tras krętych.
+
 ## Zmiany w 1.5.45
 - Mapa na ekran 5": ekran wysyła dodatkowi listę plików ze swojej karty, a dodatek odpowiada, co dociągnąć i co usunąć (najbliższe pozycji ekranu najpierw). Ekran sam niczego nie porównuje (od ekranu 2.6.4).
 - Mapy nigdy nie cofamy: gdy na karcie jest nowsza mapa niż w dodatku, dodatek nic nie wysyła i sam pobiera nowszą mapę z kontenera (najwyżej raz na godzinę).
