@@ -52,6 +52,7 @@ GH_SIGNS = {-3: T_SHARP_L, -2: T_LEFT, -1: T_SLIGHT_L, 0: T_STRAIGHT, 1: T_SLIGH
 MAP_FILE = re.compile(r"c_-?\d+_-?\d+\.ntt|g_-?\d+_-?\d+\.ntg|a_-?\d+_-?\d+\.nta|a_index\.nta|a_poi\.nta"
                       r"|l[1-4]_-?\d+_-?\d+\.ntt|n_-?\d+_-?\d+\.ntn|h_-?\d+_-?\d+\.nth")
 # części mapy obok kwadratów: graf tras (mapa 3) i adresy (mapa 4)
+GH_TIMEOUT_MS = 20000   # 1.5.46 (e5): bezpiecznik jednego zapytania do silnika tras
 MAP_EXTRA = ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys")   # 1.5.41: części mapy 6 (ekran 2.3.0)
 WX_CACHE = {}  # (lat, lon) zaokrąglone do 0,1° -> (czas, prognoza Open-Meteo)
 WX_LOCK = threading.Lock()
@@ -361,6 +362,9 @@ def parse_gpx(data):
         if pts and not rte_turns:
             rpts = [p for p in rte if tag(p) == "rtept"]
             for p in rpts[1:-1]:
+                # 1.5.46: nasze punkty kształtu (stabilizacja dla cudzej nawigacji) to nie przystanki
+                if any(tag(c) == "type" and (c.text or "").strip() == "shaping" for c in p):
+                    continue
                 nm = ""
                 for c in p:
                     if tag(c) == "name" and (c.text or "").strip():
@@ -442,6 +446,55 @@ def to_gpx(route, osmand=False):
     return "\n".join(out)
 
 
+def stabilize_points(route, gap_m=8000.0, cap=25):
+    """1.5.46 (Kurviger: Intelligent Route Stabilization; Adrian 9.11 „pod BMW”): punkty kształtu, żeby cudza
+    nawigacja przeliczając trasę jechała tą samą drogą. Punkt 300 m za skrętem na inną drogę (tam rozjazd jest
+    najbardziej prawdopodobny), nie gęściej niż co gap_m, najwyżej cap. Zwraca [(idx, opis)]."""
+    pts, cum = route["pts"], route.get("cum") or cum_dist(route["pts"])
+    if len(pts) < 3:
+        return []
+    out, last = [], 0.0
+    stops = {w["idx"] for w in route.get("waypoints") or []}
+    for t in sorted(route.get("turns") or [], key=lambda x: x["idx"]):
+        i = int(t["idx"])
+        if i <= 0 or i >= len(pts) - 1 or t.get("type") in (T_STRAIGHT, T_WAYPOINT, T_FINISH):
+            continue
+        j = i
+        while j < len(pts) - 1 and cum[j] - cum[i] < 300:
+            j += 1
+        if cum[j] - last < gap_m or cum[-1] - cum[j] < 1000 or any(abs(j - k) < 3 for k in stops):
+            continue
+        out.append((j, (t.get("text") or "")[:40]))
+        last = cum[j]
+    # długie odcinki bez skrętów (np. 40 km jedną drogą z równoległą obok): punkt co 2·gap_m
+    full = []
+    prev = 0.0
+    for j, d in out + [(len(pts) - 1, None)]:
+        while cum[j] - prev > 2 * gap_m:
+            prev += 2 * gap_m
+            k = nearest_cum(cum, prev)
+            full.append((k, ""))
+        if d is not None:
+            full.append((j, d))
+        prev = cum[j]
+    full.sort()
+    if len(full) > cap:   # równo rozłożone
+        step = len(full) / float(cap)
+        full = [full[int(k * step)] for k in range(cap)]
+    return full
+
+
+def nearest_cum(cum, d):
+    lo, hi = 0, len(cum) - 1
+    while lo < hi:
+        m = (lo + hi) // 2
+        if cum[m] < d:
+            lo = m + 1
+        else:
+            hi = m
+    return lo
+
+
 def to_gpx_bmw(route):
     """GPX w układzie BMW Motorrad Connected (jak plik z aplikacji BMW): <rte> z punktami start, po drodze,
     cel (name), rozszerzenie cnrd z długością, czasem, krętością i omijaniem, potem <trk> z całą drogą.
@@ -468,13 +521,20 @@ def to_gpx_bmw(route):
            "</cnrd:routeOptions></cnrd:PlannedRouteExtension></extensions>"
            % (name, dur, int(length), wind, "eco",
               fa("autostrady"), fa("promy"), fa("platne"), fa("gruntowe", "szutrowe"))]
-    stops = [(pts[0], "Start")]
+    # przystanki z nazwą (<name>) i punkty kształtu bez nazwy (tylko <desc>, jak w plikach z aplikacji BMW)
+    stops = [(0, "Start", None)]
     for w in sorted(route.get("waypoints") or [], key=lambda w: w["idx"]):
         if 0 < w["idx"] < len(pts) - 1:
-            stops.append((pts[w["idx"]], w.get("name") or ""))
-    stops.append((pts[-1], "Cel"))
-    for p, nm in stops:
-        out.append('<rtept lat="%.6f" lon="%.6f">%s</rtept>' % (p[0], p[1], "<name>%s</name>" % esc(nm) if nm else ""))
+            stops.append((w["idx"], w.get("name") or "", None))
+    stops += [(i, None, d) for i, d in stabilize_points(route)]
+    stops.append((len(pts) - 1, "Cel", None))
+    stops.sort(key=lambda x: x[0])
+    for i, nm, d in stops:
+        p = pts[i]
+        inner = ("<name>%s</name>" % esc(nm) if nm else "") + ("<desc>%s</desc>" % esc(d) if d else "")
+        if nm is None:
+            inner += "<type>shaping</type>"   # punkt kształtu, nie przystanek (nasz odczyt GPX go pomija)
+        out.append('<rtept lat="%.6f" lon="%.6f">%s</rtept>' % (p[0], p[1], inner))
     out.append("</rte><trk><name>%s</name><trkseg>" % name)
     for p in pts:
         out.append('<trkpt lat="%.6f" lon="%.6f" />' % (p[0], p[1]))
@@ -961,13 +1021,18 @@ class Nav:
         return {"priority": pr, "distance_influence": di}
 
     def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None, skip=None, seed=None,
-                 avoid_segment=None):
+                 avoid_segment=None, alternatives=0):
+        """alternatives > 0 (1.5.46, „Inna trasa” z ekranu): algorytm alternative_route silnika, zwraca listę
+        tras (pierwsza = najlepsza), inaczej jedną trasę."""
         s = self.settings()
         if not s["engine_url"]:
             raise RuntimeError("brak adresu silnika tras w ustawieniach")
         body = {"points": [[p[1], p[0]] for p in points], "profile": "motocykl", "locale": "pl",
                 "instructions": True, "points_encoded": False, "calc_points": True, "elevation": False,
                 "details": ["time", "max_speed", "road_class", "surface"], "ch.disable": True,
+                # 1.5.46 (e5, Adrian 9.11): bezpiecznik zapytania – po tylu ms silnik przerywa i zwraca błąd,
+                # a ekran liczy trasę sam z grafu na karcie (rano 9.11 dodatek liczył bardzo długo)
+                "timeout_ms": GH_TIMEOUT_MS,
                 "custom_model": self.gh_custom_model(variant, avoid)}
         seg = avoid_segment
         if seg and len(seg) >= 2:
@@ -999,10 +1064,20 @@ class Nav:
             body["round_trip.seed"] = seed if seed is not None else int(time.time()) % 1000
             if heading is not None:
                 body["heading"] = [int(heading)]
-        j = http_json(s["engine_url"] + "/route", body, timeout=90)
+        if alternatives and not round_trip_km:
+            body["algorithm"] = "alternative_route"
+            body["alternative_route.max_paths"] = 1 + int(alternatives)
+            body["alternative_route.max_weight_factor"] = 1.6
+            body["alternative_route.max_share_factor"] = 0.6
+        j = http_json(s["engine_url"] + "/route", body, timeout=GH_TIMEOUT_MS / 1000.0 + 10)
         if not j.get("paths"):
             raise RuntimeError(j.get("message") or "silnik nie zwrócił trasy")
-        path = j["paths"][0]
+        if alternatives and not round_trip_km:
+            return [self.gh_parse(p) for p in j["paths"]]
+        return self.gh_parse(j["paths"][0])
+
+    @staticmethod
+    def gh_parse(path):
         pts = [(c[1], c[0]) for c in path["points"]["coordinates"]]
         # czas narastająco z detali "time" (ms na odcinek punktów)
         times = [0.0] * len(pts)
@@ -1062,7 +1137,7 @@ class Nav:
                 "limits": limits, "leg_m": [int(p["dist_m"]) for p in parts]}
 
     def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
-             legs=None, skip=None, round_trip_min=None, avoid_segment=None):
+             legs=None, skip=None, round_trip_min=None, avoid_segment=None, alt_index=0):
         """Warianty tras przez punkty [{lat, lon, name}]; zwraca listę tras
         (bez zapisu). Pierwszy punkt = start. legs = wariant każdego odcinka
         (dodaje wariant „mix”, czyli „Mój plan”). skip = [{lat, lon, r, name}]
@@ -1097,6 +1172,13 @@ class Nav:
                     if not got or abs(got - round_trip_min) <= max(5, 0.12 * round_trip_min):
                         break
                     rt_km = max(10.0, min(1500.0, rt_km * round_trip_min / got))
+            elif alt_index:
+                # 1.5.46: inna droga tym samym wariantem (alternatywa silnika)
+                rs = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, None, heading, skip, seed,
+                                   avoid_segment, alternatives=alt_index + 1)
+                if len(rs) <= alt_index:
+                    raise RuntimeError("silnik nie znalazł innej drogi")
+                r = rs[alt_index]
             else:
                 r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading, skip, seed,
                                   avoid_segment)
@@ -1225,6 +1307,74 @@ class Nav:
         new["weather"] = route.get("weather") or []
         self.store_route(new, make_current=(self.index().get("current") == rid))
         return new
+
+    ALT_MODES = ("kreto", "mniej", "szybciej", "inaczej")
+
+    def alternatives(self, rid, lat, lon, heading=None, mode="inaczej"):
+        """1.5.46 („Inna trasa” z ekranu z internetem, Adrian 8.11/9.11): ta sama reszta drogi inaczej –
+        bardziej kręto, mniej kręto, szybciej (z korkami TomToma) albo inną drogą (alternatywa silnika).
+        Nowa trasa jest zapisana, ale NIE bieżąca: ekran pokazuje porównanie, a „Jedź” wybiera ją (/api/nav/use)."""
+        route = self.route(rid)
+        if not route:
+            raise RuntimeError("brak trasy")
+        if mode not in self.ALT_MODES:
+            raise RuntimeError("nieznany sposób: %s" % mode)
+        pts, cum = route["pts"], route["cum"]
+        i, _ = nearest_index(pts, (lat, lon))
+        remaining = [w for w in route.get("waypoints", []) if w["idx"] > i + 5]
+        points = [{"lat": lat, "lon": lon, "name": "pozycja"}]
+        for w in remaining:
+            p = pts[w["idx"]]
+            points.append({"lat": p[0], "lon": p[1], "name": w.get("name") or ""})
+        if len(points) < 2:
+            raise RuntimeError("cel już blisko")
+        order = [v for v, _ in VARIANTS]
+        cur = route.get("variant") if route.get("variant") in order else self.settings()["go_variant"]
+        k = order.index(cur)
+        alt = 0
+        if mode == "kreto":
+            if k == len(order) - 1:
+                raise RuntimeError("trasa jest już najbardziej kręta")
+            v = order[k + 1]
+        elif mode == "mniej":
+            if k == 0:
+                raise RuntimeError("trasa jest już najszybszym wariantem")
+            v = order[k - 1]
+        elif mode == "szybciej":
+            v = "szybko"
+        else:
+            v, alt = cur, 1
+        avoid = list(route.get("avoid") or self.settings()["avoid"])
+        t0 = time.time()
+        routes, errors = self.plan(points, [v], avoid, route.get("name") or "", heading=heading, skip=route.get("skip"),
+                                   alt_index=alt)
+        if not routes:
+            raise RuntimeError(errors.get(v) or "silnik nie policzył trasy")
+        new = routes[0]
+        calc_s = round(time.time() - t0, 1)
+        # porównanie z resztą obecnej trasy (od pozycji), z korkami i zamknięciami, gdy jest klucz TomToma
+        now_m = route["dist_m"] - cum[i]
+        times = route.get("times") or []
+        now_s = (route.get("time_s", 0) - times[i]) if len(times) == len(pts) else route.get("time_s", 0) * now_m / max(1, route["dist_m"])
+        cur_tr = new_tr = None
+        if self.settings()["tomtom_key"]:
+            try:
+                cur_tr = self.incidents_along(pts, cum, i, min(now_m, 150000))
+                new_tr = self.incidents_along(new["pts"], new["cum"], 0, 150000)
+            except Exception as e:
+                log("inna trasa: korki nieudane:", e)
+        new["alt_of"] = rid
+        nid = self.store_route(new, make_current=False)
+
+        def side(km, s_, tr, curvy):
+            return {"km": round(km / 1000.0, 1), "min": int(round(s_ / 60.0)),
+                    "delay_min": int(round((tr or {}).get("delay_s", 0) / 60.0)), "closed": (tr or {}).get("closed", 0),
+                    "curvy_deg_km": (curvy or {}).get("deg_km")}
+        cur_curvy = curviness(pts[i:], [c - cum[i] for c in cum[i:]], self.settings()["curvy_levels"]) if now_m > 500 else None
+        return {"id": nid, "version": new["version"], "mode": mode, "variant": v, "calc_s": calc_s,
+                "traffic": cur_tr is not None,
+                "now": side(now_m, now_s, cur_tr, cur_curvy),
+                "new": side(new["dist_m"], new.get("time_s", 0), new_tr, new.get("curvy"))}
 
     # ---- decyzje w trasie: co jest przed motocyklem i zjazd do miejsca
     def nearby(self, lat, lon, kinds, limit=30):
@@ -1414,6 +1564,38 @@ class Nav:
             for e in entries[:2000]:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
 
+    def screen_log_append(self, name, data):
+        """1.5.46: kopia dzienników z karty ekranu (dopisywana po kawałku, najwyżej 20 MB na plik, potem .1)."""
+        d = os.path.join(self.dir, "dziennik-ekranu")
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, name)
+        if os.path.exists(p) and os.path.getsize(p) > 20 * 1024 * 1024:
+            os.replace(p, p + ".1")
+        with open(p, "ab") as f:
+            f.write(data[:1024 * 1024])
+        return min(len(data), 1024 * 1024)
+
+    def screen_backup(self, j):
+        """1.5.46 (a12): dom zapisany na ekranie i oceny jazd – kopia w dodatku (karta może paść).
+        Ustawień dodatku nie zmienia (plik kopia-ekranu.json obok tras)."""
+        p = os.path.join(self.dir, "kopia-ekranu.json")
+        cur = self._read(p, {})
+        out = {"t": int(time.time())}
+        home = j.get("home")
+        if isinstance(home, dict) and isinstance(home.get("lat"), (int, float)) and isinstance(home.get("lon"), (int, float)):
+            out["home"] = {"lat": float(home["lat"]), "lon": float(home["lon"]), "name": str(home.get("name") or "Dom")[:30]}
+        rat = cur.get("ratings") or []
+        seen = {(r.get("t"), r.get("name")) for r in rat}
+        for r in (j.get("ratings") or [])[:200]:
+            if isinstance(r, dict) and isinstance(r.get("t"), (int, float)) and (r.get("t"), r.get("name")) not in seen:
+                rat.append({"t": int(r["t"]), "score": int(r.get("score") or 0), "name": str(r.get("name") or "")[:40],
+                            "km": r.get("km")})
+        out["ratings"] = rat[-1000:]
+        if "home" not in out and cur.get("home"):
+            out["home"] = cur["home"]
+        self._write(p, out)
+        return {"ok": True, "ratings": len(out["ratings"]), "home": bool(out.get("home"))}
+
     def screen_events(self, t0, t1):
         out = []
         for day in {time.strftime("%Y-%m-%d", time.gmtime(t)) for t in (t0, t1, (t0 + t1) / 2)}:
@@ -1489,24 +1671,52 @@ class Nav:
             return None
         pts, cum = route["pts"], route["cum"]
         i, _ = nearest_index(pts, (lat, lon))
-        j = i
-        while j < len(pts) - 1 and cum[j] - cum[i] < 50000:
-            j += 1
-        seg = pts[i:j + 1]
-        lats = [p[0] for p in seg]
-        lons = [p[1] for p in seg]
-        bbox = "%.4f,%.4f,%.4f,%.4f" % (min(lons) - 0.01, min(lats) - 0.01, max(lons) + 0.01, max(lats) + 0.01)
         key = (rid, round(lat, 2), round(lon, 2))
         c = self.traffic_cache.get(key)
         if c and time.time() - c[0] < 150:
             return c[1]
+        out = self.incidents_along(pts, cum, i, 50000)
+        now = time.time()
+        for k in [k for k, v in self.traffic_cache.items() if now - v[0] > 600]:
+            self.traffic_cache.pop(k, None)
+        self.traffic_cache[key] = (now, out)
+        return out
+
+    def incidents_along(self, pts, cum, i=0, ahead_m=50000):
+        """Korki i (1.5.46, a10) zamknięcia dróg z TomToma na odcinku trasy od punktu i (do ahead_m metrów,
+        w kawałkach po ok. 60 km, bo TomTom przyjmuje ograniczony obszar). Zamknięcie (iconCategory 8)
+        zostaje zawsze, nawet bez opóźnienia, z closed=True."""
+        s = self.settings()
+        incidents, total = [], 0
+        a = i
+        end = i
+        while end < len(pts) - 1 and cum[end] - cum[i] < ahead_m:
+            end += 1
+        while a < end:
+            b = a
+            while b < end and cum[b] - cum[a] < 60000:
+                b += 1
+            got, t = self._incidents_chunk(s, pts, cum, i, a, b)
+            incidents += got
+            total += t
+            a = b
+        incidents.sort(key=lambda x: x["idx"])
+        closed = [x for x in incidents if x.get("closed")]
+        return {"delay_s": total, "incidents": (closed + [x for x in incidents if not x.get("closed")])[:10],
+                "closed": len(closed), "t": int(time.time())}
+
+    def _incidents_chunk(self, s, pts, cum, i, a, j):
+        seg = pts[a:j + 1]
+        lats = [p[0] for p in seg]
+        lons = [p[1] for p in seg]
+        bbox = "%.4f,%.4f,%.4f,%.4f" % (min(lons) - 0.01, min(lats) - 0.01, max(lons) + 0.01, max(lats) + 0.01)
         q = urllib.parse.urlencode({"key": s["tomtom_key"], "bbox": bbox, "language": "pl-PL",
                                     "fields": "{incidents{geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,delay,length,events{description}}}}",
                                     "timeValidityFilter": "present"})
-        j = http_json("https://api.tomtom.com/traffic/services/5/incidentDetails?" + q, timeout=15)
+        res = http_json("https://api.tomtom.com/traffic/services/5/incidentDetails?" + q, timeout=15)
         incidents = []
         total = 0
-        for inc in j.get("incidents", []):
+        for inc in res.get("incidents", []):
             g = inc.get("geometry") or {}
             coords = g.get("coordinates") or []
             if g.get("type") == "Point":
@@ -1514,25 +1724,25 @@ class Nav:
             if not coords:
                 continue
             p0 = (coords[0][1], coords[0][0])
-            k, d = nearest_index(pts, p0, i, j - i + 1)
+            k, d = nearest_index(pts, p0, a, j - a + 1)
+            pr = inc.get("properties") or {}
+            closed = pr.get("iconCategory") == 8
+            if d > 60 and closed and len(coords) > 1:   # zamknięty odcinek może zaczynać się obok trasy
+                for c2 in coords[1:]:
+                    k2, d2 = nearest_index(pts, (c2[1], c2[0]), a, j - a + 1)
+                    if d2 < d:
+                        k, d = k2, d2
             if d > 60:
                 continue
-            pr = inc.get("properties") or {}
             delay = int(pr.get("delay") or 0)
-            if pr.get("magnitudeOfDelay", 0) < 2 and delay < 60:
+            if not closed and pr.get("magnitudeOfDelay", 0) < 2 and delay < 60:
                 continue
             ev = pr.get("events") or [{}]
             incidents.append({"idx": k, "km": round((cum[k] - cum[i]) / 1000, 1), "delay_s": delay,
                               "len_m": int(pr.get("length") or 0), "text": (ev[0].get("description") or "")[:40],
-                              "cat": pr.get("iconCategory")})
+                              "cat": pr.get("iconCategory"), "closed": closed})
             total += delay
-        incidents.sort(key=lambda x: x["idx"])
-        out = {"delay_s": total, "incidents": incidents[:10], "t": int(time.time())}
-        now = time.time()
-        for k in [k for k, v in self.traffic_cache.items() if now - v[0] > 600]:
-            self.traffic_cache.pop(k, None)
-        self.traffic_cache[key] = (now, out)
-        return out
+        return incidents, total
 
     # ---- zgodność jazdy z planem
     def compliance(self, track_pts, t_start, t_end):

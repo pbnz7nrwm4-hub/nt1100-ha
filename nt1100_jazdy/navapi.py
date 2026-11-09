@@ -56,6 +56,7 @@ def init(server):
     return NAV
 
 
+SCREEN_LOGS = ("funkcje.txt", "zdarzenia.txt", "awarie.txt", "dotyk.txt", "pamiec.txt")
 SYNC_LOCK = threading.Lock()      # tylko stan „kiedy ostatnio”
 SYNC_RUN = threading.Lock()       # trwa pobieranie (minuty) – osobno, żeby ping nie czekał
 SYNC_LAST = {"t": 0}
@@ -1005,6 +1006,43 @@ def home_press(which):
     return {"ok": True, "service": dom + "." + svc, "home": screen_home()}
 
 
+WX_HERE_BUSY = set()
+
+
+def weather_here(lat, lon, hours=4):
+    """1.5.46 (ekran 2.7.0, pkt 16): pogoda w miejscu ekranu na teraz i kolejne godziny, do pustego panelu bez trasy.
+    Tylko z pamięci (ping nie czeka na Open-Meteo): brak w pamięci = pobranie w tle, odpowiedź przy następnym pingu."""
+    if not SRV.weather_on():
+        return None
+    key = (round(lat, 1), round(lon, 1))
+    with nav.WX_LOCK:
+        hit = key in nav.WX_CACHE and time.time() - nav.WX_CACHE[key][0] <= nav.WX_TTL
+    pts = [(lat, lon)] * (hours + 1)
+    times = [h * 3600 for h in range(hours + 1)]
+    if hit:
+        try:
+            return [{"t": w["t"], "temp": w["temp"], "rain_prob": w["rain_prob"], "code": w["code"], "wind": w["wind"]}
+                    for w in NAV.weather_along(pts, None, times)]
+        except Exception as e:  # noqa: BLE001 – pogoda nie może zepsuć pingu
+            SRV.log("pogoda tutaj:", e)
+            return None
+    with nav.WX_LOCK:
+        if key in WX_HERE_BUSY:
+            return None
+        WX_HERE_BUSY.add(key)
+
+    def fetch():
+        try:
+            NAV.weather_along(pts, None, times)
+        except Exception as e:  # noqa: BLE001
+            SRV.log("pogoda tutaj (pobranie):", e)
+        finally:
+            with nav.WX_LOCK:
+                WX_HERE_BUSY.discard(key)
+    threading.Thread(target=fetch, daemon=True).start()
+    return None
+
+
 def calendar_next(ent, n=3, now=None):
     """Najbliższe wydarzenia z kalendarza HA (3 dni), po polsku: [{"when": "dziś 14:00", "title": ...}]."""
     import datetime
@@ -1167,10 +1205,14 @@ def screen_get(h, path, q):
             # 1.5.23: kalendarz domu na postoju (3 najbliższe wydarzenia)
             if s["calendar_entity"]:
                 out["calendar"] = calendar_next(s["calendar_entity"])
+            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
             if screen_kind(q) == "ekran5":
                 # nawigacja offline na ekranie: te same suwaki wariantów i omijanie co w planerze
                 out["offline"] = screen_offline_settings(s)
-            lat, lon = SRV.num(q.get("lat")), SRV.num(q.get("lon"))
+                if lat is not None and lon is not None and (lat or lon):
+                    wx = weather_here(lat, lon)
+                    if wx:
+                        out["wx_here"] = wx
             if route and lat is not None and s["tomtom_key"] and q.get("traffic") == "1":
                 try:
                     out["traffic_now"] = NAV.traffic(route["id"], lat, lon)
@@ -1277,6 +1319,13 @@ def screen_post(h, path, q, body):
         return h.send(401, {"ok": False, "error": "zly klucz"}) or True
     if path == "/api/nav/mapa/roznice":
         return map_diff_reply(h, body) or True
+    if path == "/api/nav/dziennik":
+        # 1.5.46 (a12, kopia z ekranu): dopisanie kawałka dziennika z karty ekranu (tekst)
+        name = str(q.get("plik") or "")
+        if name not in SCREEN_LOGS:
+            return h.send(400, {"ok": False, "error": "zly plik"}) or True
+        n = NAV.screen_log_append(name, body or b"")
+        return h.send(200, {"ok": True, "bytes": n}) or True
     try:
         j = json.loads(body or b"{}")
     except ValueError:
@@ -1290,6 +1339,28 @@ def screen_post(h, path, q, body):
             r = NAV.reroute(rid, lat, lon, SRV.num(j.get("heading")), bool(j.get("skip")), SRV.num(j.get("avoid_km")))
             return h.send(200, {"ok": True, "id": r["id"], "version": r["version"], "km": round(r["dist_m"] / 1000, 1),
                                 "min": int(r["time_s"] / 60)}) or True
+        if path == "/api/nav/alt":
+            # 1.5.46: „Inna trasa” z ekranu, z internetem (kręto / mniej / szybciej z korkami / inną drogą)
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            if lat is None or lon is None:
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            try:
+                a = NAV.alternatives(int(j.get("id") or 0), lat, lon, SRV.num(j.get("heading")), str(j.get("mode") or ""))
+            except RuntimeError as e:
+                SRV.log("inna trasa (%s): %s" % (j.get("mode"), e))
+                return h.send(200, {"ok": False, "error": str(e)[:80]}) or True
+            out = {"ok": True, "id": a["id"], "version": a["version"], "mode": a["mode"], "variant": a["variant"],
+                   "calc_s": a["calc_s"], "traffic": a["traffic"]}
+            for side in ("now", "new"):
+                for k, v in a[side].items():
+                    out[side + "_" + k] = v if v is not None else -1
+            SRV.log("inna trasa (%s): teraz %.1f km %d min (+%d korki), nowa %.1f km %d min (+%d), liczona %.1f s"
+                    % (a["mode"], a["now"]["km"], a["now"]["min"], a["now"]["delay_min"], a["new"]["km"], a["new"]["min"],
+                       a["new"]["delay_min"], a["calc_s"]))
+            return h.send(200, out) or True
+        if path == "/api/nav/kopia":
+            # 1.5.46 (a12): kopia tego, co ma tylko ekran: dom zapisany na ekranie i oceny jazd
+            return h.send(200, NAV.screen_backup(j if isinstance(j, dict) else {})) or True
         if path == "/api/nav/via":
             # ekran: zjazd do wybranego miejsca (stacja, jedzenie) i powrót na trasę
             lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))

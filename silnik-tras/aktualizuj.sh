@@ -65,7 +65,7 @@ aktualizuj_skrypty() {
     echo "$(date '+%F %T') skrypty z repozytorium niedostępne, zostają obecne"
     rm -rf "$tmp"; return 0
   fi
-  for plik in build_map.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py; do
+  for plik in build_map.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"

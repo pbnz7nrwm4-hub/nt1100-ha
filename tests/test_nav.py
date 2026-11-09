@@ -98,6 +98,13 @@ class FakeGraphHopper(BaseHTTPRequestHandler):
                              {"sign": 2, "interval": [50, 100], "street_name": "Wschodnia"},
                              {"sign": 4, "interval": [100, 100], "street_name": ""}],
         }]}
+        if body.get("algorithm") == "alternative_route":
+            # 1.5.46: a second, longer way (east first, then north)
+            a = line(50.0, 19.9, 90, 1000)
+            b = line(a[-1][0], a[-1][1], 0, 1200)[1:]
+            p2 = a + b
+            out["paths"].append({"points": {"coordinates": [[p[1], p[0]] for p in p2]}, "distance": 2200.0, "time": 150000,
+                                 "details": {"time": [[0, len(p2) - 1, 150000]]}, "instructions": []})
         data = json.dumps(out).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -222,6 +229,50 @@ class GeometryTest(unittest.TestCase):
         self.assertEqual(g["variant"], "kreto")
         self.assertEqual(g["avoid"], ["platne", "gruntowe"])
         self.assertEqual([w["name"] for w in g["wpts"]], ["Huty"])
+
+    def test_gpx_bmw_stabilized(self):
+        # 1.5.46 (Kurviger „route stabilization”, Adrian 9.11 „pod BMW”): shaping points 300 m after turns onto
+        # another road, at most one per 8 km, long straight stretches every 16 km; read back they are not stops
+        pts = []
+        lat, lon = 50.0, 19.9
+        turns = []
+        for k in range(12):                          # 12 legs of 5 km, alternating north / east
+            seg = line(lat, lon, 0 if k % 2 == 0 else 90, 5000, 25.0)
+            if pts:
+                turns.append({"idx": len(pts) - 1, "type": nav.T_RIGHT if k % 2 else nav.T_LEFT, "text": "Droga %d" % k})
+                seg = seg[1:]
+            pts += seg
+            lat, lon = pts[-1]
+        route = {"name": "Długa", "pts": pts, "cum": nav.cum_dist(pts), "variant": "kreto", "turns": turns,
+                 "waypoints": [{"idx": len(pts) - 1, "name": "cel", "kind": 2}]}
+        sp = nav.stabilize_points(route)
+        self.assertTrue(4 <= len(sp) <= 8, sp)
+        cum = route["cum"]
+        gaps = [cum[b[0]] - cum[a[0]] for a, b in zip(sp, sp[1:])]
+        self.assertTrue(all(g >= 8000 for g in gaps), gaps)
+        x = nav.to_gpx_bmw(route)
+        self.assertEqual(x.count("<type>shaping</type>"), len(sp))
+        self.assertEqual(nav.parse_gpx(x.encode())["wpts"], [])   # shaping points are not stops
+
+    def test_closures_kept_without_delay(self):
+        # 1.5.46 (a10): a road closure (TomTom iconCategory 8) stays even with no delay, first on the list
+        pts = nav.densify(l_shape(), 30)
+        cum = nav.cum_dist(pts)
+        n = nav.Nav(os.path.join(TMP, "cl"), TMP, lambda: {"tomtom_key": "k"})
+        old = nav.http_json
+        nav.http_json = lambda *a, **k: {"incidents": [
+            {"geometry": {"type": "LineString", "coordinates": [[19.95, 50.2], [pts[40][1], pts[40][0]]]},
+             "properties": {"iconCategory": 8, "magnitudeOfDelay": 4, "delay": 0, "events": [{"description": "zamknięta"}]}},
+            {"geometry": {"type": "Point", "coordinates": [pts[10][1], pts[10][0]]},
+             "properties": {"iconCategory": 6, "magnitudeOfDelay": 1, "delay": 20}}]}
+        try:
+            out = n.incidents_along(pts, cum, 0, 50000)
+        finally:
+            nav.http_json = old
+        self.assertEqual(out["closed"], 1)
+        self.assertEqual(len(out["incidents"]), 1)
+        self.assertTrue(out["incidents"][0]["closed"])
+        self.assertEqual(out["incidents"][0]["idx"], 40)
 
     def test_pack_ntr_header(self):
         pts = nav.densify(l_shape(), 30)
@@ -543,6 +594,25 @@ class NavServerTest(unittest.TestCase):
         self.assertEqual(len(last["points"]), 2)
         code, body, _ = self.req(self.iu + "/api/nav/ping", headers={"X-Klucz": KEY})
         self.assertEqual(json.loads(body)["route"]["version"], s["version"])
+        # 1.5.46: „Inna trasa” z ekranu przez dodatek – porównanie, nowa trasa zapisana, ale nie bieżąca
+        self.assertEqual(last.get("timeout_ms"), nav.GH_TIMEOUT_MS)   # e5: bezpiecznik zapytania
+        code, a = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0, "mode": "inaczej"},
+                             {"X-Klucz": KEY})
+        self.assertEqual(code, 200, a)
+        self.assertTrue(a["ok"], a)
+        self.assertEqual(FakeGraphHopper.calls[-1]["algorithm"], "alternative_route")
+        self.assertEqual((a["new_km"], a["new_min"]), (2.2, 2))
+        self.assertNotEqual(a["id"], rid)
+        code, body, _ = self.req(self.pu + "/api/nav/routes")
+        self.assertEqual(json.loads(body)["current"], rid)          # not current until the rider takes it
+        code, a2 = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "szybciej"},
+                              {"X-Klucz": KEY})
+        self.assertTrue(a2["ok"], a2)
+        self.assertEqual(a2["variant"], "szybko")
+        self.assertNotIn("algorithm", FakeGraphHopper.calls[-1])
+        code, a3 = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "zle"},
+                              {"X-Klucz": KEY})
+        self.assertFalse(a3["ok"])
         # „objazd 1 km”: odcinek do ominięcia idzie do silnika jako obszar, a następne planowanie już go nie ma
         code, s = self.jpost(self.iu + "/api/nav/reroute", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0, "avoid_km": 1},
                              {"X-Klucz": KEY})
@@ -659,6 +729,56 @@ class NavServerTest(unittest.TestCase):
         finally:
             nv.search = old
             self.jpost(self.pu + "/api/nav/fav", {"fav": []})
+
+    def test_07b_screen_backup_and_logs(self):
+        # 1.5.46 (a12): what only the screen has goes to the add-on: home saved on the screen, ride ratings, card logs
+        code, j = self.jpost(self.iu + "/api/nav/kopia", {"home": {"lat": 50.1, "lon": 19.2, "name": "Dom"},
+                                                         "ratings": [{"t": 1700000000, "score": 4, "name": "Pętla", "km": 80}]},
+                             {"X-Klucz": KEY})
+        self.assertEqual((code, j["ratings"], j["home"]), (200, 1, True))
+        code, j = self.jpost(self.iu + "/api/nav/kopia", {"ratings": [{"t": 1700000000, "score": 4, "name": "Pętla"}]},
+                             {"X-Klucz": KEY})
+        self.assertEqual((j["ratings"], j["home"]), (1, True))        # no duplicate, home kept
+        nv = srv.navapi.NAV
+        for part in (b"linia 1\n", b"linia 2\n"):
+            code, body, _ = self.req(self.iu + "/api/nav/dziennik?plik=funkcje.txt&klucz=" + KEY, part, {}, "POST")
+            self.assertEqual(code, 200, body)
+        with open(os.path.join(nv.dir, "dziennik-ekranu", "funkcje.txt"), "rb") as f:
+            self.assertEqual(f.read(), b"linia 1\nlinia 2\n")
+        code, _, _ = self.req(self.iu + "/api/nav/dziennik?plik=..%2Fx&klucz=" + KEY, b"x", {}, "POST")
+        self.assertEqual(code, 400)
+
+    def test_07c_weather_here_in_ping(self):
+        # 1.5.46 (ekran 2.7.0, pkt 16): the weather where the screen is, for the empty panel; the ping never waits for
+        # Open-Meteo (first ping: fetched in the background, the next one carries it)
+        hourly = {"time": [time.strftime("%Y-%m-%dT%H:00", time.gmtime(time.time() + h * 3600)) for h in range(-2, 30)]}
+        for k in ("temperature_2m", "precipitation_probability", "precipitation", "weather_code", "wind_speed_10m", "wind_gusts_10m"):
+            hourly[k] = [7] * len(hourly["time"])
+        seen = []
+
+        def fake(url, timeout=0):
+            seen.append(url)
+            return {"hourly": hourly}
+        orig, orig_on = nav.http_json, srv.WEATHER_ON
+        nav.http_json, srv.WEATHER_ON = fake, True
+        nav.WX_CACHE.clear()
+        try:
+            u = self.iu + "/api/nav/ping?klucz=" + KEY + "&k=ekran5&lat=50.11&lon=19.21"
+            code, body, _ = self.req(u)
+            self.assertEqual(code, 200)
+            self.assertNotIn("wx_here", json.loads(body))
+            for _ in range(50):
+                if seen and (round(50.11, 1), round(19.21, 1)) in nav.WX_CACHE:
+                    break
+                time.sleep(0.05)
+            j = json.loads(self.req(u)[1])
+            self.assertEqual(len(j["wx_here"]), 5)
+            self.assertEqual((j["wx_here"][0]["temp"], j["wx_here"][0]["rain_prob"]), (7, 7))
+            self.assertEqual(len(seen), 1)
+            self.assertNotIn("wx_here", json.loads(self.req(self.iu + "/api/nav/ping?klucz=" + KEY + "&lat=50.11&lon=19.21")[1]))
+        finally:
+            nav.http_json, srv.WEATHER_ON = orig, orig_on
+            nav.WX_CACHE.clear()
 
     def test_07_screen_log_and_compliance(self):
         pts = l_shape()
