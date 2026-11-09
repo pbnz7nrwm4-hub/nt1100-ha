@@ -46,6 +46,9 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.44
+- Numer wersji na dole strony jest brany z wersji dodatku (wcześniej był wpisany na sztywno i pokazywał 1.5.41).
+
 ## Zmiany w 1.5.43
 - Paczka ZIP zrobiona przed 1.5.42 (stary układ `mapa/`) nie jest już podawana: dodatek robi ją od nowa w układzie `m6`.
 
