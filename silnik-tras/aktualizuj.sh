@@ -81,7 +81,9 @@ aktualizuj_skrypty() {
   case "$zmiany" in *mapa-serwer.py*) systemctl restart nt1100-mapa.service || true ;; esac
   case "$zmiany" in *aktualizuj.sh*) exec env NT1100_SKRYPTY=1 "$KAT/bin/aktualizuj.sh" "$@" ;; esac
 }
-if [ "${SAMOAKTUALIZACJA:-1}" != 0 ] && [ -z "${NT1100_SKRYPTY:-}" ]; then
+# 1.5.48: także po przejściu na nowy aktualizuj.sh (NT1100_SKRYPTY=1) – stara wersja nie znała config.yml
+# i motocykl.json, więc nowa pobiera je sama; aktualizuj.sh jest już ten sam, więc nie ma drugiego przejścia
+if [ "${SAMOAKTUALIZACJA:-1}" != 0 ]; then
   [ "${1:-}" = "--sprawdz" ] || etap "aktualizacja skryptów" 1
   aktualizuj_skrypty "$@"
 fi
