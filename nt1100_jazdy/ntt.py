@@ -14,10 +14,11 @@ CELL = 10
 F_ONEWAY, F_UNPAVED, F_TOLL, F_ROUNDABOUT, F_FERRY, F_TUNNEL, F_BRIDGE, F_LIT = 1, 2, 4, 8, 16, 32, 64, 128
 P_CAMERA, P_SECTION_START, P_SECTION_END = 1, 2, 3
 P_FUEL, P_RESTAURANT, P_CAFE, P_VIEWPOINT, P_PASS, P_HOTEL, P_CHARGING, P_MOTO_SHOP, P_PICNIC = 10, 11, 12, 13, 14, 15, 16, 17, 18
+P_SIGNALS, P_PARKING = 4, 19   # mapa 8
 POINT_NAMES = {P_CAMERA: "fotoradar", P_SECTION_START: "odcinkowy pomiar: początek", P_SECTION_END: "odcinkowy pomiar: koniec",
                P_FUEL: "stacja paliw", P_RESTAURANT: "restauracja", P_CAFE: "kawiarnia", P_VIEWPOINT: "punkt widokowy",
                P_PASS: "przełęcz", P_HOTEL: "nocleg", P_CHARGING: "ładowarka", P_MOTO_SHOP: "sklep/serwis moto",
-               P_PICNIC: "miejsce piknikowe"}
+               P_PICNIC: "miejsce piknikowe", P_PARKING: "parking"}
 CLASS_NAMES = {1: "autostrada", 2: "ekspresowa", 3: "krajowa", 4: "wojewódzka", 5: "powiatowa", 6: "lokalna",
                7: "osiedlowa", 8: "dojazd", 9: "gruntowa", 10: "strefa zamieszkania", 11: "łącznik A", 12: "łącznik S",
                13: "łącznik", 14: "łącznik", 15: "łącznik"}

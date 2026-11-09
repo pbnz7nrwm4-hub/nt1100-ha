@@ -6,7 +6,13 @@ graphhopper:
   datareader.file: /opt/nt1100-trasy/dane/mapa.osm.pbf
   graph.location: /opt/nt1100-trasy/dane/graf
   graph.dataaccess.type: RAM_STORE
-  graph.encoded_values: car_access, car_average_speed, road_class, road_class_link, road_environment, max_speed, surface, toll, curvature, track_type, road_access, roundabout
+  graph.encoded_values: car_access, car_average_speed, road_class, road_class_link, road_environment, max_speed, surface, toll, curvature, track_type, road_access, roundabout, average_slope, max_slope
+  # 1.5.48 (Adrian 9.11 15:18 „wysokości w silniku”, po udanym demo ekranu): wysokości SRTM w grafie – trasy z
+  # profilem wysokości (elevation=true w zapytaniu), nachylenie dla przyszłych modeli. Kafelki pobiera GraphHopper
+  # przy imporcie do cache_dir (raz, potem z dysku). Nieudany import: aktualizuj.sh przywraca poprzedni graf.
+  graph.elevation.provider: srtm
+  graph.elevation.cache_dir: /opt/nt1100-trasy/dane/srtm
+  graph.elevation.dataaccess: MMAP
   import.osm.ignored_highways: footway, cycleway, path, pedestrian, steps, bridleway, corridor, platform
   prepare.min_network_size: 200
   custom_models.directory: /opt/nt1100-trasy/modele

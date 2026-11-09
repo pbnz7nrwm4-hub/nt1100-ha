@@ -21,6 +21,8 @@ Format kwadratu (little-endian):
          i32 lat1e6 i32 lon1e6 (pierwszy), potem varint zygzak (dlat, dlon)
          skrzyżowania: u16 indeks_pkt u32 id_węzła
   punkty: u32 id_osm i32 lat1e6 i32 lon1e6 u8 rodzaj u8 limit u16 nazwa u16 para
+  (rodzaj: 1 fotoradar, 2/3 początek/koniec odcinkowego, 4 sygnalizacja świetlna – mapa 8, 10–19 miejsca,
+  19 parking – mapa 8)
   (od 2026-11, gdy bajt 5 nagłówka ma bit 0 = 1) za punktami część „tło”:
   u32 n_wód u32 n_rzek u32 n_miejscowości
   wody (wielokąty przycięte do kwadratu z marginesem, uproszczone):
@@ -118,7 +120,7 @@ FORMAT = 1
 # 5 = + spis nazwanych miejsc (a_poi.nta); 6 = + warstwy szczegółów, znaki (pasy, kierunki, zjazdy),
 # droga „tylko dojazd” w grafie, wysokości; 7 = + sieci przeskoków dla ekranu 2.8.0 (siec.py: pliki
 # <profil>_<lat10>_<lon10>.nto, długie trasy offline bez wczytywania całego grafu).
-MAP_VERSION = 7
+MAP_VERSION = 8   # 8: sygnalizacja świetlna w punktach kwadratów (P_SIGNALS); 7: sieci przeskoków
 CELL = 10  # kwadraty 0,1 stopnia
 
 CLASSES = {
@@ -190,7 +192,9 @@ PL_FOLD = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNO
 
 # Rodzaje punktów.
 P_CAMERA, P_SECTION_START, P_SECTION_END = 1, 2, 3
+P_SIGNALS = 4   # mapa 8 (Adrian 9.11 16:52, światła z OSM): highway=traffic_signals i przejścia crossing=traffic_signals
 P_FUEL, P_RESTAURANT, P_CAFE, P_VIEWPOINT, P_PASS, P_HOTEL, P_CHARGING, P_MOTO_SHOP, P_PICNIC = 10, 11, 12, 13, 14, 15, 16, 17, 18
+P_PARKING = 19   # mapa 8 (Adrian 9.11 20:26: parkingi przy celu, jak w Amap)
 POI_TAGS = (
     (("amenity", "fuel"), P_FUEL), (("amenity", "restaurant"), P_RESTAURANT), (("amenity", "cafe"), P_CAFE),
     (("amenity", "fast_food"), P_RESTAURANT), (("tourism", "viewpoint"), P_VIEWPOINT),
@@ -198,8 +202,9 @@ POI_TAGS = (
     (("tourism", "hotel"), P_HOTEL), (("tourism", "guest_house"), P_HOTEL), (("tourism", "motel"), P_HOTEL),
     (("amenity", "charging_station"), P_CHARGING), (("shop", "motorcycle"), P_MOTO_SHOP),
     (("shop", "motorcycle_repair"), P_MOTO_SHOP), (("tourism", "picnic_site"), P_PICNIC),
+    (("amenity", "parking"), P_PARKING),
 )
-NODE_FILTER = ["n/highway=speed_camera,motorway_junction"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
+NODE_FILTER = ["n/highway=speed_camera,motorway_junction,traffic_signals", "n/crossing=traffic_signals"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_FILTER = ["nwr/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_TOWN_M = 10000  # bez addr:city: najbliższa miejscowość ze spisu adresów, jeśli nie dalej
 
@@ -1550,7 +1555,7 @@ def build(pbf, out, bbox=None):
     lod = Lod()
     signs = Signs()
     opl_line = None
-    nways = npts = npoints = 0
+    nways = npts = npoints = nsignals = 0
     edges_tmp = os.path.join(work, "krawedzie.bin")
     etmp = open(edges_tmp, "wb")
     nedges = 0
@@ -1572,6 +1577,11 @@ def build(pbf, out, bbox=None):
                 cell(cell_of(lat, lon)).add_point(nid, lat, lon, P_CAMERA, parse_maxspeed(tags.get("maxspeed")),
                                                   "", 0)
                 npoints += 1
+                continue
+            if tags.get("highway") == "traffic_signals" or tags.get("crossing") == "traffic_signals":
+                cell(cell_of(lat, lon)).add_point(nid, lat, lon, P_SIGNALS, 0, "", 0)
+                npoints += 1
+                nsignals += 1
                 continue
             for (k, v), kind in POI_TAGS:
                 if tags.get(k) == v:
@@ -1728,8 +1738,8 @@ def build(pbf, out, bbox=None):
     for name in os.listdir(work):
         os.remove(os.path.join(work, name))
     os.rmdir(work)
-    print("gotowe: %d kwadratów, %d dróg, %d punktów, %.1f MB, %.0f s" %
-          (len(files), nways, npoints, total / 1e6, time.time() - t0), flush=True)
+    print("gotowe: %d kwadratów, %d dróg, %d punktów (sygnalizacja %d), %.1f MB, %.0f s" %
+          (len(files), nways, npoints, nsignals, total / 1e6, time.time() - t0), flush=True)
     return manifest
 
 
