@@ -61,11 +61,11 @@ aktualizuj_skrypty() {
   tmp=$(mktemp -d)
   if ! curl -L --fail -sS -m 120 -o "$tmp/repo.tgz" "$REPO_TAR" \
      || ! tar -xzf "$tmp/repo.tgz" -C "$tmp" --strip-components=2 --wildcards '*/silnik-tras/*' \
-     || ! bash -n "$tmp/aktualizuj.sh" || ! python3 -m py_compile "$tmp/build_map.py" "$tmp/mapa-serwer.py"; then
+     || ! bash -n "$tmp/aktualizuj.sh" || ! python3 -m py_compile "$tmp/build_map.py" "$tmp/mapa-serwer.py" "$tmp/siec.py"; then
     echo "$(date '+%F %T') skrypty z repozytorium niedostępne, zostają obecne"
     rm -rf "$tmp"; return 0
   fi
-  for plik in build_map.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py; do
+  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"

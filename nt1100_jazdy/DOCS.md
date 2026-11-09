@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.47 (mapa 7, ekran 5" 2.8.0)
+- Mapa na ekran w wersji 7: kontener dokłada sieci przeskoków (pliki `sa_`, `sb_`, `sk_`, `s0_` *.nto, ok. 31 MB na Polskę). Ekran 2.8.0 liczy po nich długie trasy offline (np. 500 km) bez wczytywania całego grafu do pamięci. Kontener przebuduje mapę sam przy najbliższym sprawdzeniu.
+- Dodatek przekazuje te pliki na kartę ekranu razem z resztą mapy (część `siec` manifestu).
+
 ## Zmiany w 1.5.46 (ekran 5" 2.7.0)
 - „Inna trasa” z ekranu z internetem pyta dodatek: bardziej kręto, mniej kręto, szybciej (z korkami TomToma) albo inną drogą (alternatywa silnika tras). Ekran pokazuje porównanie z obecną trasą (km, minuty, korki, zamknięcia); nowa trasa staje się bieżąca dopiero po „Jedź”.
 - Zamknięte drogi z TomToma (ten sam klucz co korki) są pokazywane zawsze, także bez opóźnienia, i pierwsze na liście.

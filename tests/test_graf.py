@@ -230,7 +230,10 @@ class GraphTest(unittest.TestCase):
 
     def test_manifest_lists_graph_files(self):
         m = json.load(open(os.path.join(self.out, "manifest.json")))
-        self.assertEqual(m["wersja"], 6)
+        self.assertEqual(m["wersja"], 7)
+        # mapa 7: sieci przeskoków z grafu (ekran 2.8.0)
+        self.assertIn("siec", m)
+        self.assertTrue(m["siec"]["cells"])
         names = [f[0] for f in m["graph"]["cells"]]
         self.assertTrue(names and all(n.startswith("g_") and n.endswith(".ntg") for n in names))
         self.assertTrue(all(n.endswith(".ntt") for n, _, _ in m["files"]))
@@ -338,7 +341,7 @@ class AddressTest(unittest.TestCase):
     def test_places_by_name(self):
         m = json.load(open(os.path.join(self.out, "manifest.json")))
         self.assertIn("a_poi.nta", [f[0] for f in m["addr"]["cells"]])
-        self.assertEqual(m["wersja"], 6)
+        self.assertEqual(m["wersja"], 7)
         self.assertEqual(len(self.a.poi_index()), 4)           # kawiarnia bez nazwy pominięta
         r = self.a.places("orlen", near=(50.16, 20.27))
         self.assertEqual([(x["name"], x["city"], x["kind"]) for x in r],
