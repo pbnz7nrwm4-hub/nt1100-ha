@@ -46,6 +46,13 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.48 (mapa 8, jedna pełna przebudowa kontenera)
+
+- Mapa 8 na ekran: sygnalizacja świetlna (skrzyżowania i przejścia ze światłami) i parkingi z OSM; parkingi także w spisie miejsc.
+- Silnik tras w kontenerze: ustawienia z repozytorium (tryb LM i bezpiecznik zapytania z 1.5.46, wysokości SRTM w grafie)
+  wchodzą przy budowie grafu. Gdy nowy graf się nie uda, wraca poprzedni graf z poprzednimi ustawieniami.
+- `WYMUS=1 aktualizuj.sh` robi pełną przebudowę także wtedy, gdy dane OSM się nie zmieniły.
+
 ## Zmiany w 1.5.47 (mapa 7, ekran 5" 2.8.0)
 - Mapa na ekran w wersji 7: kontener dokłada sieci przeskoków (pliki `sa_`, `sb_`, `sk_`, `s0_` *.nto, ok. 31 MB na Polskę). Ekran 2.8.0 liczy po nich długie trasy offline (np. 500 km) bez wczytywania całego grafu do pamięci. Kontener przebuduje mapę sam przy najbliższym sprawdzeniu.
 - Dodatek przekazuje te pliki na kartę ekranu razem z resztą mapy (część `siec` manifestu).

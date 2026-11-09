@@ -21,6 +21,9 @@ OSM = """<?xml version='1.0' encoding='UTF-8'?>
 <osm version="0.6" generator="test">
  <node id="1" version="1" lat="50.010" lon="19.910"/>
  <node id="2" version="1" lat="50.010" lon="19.990"/>
+ <node id="3" version="1" lat="50.010" lon="19.950"><tag k="highway" v="traffic_signals"/></node>
+ <node id="4" version="1" lat="50.010" lon="19.960"><tag k="highway" v="crossing"/><tag k="crossing" v="traffic_signals"/></node>
+ <node id="5" version="1" lat="50.012" lon="19.955"><tag k="amenity" v="parking"/><tag k="name" v="Parking Rynek"/></node>
  <node id="11" version="1" lat="50.020" lon="19.920"/>
  <node id="12" version="1" lat="50.020" lon="19.940"/>
  <node id="13" version="1" lat="50.032" lon="19.940"/>
@@ -58,7 +61,7 @@ OSM = """<?xml version='1.0' encoding='UTF-8'?>
  <node id="86" version="1" lat="50.050" lon="20.040"/>
  <node id="87" version="1" lat="50.060" lon="20.040"/>
  <node id="88" version="1" lat="50.060" lon="20.020"/>
- <way id="100" version="1"><nd ref="1"/><nd ref="2"/><tag k="highway" v="primary"/><tag k="name" v="Główna"/></way>
+ <way id="100" version="1"><nd ref="1"/><nd ref="3"/><nd ref="4"/><nd ref="2"/><tag k="highway" v="primary"/><tag k="name" v="Główna"/></way>
  <way id="101" version="1"><nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="14"/><nd ref="11"/></way>
  <way id="102" version="1"><nd ref="21"/><nd ref="22"/><nd ref="23"/><nd ref="24"/><nd ref="21"/></way>
  <way id="103" version="1"><nd ref="31"/><nd ref="32"/><nd ref="33"/><tag k="waterway" v="river"/><tag k="name" v="Rzeka"/></way>
@@ -94,6 +97,9 @@ class BuildMapBackgroundTest(unittest.TestCase):
             # old readers still read roads
             ways, points = ntt.read_cell(os.path.join(out, "c_500_199.ntt"))
             self.assertEqual([w.name for w in ways], ["Główna"])
+            # map 8 (9.11): traffic lights (junction and pedestrian crossing) and parking as cell points
+            self.assertEqual(sorted((p.kind, p.name) for p in points),
+                             [(ntt.P_SIGNALS, ""), (ntt.P_SIGNALS, ""), (ntt.P_PARKING, "Parking Rynek")])
             bg = ntt.read_background(os.path.join(out, "c_500_199.ntt"))
             kinds = sorted((k, n) for k, n, _ in bg["waters"])
             self.assertEqual(kinds, [(1, "Jezioro"), (2, "")])          # lake + island; small pond dropped

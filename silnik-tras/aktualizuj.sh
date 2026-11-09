@@ -65,7 +65,9 @@ aktualizuj_skrypty() {
     echo "$(date '+%F %T') skrypty z repozytorium niedostępne, zostają obecne"
     rm -rf "$tmp"; return 0
   fi
-  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py; do
+  # 1.5.48: config.yml i motocykl.json z repozytorium leżą w bin/ jako wzór; do użytku wchodzą dopiero przy budowie
+  # grafu (krok 5), bo działający silnik musi pasować do swojego grafu (np. tryb LM z e3)
+  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py config.yml motocykl.json; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"
@@ -121,7 +123,11 @@ fi
 etap "pobieranie danych OSM" 1
 echo "$(date '+%F %T') pobieranie $URL"
 curl -L --fail -sS -z "$PBF" -o "$PBF.nowy" "$URL" || { echo "pobieranie nieudane"; koniec false "pobieranie danych OSM nieudane"; exit 1; }
-if [ ! -s "$PBF.nowy" ]; then
+# 1.5.48: WYMUS=1 (Adrian 9.11: jedna pełna przebudowa) – pełna budowa także bez nowych danych OSM
+if [ ! -s "$PBF.nowy" ] && [ -n "${WYMUS:-}" ] && [ -s "$PBF" ]; then
+  echo "$(date '+%F %T') dane OSM bez zmian, ale WYMUS=1: pełna przebudowa z obecnych"
+  rm -f "$PBF.nowy"
+elif [ ! -s "$PBF.nowy" ]; then
   echo "dane bez zmian"
   rm -f "$PBF.nowy"
   if [ -d "$KAT/dane/graf" ] && [ -s "$KAT/www/mapa/manifest.json" ]; then
@@ -156,9 +162,27 @@ etap "dane wysokości gór (pobiera tylko brakujące)" 4
 python3 "$KAT/bin/dem.py" "$KAT/www" || { echo "$(date '+%F %T') dane wysokości niepełne"; BLAD="${BLAD:+$BLAD, }dane gór niepełne"; }
 
 etap "graf tras (trasy nie liczą się)" 5
-rm -rf "$KAT/dane/graf"
+# 1.5.48: ustawienia silnika z repozytorium (e3 LM, e5, wysokości) wchodzą razem z nowym grafem; gdy import się nie
+# uda, wracają poprzedni graf i poprzednie ustawienia – silnik tras dodatku zawsze ma działający graf
+rm -rf "$KAT/dane/graf.stary"
+[ -d "$KAT/dane/graf" ] && mv "$KAT/dane/graf" "$KAT/dane/graf.stary"
+cp "$KAT/config.yml" "$KAT/config.yml.stary"
+cp "$KAT/modele/motocykl.json" "$KAT/modele/motocykl.json.stary"
+[ -s "$KAT/bin/config.yml" ] && cp "$KAT/bin/config.yml" "$KAT/config.yml"
+[ -s "$KAT/bin/motocykl.json" ] && cp "$KAT/bin/motocykl.json" "$KAT/modele/motocykl.json"
+mkdir -p "$KAT/dane/srtm"
 cd "$KAT"
-java -Xmx"${PAMIEC}" -Xms1g -jar "$KAT/graphhopper-web.jar" import "$KAT/config.yml"
+if java -Xmx"${PAMIEC}" -Xms1g -jar "$KAT/graphhopper-web.jar" import "$KAT/config.yml"; then
+  echo "$(date '+%F %T') graf tras: nowy z ustawieniami z repozytorium"
+  rm -rf "$KAT/dane/graf.stary" "$KAT/config.yml.stary" "$KAT/modele/motocykl.json.stary"
+else
+  echo "$(date '+%F %T') graf tras: import NIEUDANY – wraca poprzedni graf i ustawienia"
+  rm -rf "$KAT/dane/graf"
+  [ -d "$KAT/dane/graf.stary" ] && mv "$KAT/dane/graf.stary" "$KAT/dane/graf"
+  mv "$KAT/config.yml.stary" "$KAT/config.yml"
+  mv "$KAT/modele/motocykl.json.stary" "$KAT/modele/motocykl.json"
+  BLAD="${BLAD:+$BLAD, }nowy graf tras nieudany (działa poprzedni)"
+fi
 systemctl start nt1100-trasy.service
 podsumuj "gotowe"
 echo "$(date '+%F %T') gotowe"
