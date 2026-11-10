@@ -66,7 +66,8 @@ od siebie to osobne miejscowości. Nazwa „złożona” = małe litery bez pols
   a_index.nta: "NTAI" u8 wersja=1 u8 0 u32 n, wpisy (po nazwie złożonej, większe wcześniej):
          napis nazwa_złożona, napis nazwa, napis kod_pocztowy, i32 lat1e6 i32 lon1e6, u32 n_adresów,
          i16 lat10 i16 lon10 (plik a_*), u32 przesunięcie miejscowości w tym pliku
-         (od wersji 2 spisu, ekran 2.10.0: jeszcze u8 województwo – kod TERYT 2..32, 0 = nieznane)
+         po wpisach (od 10.11.2026, ekran 2.10.0) dopisek "WOJ1" + n × u8 województwo (kod TERYT 2..32, 0 = nieznane)
+         w kolejności wpisów; wersja zostaje 1 – starsze ekrany i dodatek czytają n wpisów i resztę pomijają
   W manifeście: "addr": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]} (z a_index.nta).
 
 Od wersji mapy 5 jest też spis nazwanych miejsc całej mapy (szukanie offline po nazwie: stacje, jedzenie,
@@ -188,7 +189,6 @@ RESTR_REC = struct.Struct("<IIIB")
 GRAPH_HEAD = struct.Struct("<4sBBhhIIII")
 
 ADDR_FORMAT = 1
-INDEX_FORMAT = 2   # 2: po wpisie u8 województwo (kod TERYT 2..32, 0 = nieznane) – ekran 2.10.0
 ADDR_GRID = 0.2   # miejscowości o tej samej nazwie w stykających się oczkach 0,2° to jedna miejscowość
 PL_FOLD = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
 
@@ -1414,19 +1414,19 @@ def add_addresses(src, work, out):
         total += len(data)
         cells[key][0] = base  # przesunięcie miejscowości liczone od początku pliku
     index.sort()
-    data = bytearray(struct.pack("<4sBBI", b"NTAI", INDEX_FORMAT, 0, len(index)))
-    nwoj = 0
+    data = bytearray(struct.pack("<4sBBI", b"NTAI", ADDR_FORMAT, 0, len(index)))
     for f_, _, name, pc, lat, lon, cnt, key, off, w in index:
-        data += bstr(f_) + bstr(name) + bstr(pc) + struct.pack("<iiIhhIB", lat, lon, cnt, key[0], key[1],
-                                                                 off + cells[key][0], w)
-        nwoj += 1 if w else 0
+        data += bstr(f_) + bstr(name) + bstr(pc) + struct.pack("<iiIhhI", lat, lon, cnt, key[0], key[1],
+                                                                off + cells[key][0])
+    data += b"WOJ1" + bytes(r[9] for r in index)   # województwa za wpisami (zgodne wstecz)
+    nwoj = sum(1 for r in index if r[9])
     print("adresy: województwo znane dla %d z %d miejscowości" % (nwoj, len(index)), flush=True)
     with open(os.path.join(out, "a_index.nta"), "wb") as f:
         f.write(data)
     files.append(["a_index.nta", len(data), binascii.crc32(bytes(data))])
     total += len(data)
     print("adresy: %d, miejscowości %d, %.1f MB (%.0f s)" % (n, len(index), total / 1e6, time.time() - t0), flush=True)
-    towns = [(name, lat / 1e6, lon / 1e6, cnt) for _, _, name, _, lat, lon, cnt, _, _ in index]
+    towns = [(name, lat / 1e6, lon / 1e6, cnt) for _, _, name, _, lat, lon, cnt, _, _, _ in index]
     return {"format": ADDR_FORMAT, "bytes": total, "cells": files}, towns
 
 
