@@ -66,6 +66,8 @@ od siebie to osobne miejscowości. Nazwa „złożona” = małe litery bez pols
   a_index.nta: "NTAI" u8 wersja=1 u8 0 u32 n, wpisy (po nazwie złożonej, większe wcześniej):
          napis nazwa_złożona, napis nazwa, napis kod_pocztowy, i32 lat1e6 i32 lon1e6, u32 n_adresów,
          i16 lat10 i16 lon10 (plik a_*), u32 przesunięcie miejscowości w tym pliku
+         po wpisach (od 10.11.2026, ekran 2.10.0) dopisek "WOJ1" + n × u8 województwo (kod TERYT 2..32, 0 = nieznane)
+         w kolejności wpisów; wersja zostaje 1 – starsze ekrany i dodatek czytają n wpisów i resztę pomijają
   W manifeście: "addr": {"format":1, "bytes":N, "cells":[[nazwa, bajty, crc32], ...]} (z a_index.nta).
 
 Od wersji mapy 5 jest też spis nazwanych miejsc całej mapy (szukanie offline po nazwie: stacje, jedzenie,
@@ -1247,6 +1249,61 @@ def feature_point(geom):
     return sum(p[1] for p in pts) / len(pts), sum(p[0] for p in pts) / len(pts)
 
 
+def voivodeships(src, work):
+    """Województwa (boundary=administrative, admin_level=4, teryt:terc) jako uproszczone wielokąty z ramką."""
+    t0 = time.time()
+    vpbf = os.path.join(work, "wojewodztwa.pbf")
+    out = []
+    try:
+        run(["osmium", "tags-filter", src, "r/admin_level=4", "-o", vpbf, "--overwrite"])
+        with subprocess.Popen(["osmium", "export", vpbf, "-f", "geojsonseq", "--geometry-types=polygon"],
+                              stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as p:
+            for line in p.stdout:
+                line = line.lstrip("\x1e")
+                if not line.startswith("{"):
+                    continue
+                f = json.loads(line)
+                g, t = f.get("geometry") or {}, f.get("properties") or {}
+                if t.get("boundary") != "administrative" or t.get("admin_level") != "4":
+                    continue
+                terc = (t.get("teryt:terc") or "").strip()
+                if not terc.isdigit() or not 2 <= int(terc) <= 32:
+                    continue
+                polys = [g["coordinates"]] if g.get("type") == "Polygon" else g.get("coordinates") or []
+                for poly in polys:
+                    ring = poly[0]
+                    step = max(1, len(ring) // 2000)
+                    pts = [(c[1], c[0]) for c in ring[::step]]
+                    if len(pts) < 3:
+                        continue
+                    la = [q[0] for q in pts]
+                    lo = [q[1] for q in pts]
+                    out.append((int(terc), (min(la), max(la), min(lo), max(lo)), pts))
+    except (subprocess.CalledProcessError, OSError) as e:
+        print("województwa: brak (%s)" % e, flush=True)
+    if os.path.exists(vpbf):
+        os.remove(vpbf)
+    print("województwa: %d wielokątów (%.0f s)" % (len(out), time.time() - t0), flush=True)
+    return out
+
+
+def voivodeship_of(woj, lat, lon):
+    for code, (s_, n_, w_, e_), pts in woj:
+        if not (s_ <= lat <= n_ and w_ <= lon <= e_):
+            continue
+        inside = False
+        j = len(pts) - 1
+        for i in range(len(pts)):
+            yi, xi = pts[i]
+            yj, xj = pts[j]
+            if (yi > lat) != (yj > lat) and lon < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+                inside = not inside
+            j = i
+        if inside:
+            return code
+    return 0
+
+
 def add_addresses(src, work, out):
     """Adresy (addr:housenumber) pogrupowane w miejscowości, ulice i numery; zwraca część manifestu."""
     t0 = time.time()
@@ -1281,6 +1338,7 @@ def add_addresses(src, work, out):
     os.remove(lines)
     cells = collections.defaultdict(lambda: [bytearray(), 0])
     index = []
+    woj = voivodeships(src, work)
 
     def flush(group):
         # skupiska: ta sama nazwa w stykających się oczkach 0,2°
@@ -1325,7 +1383,8 @@ def add_addresses(src, work, out):
                 rec += bstr(num) + struct.pack("<ii", *nums[num])
         c[0] += rec
         c[1] += 1
-        index.append((fold(name), -count, name, pc, lat, lon, count, key, off))
+        index.append((fold(name), -count, name, pc, lat, lon, count, key, off,
+                      voivodeship_of(woj, lat / 1e6, lon / 1e6)))
 
     cur, group = None, []
     with open(srt) as f:
@@ -1356,15 +1415,18 @@ def add_addresses(src, work, out):
         cells[key][0] = base  # przesunięcie miejscowości liczone od początku pliku
     index.sort()
     data = bytearray(struct.pack("<4sBBI", b"NTAI", ADDR_FORMAT, 0, len(index)))
-    for f_, _, name, pc, lat, lon, cnt, key, off in index:
+    for f_, _, name, pc, lat, lon, cnt, key, off, w in index:
         data += bstr(f_) + bstr(name) + bstr(pc) + struct.pack("<iiIhhI", lat, lon, cnt, key[0], key[1],
                                                                 off + cells[key][0])
+    data += b"WOJ1" + bytes(r[9] for r in index)   # województwa za wpisami (zgodne wstecz)
+    nwoj = sum(1 for r in index if r[9])
+    print("adresy: województwo znane dla %d z %d miejscowości" % (nwoj, len(index)), flush=True)
     with open(os.path.join(out, "a_index.nta"), "wb") as f:
         f.write(data)
     files.append(["a_index.nta", len(data), binascii.crc32(bytes(data))])
     total += len(data)
     print("adresy: %d, miejscowości %d, %.1f MB (%.0f s)" % (n, len(index), total / 1e6, time.time() - t0), flush=True)
-    towns = [(name, lat / 1e6, lon / 1e6, cnt) for _, _, name, _, lat, lon, cnt, _, _ in index]
+    towns = [(name, lat / 1e6, lon / 1e6, cnt) for _, _, name, _, lat, lon, cnt, _, _, _ in index]
     return {"format": ADDR_FORMAT, "bytes": total, "cells": files}, towns
 
 

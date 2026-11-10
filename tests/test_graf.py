@@ -309,6 +309,11 @@ class AddressTest(unittest.TestCase):
         self.assertEqual(m["addr"]["bytes"], sum(f[1] for f in m["addr"]["cells"]))
         towns = sorted((t["name"], t["count"]) for t in self.a.index())
         self.assertEqual(towns, [("Nowa Wieś", 1), ("Nowa Wieś", 2), ("Wola", 1), ("Łąkowo", 5)])
+        # ekran 2.10.0: województwa za wpisami ("WOJ1" + bajt na wpis), wersja spisu zostaje 1 (stare czytniki)
+        buf = open(os.path.join(self.out, "a_index.nta"), "rb").read()
+        self.assertEqual(buf[4], 1)
+        self.assertEqual(buf[-4 - 4:-4], b"WOJ1")   # 4 miejscowości, brak granic w danych testowych = 0
+        self.assertEqual(buf[-4:], bytes(4))
 
     def test_find_without_polish_letters(self):
         r = self.a.find("lakowo", "glowna", "2A")
