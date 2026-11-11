@@ -613,6 +613,19 @@ class NavServerTest(unittest.TestCase):
         code, a3 = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "zle"},
                               {"X-Klucz": KEY})
         self.assertFalse(a3["ok"])
+        # 1.5.50 (e2): wszystkie inne drogi naraz – te same co obecna odpadają, zostaje alternatywa silnika z kształtem
+        code, al = self.jpost(self.iu + "/api/nav/alts", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0}, {"X-Klucz": KEY})
+        self.assertEqual(code, 200, al)
+        self.assertTrue(al["ok"], al)
+        self.assertEqual((al["n"], al["a0_mode"], al["a0_km"], al["a0_min"]), (1, "inaczej", 2.2, 2))
+        self.assertNotEqual(al["a0_id"], rid)
+        shape = [tuple(float(x) for x in q.split(",")) for q in al["a0_shape"].split(";")]
+        self.assertTrue(2 <= len(shape) <= 40, len(shape))
+        self.assertAlmostEqual(shape[0][0], 50.0, places=3)
+        self.assertTrue(al["now_shape"].count(";") >= 1)
+        self.assertNotIn("a1_id", al)
+        code, body, _ = self.req(self.pu + "/api/nav/routes")
+        self.assertEqual(json.loads(body)["current"], rid)
         # „objazd 1 km”: odcinek do ominięcia idzie do silnika jako obszar, a następne planowanie już go nie ma
         code, s = self.jpost(self.iu + "/api/nav/reroute", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0, "avoid_km": 1},
                              {"X-Klucz": KEY})

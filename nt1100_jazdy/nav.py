@@ -1376,6 +1376,77 @@ class Nav:
                 "now": side(now_m, now_s, cur_tr, cur_curvy),
                 "new": side(new["dist_m"], new.get("time_s", 0), new_tr, new.get("curvy"))}
 
+    @staticmethod
+    def shape_text(pts, n=40):
+        """Kształt trasy dla ekranu: najwyżej n punktów równo co do odległości, „lat,lon;lat,lon…” (5 miejsc)."""
+        if not pts:
+            return ""
+        cum = cum_dist(pts)
+        total = cum[-1] if cum else 0
+        if len(pts) <= n or total <= 0:
+            pick = list(range(len(pts)))
+        else:
+            pick, j = [0], 0
+            for k in range(1, n - 1):
+                want = total * k / (n - 1)
+                while j + 1 < len(cum) and cum[j] < want:
+                    j += 1
+                if j != pick[-1]:
+                    pick.append(j)
+            if pick[-1] != len(pts) - 1:
+                pick.append(len(pts) - 1)
+        return ";".join("%.5f,%.5f" % (pts[i][0], pts[i][1]) for i in pick)
+
+    @staticmethod
+    def shared_part(a_pts, b_pts):
+        """Jaka część trasy b biegnie tą samą drogą co a (punkty b w kratce ~11 m zajętej przez a)."""
+        cells = set((round(p[0], 4), round(p[1], 4)) for p in a_pts)
+        if not b_pts:
+            return 1.0
+        return sum(1 for p in b_pts if (round(p[0], 4), round(p[1], 4)) in cells) / float(len(b_pts))
+
+    def alternatives_all(self, rid, lat, lon, heading=None, budget_s=45.0, car=False):
+        """1.5.50 (przegląd ergonomii e2, Adrian 10.11: „inne trasy kilka naraz”): wszystkie sensowne inne drogi
+        do tego samego celu za jednym pytaniem – szybciej (z korkami), inną drogą, bardziej i mniej kręto (auto:
+        tylko dwie pierwsze). Trasy prawie takie same jak obecna albo jak już znaleziona (≥ 85 % wspólnej drogi) są
+        pomijane. Każda zapisana jak w alternatives(), żadna nie jest bieżąca. Kształty do narysowania na ekranie."""
+        route = self.route(rid)
+        if not route:
+            raise RuntimeError("brak trasy")
+        pts, cum = route["pts"], route["cum"]
+        i, _ = nearest_index(pts, (lat, lon))
+        modes = ("szybciej", "inaczej") if car else ("szybciej", "inaczej", "kreto", "mniej")
+        t0 = time.time()
+        items, seen, why, now, traffic = [], [pts[i:]], {}, None, False
+        for mode in modes:
+            if time.time() - t0 > budget_s:
+                why[mode] = "brak czasu"
+                continue
+            try:
+                a = self.alternatives(rid, lat, lon, heading, mode)
+            except RuntimeError as e:
+                why[mode] = str(e)[:60]
+                continue
+            new = self.route(a["id"])
+            if not new or not new.get("pts"):
+                why[mode] = "brak kształtu"
+                continue
+            share = max(self.shared_part(s, new["pts"]) for s in seen)
+            if share >= 0.85:
+                why[mode] = "ta sama droga (%d %%)" % int(share * 100)
+                continue
+            seen.append(new["pts"])
+            now = now or a["now"]
+            traffic = traffic or a["traffic"]
+            items.append({"id": a["id"], "version": a["version"], "mode": mode, "variant": a["variant"],
+                          "shape": self.shape_text(new["pts"]), **a["new"]})
+            if len(items) >= 3:
+                break
+        if not items:
+            raise RuntimeError("nie ma innej rozsądnej drogi" + (": " + "; ".join("%s – %s" % kv for kv in why.items()) if why else ""))
+        return {"traffic": traffic, "calc_s": round(time.time() - t0, 1), "now": now, "now_shape": self.shape_text(pts[i:]),
+                "items": items, "skipped": why}
+
     # ---- decyzje w trasie: co jest przed motocyklem i zjazd do miejsca
     def nearby(self, lat, lon, kinds, limit=30):
         """Miejsca przed motocyklem na bieżącej trasie (gdy jedzie po niej),

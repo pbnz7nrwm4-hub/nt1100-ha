@@ -1358,6 +1358,26 @@ def screen_post(h, path, q, body):
                     % (a["mode"], a["now"]["km"], a["now"]["min"], a["now"]["delay_min"], a["new"]["km"], a["new"]["min"],
                        a["new"]["delay_min"], a["calc_s"]))
             return h.send(200, out) or True
+        if path == "/api/nav/alts":
+            # 1.5.50 (e2): „Inna trasa” – wszystkie inne drogi naraz, z kształtami do narysowania na ekranie
+            lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))
+            if lat is None or lon is None:
+                return h.send(400, {"ok": False, "error": "brak pozycji"}) or True
+            try:
+                a = NAV.alternatives_all(int(j.get("id") or 0), lat, lon, SRV.num(j.get("heading")), car=bool(j.get("car")))
+            except RuntimeError as e:
+                SRV.log("inne trasy: %s" % e)
+                return h.send(200, {"ok": False, "error": str(e)[:80]}) or True
+            out = {"ok": True, "traffic": a["traffic"], "calc_s": a["calc_s"], "n": len(a["items"]), "now_shape": a["now_shape"]}
+            for k, v in a["now"].items():
+                out["now_" + k] = v if v is not None else -1
+            for n, it in enumerate(a["items"]):
+                for k, v in it.items():
+                    out["a%d_%s" % (n, k)] = v if v is not None else -1
+            SRV.log("inne trasy: %d (%s), pominięte: %s, liczone %.1f s"
+                    % (len(a["items"]), ", ".join("%s %+d min" % (it["mode"], it["min"] - a["now"]["min"]) for it in a["items"]),
+                       a["skipped"] or "-", a["calc_s"]))
+            return h.send(200, out) or True
         if path == "/api/nav/kopia":
             # 1.5.46 (a12): kopia tego, co ma tylko ekran: dom zapisany na ekranie i oceny jazd
             return h.send(200, NAV.screen_backup(j if isinstance(j, dict) else {})) or True

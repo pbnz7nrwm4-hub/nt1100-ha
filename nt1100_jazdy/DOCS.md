@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.50 (ekran 5" 2.11.0: inne trasy kilka naraz)
+- „Inna trasa” na ekranie pyta teraz o wszystkie inne drogi jednym pytaniem (`/api/nav/alts`): szybciej z korkami, inną drogą, bardziej i mniej kręto (auto: tylko dwie pierwsze). Dodatek odrzuca trasy prawie takie same jak obecna (85 % wspólnej drogi lub więcej) i odsyła najwyżej trzy, każdą z uproszczonym kształtem, żeby ekran narysował je razem z dymkami „±min”.
+- Żadna z tych tras nie staje się bieżąca, dopóki kierowca nie dotknie „Jedź tą”. Stary sposób (`/api/nav/alt`, jedno pytanie na jeden sposób) działa dalej dla starszych wersji ekranu.
+
 ## Zmiany w 1.5.49 (sygnały jazdy do montażu filmów)
 
 Dodatek przyjmuje i przechowuje nowy plik jazdy `.sig` (10 próbek na sekundę: czas, obroty, gaz, bieg, przechył, prędkość, przyspieszenia) ze skrzynki w wersji z jego zapisem. Pobranie: `/api/rides/<numer>/sig` (CSV: `t_ms,unix_ms,rpm,throttle,gear,lean_deg,speed_kmh,long_g,lat_g,sw`). Jazdy starsze go nie mają (404), `.trk` bez zmian.
