@@ -1358,6 +1358,33 @@ def screen_post(h, path, q, body):
                     % (a["mode"], a["now"]["km"], a["now"]["min"], a["now"]["delay_min"], a["new"]["km"], a["new"]["min"],
                        a["new"]["delay_min"], a["calc_s"]))
             return h.send(200, out) or True
+        if path == "/api/nav/wx":
+            # 1.5.50 (decyzja Adriana 10.11: pogoda dla KAŻDEJ trasy ekranu): trasa policzona na ekranie nie ma
+            # prognozy – ekran wysyła jej punkty z czasem przejazdu („lat,lon,sekundy;…”), dodatek odsyła prognozę
+            # co ok. 30 min jazdy na godzinę przejazdu (ta sama weather_along co dla tras z dodatku)
+            if not SRV.weather_on():
+                return h.send(200, {"ok": False, "error": "pogoda wyłączona w dodatku"}) or True
+            pts, times = [], []
+            for q in str(j.get("pts") or "").split(";")[:200]:
+                f = q.split(",")
+                try:
+                    pts.append((float(f[0]), float(f[1])))
+                    times.append(float(f[2]))
+                except (ValueError, IndexError):
+                    continue
+            if len(pts) < 2:
+                return h.send(400, {"ok": False, "error": "brak punktów trasy"}) or True
+            try:
+                wx = NAV.weather_along(pts, None, times, SRV.num(j.get("start")) or None)
+            except Exception as e:  # noqa: BLE001 – Open-Meteo bywa niedostępne
+                SRV.log("pogoda trasy ekranu:", e)
+                return h.send(200, {"ok": False, "error": "brak prognozy: %s" % str(e)[:50]}) or True
+            out = {"ok": True, "n": len(wx)}
+            for n, w in enumerate(wx):
+                for k in ("idx", "t", "temp", "rain_prob", "code", "wind"):
+                    out["w%d_%s" % (n, k)] = w.get(k) if w.get(k) is not None else -128
+            SRV.log("pogoda trasy ekranu: %d punktów trasy, prognoza w %d miejscach" % (len(pts), len(wx)))
+            return h.send(200, out) or True
         if path == "/api/nav/alts":
             # 1.5.50 (e2): „Inna trasa” – wszystkie inne drogi naraz, z kształtami do narysowania na ekranie
             lat, lon = SRV.num(j.get("lat")), SRV.num(j.get("lon"))

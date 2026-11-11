@@ -1458,6 +1458,32 @@ class NavServerTest(unittest.TestCase):
                 self.assertEqual(j["google_usage"]["warn"], 500)
             finally:
                 navmod.http_json = o2
+            # 1.5.50: pogoda dla trasy policzonej na ekranie (punkty z czasem przejazdu), prognoza co ok. 30 min jazdy
+            def fake_meteo(url, data=None, headers=None, timeout=25):
+                n = url.split("latitude=")[1].split("&")[0].count("%2C") + 1
+                hours = [time.strftime("%Y-%m-%dT%H:00", time.gmtime(now - 3600 + 3600 * k)) for k in range(30)]
+                one = {"hourly": {"time": hours, "temperature_2m": [7 + k for k in range(30)], "precipitation_probability": [60] * 30,
+                                  "precipitation": [0.4] * 30, "weather_code": [61] * 30, "wind_speed_10m": [18] * 30,
+                                  "wind_gusts_10m": [30] * 30}}
+                return [one] * n if n > 1 else one
+            navmod.http_json = fake_meteo
+            wx_on, srv.WEATHER_ON = srv.WEATHER_ON, True
+            try:
+                with navmod.WX_LOCK:
+                    navmod.WX_CACHE.clear()
+                pts = ";".join("%.5f,%.5f,%d" % (49.7 + 0.01 * k, 19.0 + 0.02 * k, 600 * k) for k in range(8))   # 70 min jazdy
+                code, j = self.jpost(self.iu + "/api/nav/wx", {"pts": pts}, {"X-Klucz": KEY})
+                self.assertEqual(code, 200, j)
+                self.assertTrue(j["ok"], j)
+                self.assertEqual((j["n"], j["w0_idx"], j["w1_idx"], j["w2_idx"], j["w3_idx"]), (4, 0, 3, 6, 7))
+                self.assertEqual((j["w0_rain_prob"], j["w0_code"], j["w0_wind"]), (60, 61, 18))
+                code, j = self.jpost(self.iu + "/api/nav/wx", {"pts": "x"}, {"X-Klucz": KEY})
+                self.assertEqual(code, 400)
+                code, _ = self.jpost(self.iu + "/api/nav/wx", {"pts": pts})
+                self.assertEqual(code, 401)
+            finally:
+                navmod.http_json = o2
+                srv.WEATHER_ON = wx_on
             # bez klucza: odpowiedź bez cen, nie błąd
             code, j = self.jpost(self.pu + "/api/nav/settings", {"google_key": ""})
             self.assertEqual(code, 200, j)

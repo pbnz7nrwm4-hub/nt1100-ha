@@ -48,6 +48,7 @@ Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
 ## Zmiany w 1.5.50 (ekran 5" 2.11.0: inne trasy kilka naraz)
 - „Inna trasa” na ekranie pyta teraz o wszystkie inne drogi jednym pytaniem (`/api/nav/alts`): szybciej z korkami, inną drogą, bardziej i mniej kręto (auto: tylko dwie pierwsze). Dodatek odrzuca trasy prawie takie same jak obecna (85 % wspólnej drogi lub więcej) i odsyła najwyżej trzy, każdą z uproszczonym kształtem, żeby ekran narysował je razem z dymkami „±min”.
+- Pogoda dla każdej trasy ekranu: trasa policzona na samym ekranie (bez GPS na starcie, z punktem po drodze, po zmianie „omijaj”) nie miała prognozy. Ekran wysyła teraz jej punkty z czasem przejazdu (`/api/nav/wx`), a dodatek odsyła prognozę co około 30 minut jazdy, tak samo jak dla tras planowanych w dodatku.
 - Żadna z tych tras nie staje się bieżąca, dopóki kierowca nie dotknie „Jedź tą”. Stary sposób (`/api/nav/alt`, jedno pytanie na jeden sposób) działa dalej dla starszych wersji ekranu.
 
 ## Zmiany w 1.5.49 (sygnały jazdy do montażu filmów)
