@@ -136,6 +136,19 @@ class ServerTest(unittest.TestCase):
         code, body, _ = self.req(self.pu + "/dl?f=/rides/%04d.mtl" % n)
         self.assertEqual((code, len(body)), (200, len(raw)))
 
+    def test_signals_file_10hz(self):
+        sig = (b"t_ms,unix_ms,rpm,throttle,gear,lean_deg,speed_kmh,long_g,lat_g,sw\n"
+               b"0,1793800000000,3100,12.5,3,-4.20,64.0,0.120,-0.050,0\n"
+               b"100,1793800000100,3200,15.0,3,-4.60,64.5,0.130,-0.060,0\n")
+        self.assertEqual(self.send(21, "20261011-101010", "sig", sig)[0], 200)
+        n = self.ride(21, "20261011-101010", start="2026-10-11T10:10:10Z")
+        code, body, hdr = self.req(self.pu + "/api/rides/%d/sig" % n)
+        self.assertEqual((code, body), (200, sig))
+        self.assertIn("text/csv", hdr.get("Content-Type", ""))
+        # a ride from older firmware has none
+        n2 = self.ride(22, "20261011-111111", start="2026-10-11T11:11:11Z")
+        self.assertEqual(self.req(self.pu + "/api/rides/%d/sig" % n2)[0], 404)
+
     def test_curviness_straight_vs_winding(self):
         def pts(b):
             out = []

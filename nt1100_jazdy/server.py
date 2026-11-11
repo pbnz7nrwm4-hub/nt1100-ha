@@ -36,7 +36,7 @@ import navapi  # noqa: E402
 
 # 1.5.44: the number comes from the add-on build (BUILD_VERSION from config.yaml), so the page footer
 # never shows a stale version again; the literal is only a fallback for tests and local runs.
-VERSION = os.environ.get("NT1100_VERSION") or "1.5.48"
+VERSION = os.environ.get("NT1100_VERSION") or "1.5.49"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +58,7 @@ KEYFILE = os.path.join(DATA, "klucz")
 SCREEN_KEYFILE = os.path.join(DATA, "klucz_ekranu")  # osobny klucz ekranu (1.5.35): kradzież ekranu nie odcina skrzynki
 FIRMWARE = os.environ.get("NT_FIRMWARE", os.path.join(HERE, "firmware"))
 # Files of a ride sent by the box (the summary .json last = ride complete).
-EXTS = ("trk", "thm", "nam", "rep", "mtl", "json")
+EXTS = ("trk", "sig", "thm", "nam", "rep", "mtl", "json")
 # Sent again after the ride was saved: a changed name, the raw log copy.
 LATE_EXTS = ("nam", "rep", "mtl")
 # Every file of a ride kept here (.wx made by this add-on).
@@ -1823,6 +1823,14 @@ class Page(Base):
             return
         if path == "/api/rides":
             return self.send(200, self.rides_json())
+        m = re.fullmatch(r"/api/rides/(\d{1,7})/sig", path)
+        if m:
+            # 10 Hz signals of a ride (box firmware 1.4.8+): t_ms, unix_ms, rpm,
+            # throttle, gear, lean_deg, speed_kmh, long_g, lat_g, sw (CSV).
+            p = ride_path(int(m.group(1)), "sig")
+            if not os.path.exists(p):
+                return self.send(404, "brak sygnalow tej jazdy (jazda ze starszego firmware skrzynki)", "text/plain")
+            return self.send_path(p, "text/csv; charset=utf-8")
         if path == "/api/scans":
             return self.send(200, {"scans": []})
         if path == "/api/status":
@@ -1839,7 +1847,7 @@ class Page(Base):
             return self.send(200, {"targets": notify_targets()})
         if path == "/dl":
             f = q.get("f", "")
-            m = re.fullmatch(r"/rides/(\d{1,7})\.(trk|thm|json|nam|rep|wx|mtl)", f)
+            m = re.fullmatch(r"/rides/(\d{1,7})\.(trk|sig|thm|json|nam|rep|wx|mtl)", f)
             if not m:
                 return self.send(400, "zla sciezka", "text/plain")
             p = ride_path(int(m.group(1)), m.group(2))
