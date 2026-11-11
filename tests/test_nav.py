@@ -613,6 +613,49 @@ class NavServerTest(unittest.TestCase):
         code, a3 = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "zle"},
                               {"X-Klucz": KEY})
         self.assertFalse(a3["ok"])
+        # 1.5.50 (e2, pasek „szybsza trasa”): sposób „korek” omija odcinek z korkiem; bez klucza TomToma i bez korka odmawia
+        nv = srv.navapi.NAV
+        old_set, old_inc = nv.settings, nv.incidents_along
+        nv.settings = lambda: dict(old_set(), tomtom_key="")
+        try:
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+        finally:
+            nv.settings = old_set
+        self.assertEqual((ak["ok"], ak["error"]), (False, "brak informacji o korkach"))
+        n_pts = len(nv.route(rid)["pts"])
+        jams = {"cur": {"delay_s": 600, "closed": 0, "t": 0,
+                        "incidents": [{"idx": n_pts // 2, "delay_s": 600, "len_m": 300, "km": 1.0}]},
+                "none": {"delay_s": 0, "closed": 0, "incidents": [], "t": 0}}
+        which = ["cur"]
+        nv.settings = lambda: dict(old_set(), tomtom_key="k")
+        asked = []
+        # pierwsze pytanie w zapytaniu dotyczy obecnej trasy, drugie nowej
+        nv.incidents_along = lambda pts, cum, i=0, ahead_m=50000: jams[which[0] if not asked.append(1) and len(asked) == 1 else "none"]
+        try:
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+            self.assertTrue(ak["ok"], ak)
+            self.assertEqual((ak["now_delay_min"], ak["new_delay_min"]), (10, 0))
+            feats = (FakeGraphHopper.calls[-1]["custom_model"].get("areas") or {}).get("features") or []
+            self.assertIn("objazd", [f["id"] for f in feats])           # korek jako obszar zakazany
+            which[0] = "none"
+            del asked[:]
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+            self.assertEqual((ak["ok"], ak["error"]), (False, "bez korków na trasie"))
+        finally:
+            nv.settings, nv.incidents_along = old_set, old_inc
+        # 1.5.50 (e2): wszystkie inne drogi naraz – te same co obecna odpadają, zostaje alternatywa silnika z kształtem
+        code, al = self.jpost(self.iu + "/api/nav/alts", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0}, {"X-Klucz": KEY})
+        self.assertEqual(code, 200, al)
+        self.assertTrue(al["ok"], al)
+        self.assertEqual((al["n"], al["a0_mode"], al["a0_km"], al["a0_min"]), (1, "inaczej", 2.2, 2))
+        self.assertNotEqual(al["a0_id"], rid)
+        shape = [tuple(float(x) for x in q.split(",")) for q in al["a0_shape"].split(";")]
+        self.assertTrue(2 <= len(shape) <= 40, len(shape))
+        self.assertAlmostEqual(shape[0][0], 50.0, places=3)
+        self.assertTrue(al["now_shape"].count(";") >= 1)
+        self.assertNotIn("a1_id", al)
+        code, body, _ = self.req(self.pu + "/api/nav/routes")
+        self.assertEqual(json.loads(body)["current"], rid)
         # „objazd 1 km”: odcinek do ominięcia idzie do silnika jako obszar, a następne planowanie już go nie ma
         code, s = self.jpost(self.iu + "/api/nav/reroute", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0, "avoid_km": 1},
                              {"X-Klucz": KEY})
@@ -729,6 +772,34 @@ class NavServerTest(unittest.TestCase):
         finally:
             nv.search = old
             self.jpost(self.pu + "/api/nav/fav", {"fav": []})
+
+    def test_06c_screen_goto_via_start_and_levels(self):
+        """1.5.50 (spójność z ekranem): punkty po drodze, wybrany start i siły unikania z ekranu – dodatek liczy to samo."""
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "home": {"lat": 50.0, "lon": 19.9, "name": "Dom"}})
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.iu + "/api/nav/goto", {
+            "lat": 50.0, "lon": 19.9, "dest_lat": 50.02, "dest_lon": 19.93, "dest_name": "Cel", "variant": "szybko",
+            "avoid": ["autostrady", "platne", "gruntowe"], "avoid_lvl": {"autostrady": 2, "platne": 5, "gruntowe": 0, "zle": 3},
+            "via": [[50.005, 19.905, "Stacja"], [50.01, 19.915, "Rynek"], ["x", 1]],
+            "start_lat": 50.001, "start_lon": 19.901, "start_name": "Garaż"}, {"X-Klucz": KEY})
+        self.assertEqual(code, 200, j)
+        body = FakeGraphHopper.calls[0]
+        self.assertEqual(body["points"], [[19.901, 50.001], [19.905, 50.005], [19.915, 50.01], [19.93, 50.02]])
+        pr = body["custom_model"]["priority"]
+        mul = {("MOTORWAY" if "MOTORWAY" in r["if"] else "toll" if "toll" in r["if"] else "grunt"): r["multiply_by"] for r in pr}
+        self.assertEqual(mul, {"MOTORWAY": "0.5", "toll": "0.02", "grunt": "0.05"})   # 2 i 5 z ekranu, gruntowe po staremu
+        nv = srv.navapi.NAV
+        route = nv.route(j["route"]["id"])
+        self.assertEqual(route["avoid_lvl"], {"autostrady": 2, "platne": 5})
+        self.assertEqual([w["name"] for w in route["waypoints"]], ["Stacja", "Rynek", "Cel"])
+        # objazd z drogi liczy z tymi samymi siłami
+        FakeGraphHopper.calls = []
+        mid = route["pts"][len(route["pts"]) // 3]
+        nv.reroute(route["id"], mid[0], mid[1])
+        self.assertIn('"0.02"', json.dumps(FakeGraphHopper.calls[0]["custom_model"]["priority"]))
+        # autostrady na 5 = zakaz, bez sił stare mnożniki
+        self.assertEqual(nv.gh_custom_model("szybko", ["autostrady"], {"autostrady": 5})["priority"][0]["multiply_by"], "0")
+        self.assertEqual(nv.gh_custom_model("szybko", ["platne"])["priority"][0]["multiply_by"], "0.1")
 
     def test_07b_screen_backup_and_logs(self):
         # 1.5.46 (a12): what only the screen has goes to the add-on: home saved on the screen, ride ratings, card logs
@@ -1445,6 +1516,32 @@ class NavServerTest(unittest.TestCase):
                 self.assertEqual(j["google_usage"]["warn"], 500)
             finally:
                 navmod.http_json = o2
+            # 1.5.50: pogoda dla trasy policzonej na ekranie (punkty z czasem przejazdu), prognoza co ok. 30 min jazdy
+            def fake_meteo(url, data=None, headers=None, timeout=25):
+                n = url.split("latitude=")[1].split("&")[0].count("%2C") + 1
+                hours = [time.strftime("%Y-%m-%dT%H:00", time.gmtime(now - 3600 + 3600 * k)) for k in range(30)]
+                one = {"hourly": {"time": hours, "temperature_2m": [7 + k for k in range(30)], "precipitation_probability": [60] * 30,
+                                  "precipitation": [0.4] * 30, "weather_code": [61] * 30, "wind_speed_10m": [18] * 30,
+                                  "wind_gusts_10m": [30] * 30}}
+                return [one] * n if n > 1 else one
+            navmod.http_json = fake_meteo
+            wx_on, srv.WEATHER_ON = srv.WEATHER_ON, True
+            try:
+                with navmod.WX_LOCK:
+                    navmod.WX_CACHE.clear()
+                pts = ";".join("%.5f,%.5f,%d" % (49.7 + 0.01 * k, 19.0 + 0.02 * k, 600 * k) for k in range(8))   # 70 min jazdy
+                code, j = self.jpost(self.iu + "/api/nav/wx", {"pts": pts}, {"X-Klucz": KEY})
+                self.assertEqual(code, 200, j)
+                self.assertTrue(j["ok"], j)
+                self.assertEqual((j["n"], j["w0_idx"], j["w1_idx"], j["w2_idx"], j["w3_idx"]), (4, 0, 3, 6, 7))
+                self.assertEqual((j["w0_rain_prob"], j["w0_code"], j["w0_wind"]), (60, 61, 18))
+                code, j = self.jpost(self.iu + "/api/nav/wx", {"pts": "x"}, {"X-Klucz": KEY})
+                self.assertEqual(code, 400)
+                code, _ = self.jpost(self.iu + "/api/nav/wx", {"pts": pts})
+                self.assertEqual(code, 401)
+            finally:
+                navmod.http_json = o2
+                srv.WEATHER_ON = wx_on
             # bez klucza: odpowiedź bez cen, nie błąd
             code, j = self.jpost(self.pu + "/api/nav/settings", {"google_key": ""})
             self.assertEqual(code, 200, j)

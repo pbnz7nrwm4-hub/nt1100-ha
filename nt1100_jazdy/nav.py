@@ -983,7 +983,34 @@ class Nav:
     def engine_ok(self):
         return bool(self.settings()["engine_url"])
 
-    def gh_custom_model(self, variant, avoid):
+    # 1.5.50 (spójność z ekranem): siła unikania 1..5 jak na ekranie (groute.cpp avoidFactor, kLvl) – ten sam
+    # mnożnik priorytetu drogi; autostrady na 5 = zakaz. Bez podanej siły zostają dotychczasowe stałe mnożniki.
+    AVOID_LVL = {1: 0.8, 2: 0.5, 3: 0.25, 4: 0.1, 5: 0.02}
+
+    @classmethod
+    def avoid_levels(cls, raw):
+        """Siły unikania z ekranu: {nazwa: 1..5}; śmieci i zera pominięte, pusty wynik = None."""
+        out = {}
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                try:
+                    v = int(v)
+                except (TypeError, ValueError):
+                    continue
+                if k in AVOID and 1 <= v <= 5:
+                    out[k] = v
+        return out or None
+
+    def gh_custom_model(self, variant, avoid, levels=None):
+        lv = levels or {}
+
+        def mul(name, default):
+            l = lv.get(name)
+            if not l:
+                return default
+            if name == "autostrady" and l >= 5:
+                return "0"
+            return str(self.AVOID_LVL[l])
         pr = []
         if variant == "szybko":
             pass
@@ -1003,14 +1030,14 @@ class Nav:
         # z nawierzchnią szutrową/utwardzoną, legalne dla motocykla – osobna opcja
         if "gruntowe" in avoid:
             pr.append({"if": "road_class == TRACK || surface == UNPAVED || surface == DIRT || surface == GROUND || "
-                             "surface == GRASS || surface == SAND", "multiply_by": "0.05"})
+                             "surface == GRASS || surface == SAND", "multiply_by": mul("gruntowe", "0.05")})
         if "szutrowe" in avoid:
             pr.append({"if": "surface == GRAVEL || surface == FINE_GRAVEL || surface == COMPACTED",
-                       "multiply_by": "0.1"})
+                       "multiply_by": mul("szutrowe", "0.1")})
         if "platne" in avoid:
-            pr.append({"if": "toll == ALL || toll == HGV", "multiply_by": "0.1"})
+            pr.append({"if": "toll == ALL || toll == HGV", "multiply_by": mul("platne", "0.1")})
         if "autostrady" in avoid:
-            pr.append({"if": "road_class == MOTORWAY", "multiply_by": "0"})
+            pr.append({"if": "road_class == MOTORWAY", "multiply_by": mul("autostrady", "0")})
         if "promy" in avoid:
             pr.append({"if": "road_environment == FERRY", "multiply_by": "0"})
         if variant == "szybko":
@@ -1021,7 +1048,7 @@ class Nav:
         return {"priority": pr, "distance_influence": di}
 
     def gh_route(self, points, variant, avoid, round_trip_km=None, heading=None, skip=None, seed=None,
-                 avoid_segment=None, alternatives=0):
+                 avoid_segment=None, alternatives=0, levels=None):
         """alternatives > 0 (1.5.46, „Inna trasa” z ekranu): algorytm alternative_route silnika, zwraca listę
         tras (pierwsza = najlepsza), inaczej jedną trasę."""
         s = self.settings()
@@ -1033,7 +1060,7 @@ class Nav:
                 # 1.5.46 (e5, Adrian 9.11): bezpiecznik zapytania – po tylu ms silnik przerywa i zwraca błąd,
                 # a ekran liczy trasę sam z grafu na karcie (rano 9.11 dodatek liczył bardzo długo)
                 "timeout_ms": GH_TIMEOUT_MS,
-                "custom_model": self.gh_custom_model(variant, avoid)}
+                "custom_model": self.gh_custom_model(variant, avoid, levels)}
         seg = avoid_segment
         if seg and len(seg) >= 2:
             # objazd: pas 60 m wokół omijanego odcinka jako obszar zakazany
@@ -1106,7 +1133,7 @@ class Nav:
         return {"pts": pts, "times": [int(t) for t in times], "instr": instr, "dist_m": path.get("distance", 0),
                 "time_s": path.get("time", 0) / 1000.0, "snapped": path.get("snapped_waypoints"), "limits": limits}
 
-    def gh_mix(self, points, legs, avoid, heading=None, skip=None, avoid_segment=None):
+    def gh_mix(self, points, legs, avoid, heading=None, skip=None, avoid_segment=None, levels=None):
         """Trasa z odcinków liczonych osobno, każdy swoim wariantem
         (legs[i] = wariant odcinka points[i] → points[i+1]), sklejona w jedną."""
         if len(legs) != len(points) - 1:
@@ -1114,7 +1141,7 @@ class Nav:
         pairs = [((points[i]["lat"], points[i]["lon"]), (points[i + 1]["lat"], points[i + 1]["lon"])) for i in range(len(legs))]
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(legs)))) as ex:
             futs = [ex.submit(self.gh_route, list(pr), lv, avoid, None, heading if i == 0 else None, skip, None,
-                              avoid_segment)
+                              avoid_segment, 0, levels)
                     for i, (pr, lv) in enumerate(zip(pairs, legs))]
             parts = [f.result() for f in futs]
         pts, times, instr, limits = [], [], [], []
@@ -1137,7 +1164,7 @@ class Nav:
                 "limits": limits, "leg_m": [int(p["dist_m"]) for p in parts]}
 
     def plan(self, points, variants=None, avoid=None, name="", round_trip_km=None, heading=None, with_weather=False,
-             legs=None, skip=None, round_trip_min=None, avoid_segment=None, alt_index=0):
+             legs=None, skip=None, round_trip_min=None, avoid_segment=None, alt_index=0, levels=None):
         """Warianty tras przez punkty [{lat, lon, name}]; zwraca listę tras
         (bez zapisu). Pierwszy punkt = start. legs = wariant każdego odcinka
         (dodaje wariant „mix”, czyli „Mój plan”). skip = [{lat, lon, r, name}]
@@ -1160,14 +1187,14 @@ class Nav:
         def one(v):
             rt_km = round_trip_km
             if v == MIX[0]:
-                r = self.gh_mix(points, legs, avoid, heading, skip, avoid_segment)
+                r = self.gh_mix(points, legs, avoid, heading, skip, avoid_segment, levels)
             elif round_trip_min:
                 # na czas: długość z typowej średniej wariantu, potem poprawka o różnicę czasu
                 rt_km = max(10.0, round_trip_min / 60.0 * RT_KMH.get(v, 50))
                 r = None
                 for _ in range(3):
                     r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, rt_km, heading, skip, seed,
-                                      avoid_segment)
+                                      avoid_segment, levels=levels)
                     got = r["time_s"] / 60.0 if r["time_s"] else None
                     if not got or abs(got - round_trip_min) <= max(5, 0.12 * round_trip_min):
                         break
@@ -1175,13 +1202,13 @@ class Nav:
             elif alt_index:
                 # 1.5.46: inna droga tym samym wariantem (alternatywa silnika)
                 rs = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, None, heading, skip, seed,
-                                   avoid_segment, alternatives=alt_index + 1)
+                                   avoid_segment, alternatives=alt_index + 1, levels=levels)
                 if len(rs) <= alt_index:
                     raise RuntimeError("silnik nie znalazł innej drogi")
                 r = rs[alt_index]
             else:
                 r = self.gh_route([(p["lat"], p["lon"]) for p in points], v, avoid, round_trip_km, heading, skip, seed,
-                                  avoid_segment)
+                                  avoid_segment, levels=levels)
             wps = []
             for k, p in enumerate(points[1:] if not (round_trip_km or round_trip_min) else []):
                 wps.append({"lat": p["lat"], "lon": p["lon"], "name": p.get("name") or "", "kind": 2 if k == len(points) - 2 else 1})
@@ -1196,6 +1223,8 @@ class Nav:
                 route["times"] = [int(t * k) for t in route["times"]]
                 route["time_s"] = int(r["time_s"])
             route["avoid"] = avoid
+            if levels:
+                route["avoid_lvl"] = dict(levels)   # objazd i „Inna trasa” liczą z tymi samymi siłami
             route["points"] = points
             route["round_trip_km"] = round_trip_km
             if round_trip_min:
@@ -1297,7 +1326,7 @@ class Nav:
                 tail = [tail[0]] + tail
             legs = tail if len(tail) == n else [self.settings()["go_variant"]] * n
         routes, errors = self.plan(points, [variant], avoid, route.get("name"), heading=heading, legs=legs,
-                                   skip=route.get("skip"), avoid_segment=avoid_segment)
+                                   skip=route.get("skip"), avoid_segment=avoid_segment, levels=route.get("avoid_lvl"))
         if not routes:
             raise RuntimeError(errors.get(variant) or "silnik nie policzył objazdu")
         new = routes[0]
@@ -1308,7 +1337,7 @@ class Nav:
         self.store_route(new, make_current=(self.index().get("current") == rid))
         return new
 
-    ALT_MODES = ("kreto", "mniej", "szybciej", "inaczej")
+    ALT_MODES = ("kreto", "mniej", "szybciej", "inaczej", "korek")
 
     def alternatives(self, rid, lat, lon, heading=None, mode="inaczej"):
         """1.5.46 („Inna trasa” z ekranu z internetem, Adrian 8.11/9.11): ta sama reszta drogi inaczej –
@@ -1342,24 +1371,47 @@ class Nav:
             v = order[k - 1]
         elif mode == "szybciej":
             v = "szybko"
+        elif mode == "korek":
+            v = cur
         else:
             v, alt = cur, 1
         avoid = list(route.get("avoid") or self.settings()["avoid"])
         t0 = time.time()
+        now_m = route["dist_m"] - cum[i]
+        cur_tr, jam = None, None
+        if mode == "korek":
+            # 1.5.50 (e2, pasek „szybsza trasa” na ekranie): ta sama trasa tym samym wariantem, ale z ominięciem
+            # odcinka z korkami albo zamknięciem (od pierwszego do końca ostatniego), jak objazd korka w jeździe autem
+            if not self.settings()["tomtom_key"]:
+                raise RuntimeError("brak informacji o korkach")
+            try:
+                cur_tr = self.incidents_along(pts, cum, i, min(now_m, 150000))
+            except Exception as e:
+                log("szybsza trasa: korki nieudane:", e)
+                raise RuntimeError("korki: brak odpowiedzi")
+            big = [x for x in cur_tr["incidents"] if x.get("delay_s", 0) >= 60 or x.get("closed")]
+            if not big:
+                raise RuntimeError("bez korków na trasie")
+            last = max(big, key=lambda x: x["idx"])
+            k0, k1 = max(i + 1, min(x["idx"] for x in big) - 1), last["idx"]
+            while k1 < len(cum) - 1 and cum[k1] - cum[last["idx"]] < max(200, last.get("len_m") or 0):
+                k1 += 1
+            jam = pts[k0:k1 + 1] if k1 - k0 >= 1 else None
+            if not jam:
+                raise RuntimeError("korek zaraz przed motocyklem")
         routes, errors = self.plan(points, [v], avoid, route.get("name") or "", heading=heading, skip=route.get("skip"),
-                                   alt_index=alt)
+                                   alt_index=alt, levels=route.get("avoid_lvl"), avoid_segment=jam)
         if not routes:
             raise RuntimeError(errors.get(v) or "silnik nie policzył trasy")
         new = routes[0]
         calc_s = round(time.time() - t0, 1)
         # porównanie z resztą obecnej trasy (od pozycji), z korkami i zamknięciami, gdy jest klucz TomToma
-        now_m = route["dist_m"] - cum[i]
         times = route.get("times") or []
         now_s = (route.get("time_s", 0) - times[i]) if len(times) == len(pts) else route.get("time_s", 0) * now_m / max(1, route["dist_m"])
-        cur_tr = new_tr = None
+        new_tr = None
         if self.settings()["tomtom_key"]:
             try:
-                cur_tr = self.incidents_along(pts, cum, i, min(now_m, 150000))
+                cur_tr = cur_tr or self.incidents_along(pts, cum, i, min(now_m, 150000))
                 new_tr = self.incidents_along(new["pts"], new["cum"], 0, 150000)
             except Exception as e:
                 log("inna trasa: korki nieudane:", e)
@@ -1375,6 +1427,77 @@ class Nav:
                 "traffic": cur_tr is not None,
                 "now": side(now_m, now_s, cur_tr, cur_curvy),
                 "new": side(new["dist_m"], new.get("time_s", 0), new_tr, new.get("curvy"))}
+
+    @staticmethod
+    def shape_text(pts, n=40):
+        """Kształt trasy dla ekranu: najwyżej n punktów równo co do odległości, „lat,lon;lat,lon…” (5 miejsc)."""
+        if not pts:
+            return ""
+        cum = cum_dist(pts)
+        total = cum[-1] if cum else 0
+        if len(pts) <= n or total <= 0:
+            pick = list(range(len(pts)))
+        else:
+            pick, j = [0], 0
+            for k in range(1, n - 1):
+                want = total * k / (n - 1)
+                while j + 1 < len(cum) and cum[j] < want:
+                    j += 1
+                if j != pick[-1]:
+                    pick.append(j)
+            if pick[-1] != len(pts) - 1:
+                pick.append(len(pts) - 1)
+        return ";".join("%.5f,%.5f" % (pts[i][0], pts[i][1]) for i in pick)
+
+    @staticmethod
+    def shared_part(a_pts, b_pts):
+        """Jaka część trasy b biegnie tą samą drogą co a (punkty b w kratce ~11 m zajętej przez a)."""
+        cells = set((round(p[0], 4), round(p[1], 4)) for p in a_pts)
+        if not b_pts:
+            return 1.0
+        return sum(1 for p in b_pts if (round(p[0], 4), round(p[1], 4)) in cells) / float(len(b_pts))
+
+    def alternatives_all(self, rid, lat, lon, heading=None, budget_s=45.0, car=False):
+        """1.5.50 (przegląd ergonomii e2, Adrian 10.11: „inne trasy kilka naraz”): wszystkie sensowne inne drogi
+        do tego samego celu za jednym pytaniem – szybciej (z korkami), inną drogą, bardziej i mniej kręto (auto:
+        tylko dwie pierwsze). Trasy prawie takie same jak obecna albo jak już znaleziona (≥ 85 % wspólnej drogi) są
+        pomijane. Każda zapisana jak w alternatives(), żadna nie jest bieżąca. Kształty do narysowania na ekranie."""
+        route = self.route(rid)
+        if not route:
+            raise RuntimeError("brak trasy")
+        pts, cum = route["pts"], route["cum"]
+        i, _ = nearest_index(pts, (lat, lon))
+        modes = ("szybciej", "inaczej") if car else ("szybciej", "inaczej", "kreto", "mniej")
+        t0 = time.time()
+        items, seen, why, now, traffic = [], [pts[i:]], {}, None, False
+        for mode in modes:
+            if time.time() - t0 > budget_s:
+                why[mode] = "brak czasu"
+                continue
+            try:
+                a = self.alternatives(rid, lat, lon, heading, mode)
+            except RuntimeError as e:
+                why[mode] = str(e)[:60]
+                continue
+            new = self.route(a["id"])
+            if not new or not new.get("pts"):
+                why[mode] = "brak kształtu"
+                continue
+            share = max(self.shared_part(s, new["pts"]) for s in seen)
+            if share >= 0.85:
+                why[mode] = "ta sama droga (%d %%)" % int(share * 100)
+                continue
+            seen.append(new["pts"])
+            now = now or a["now"]
+            traffic = traffic or a["traffic"]
+            items.append({"id": a["id"], "version": a["version"], "mode": mode, "variant": a["variant"],
+                          "shape": self.shape_text(new["pts"]), **a["new"]})
+            if len(items) >= 3:
+                break
+        if not items:
+            raise RuntimeError("nie ma innej rozsądnej drogi" + (": " + "; ".join("%s – %s" % kv for kv in why.items()) if why else ""))
+        return {"traffic": traffic, "calc_s": round(time.time() - t0, 1), "now": now, "now_shape": self.shape_text(pts[i:]),
+                "items": items, "skipped": why}
 
     # ---- decyzje w trasie: co jest przed motocyklem i zjazd do miejsca
     def nearby(self, lat, lon, kinds, limit=30):
@@ -1420,7 +1543,8 @@ class Nav:
                 while j < len(pts) - 1 and cum[j] - cum[jp] < 300:
                     j += 1
                 legs = [(lat, lon), target] + ([pts[j]] if j < len(pts) - 1 else [])
-                r = self.gh_route(legs, "szybko", list(route.get("avoid") or self.settings()["avoid"]), heading=heading)
+                r = self.gh_route(legs, "szybko", list(route.get("avoid") or self.settings()["avoid"]), heading=heading,
+                                  levels=route.get("avoid_lvl"))
                 head = list(r["pts"])
                 tail = pts[j + 1:]
                 instr = [dict(t) for t in r["instr"]]

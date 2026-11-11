@@ -46,6 +46,12 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.50 (ekran 5" 2.11.0: inne trasy kilka naraz)
+- „Inna trasa” na ekranie pyta teraz o wszystkie inne drogi jednym pytaniem (`/api/nav/alts`): szybciej z korkami, inną drogą, bardziej i mniej kręto (auto: tylko dwie pierwsze). Dodatek odrzuca trasy prawie takie same jak obecna (85 % wspólnej drogi lub więcej) i odsyła najwyżej trzy, każdą z uproszczonym kształtem, żeby ekran narysował je razem z dymkami „±min”.
+- Pogoda dla każdej trasy ekranu: trasa policzona na samym ekranie (bez GPS na starcie, z punktem po drodze, po zmianie „omijaj”) nie miała prognozy. Ekran wysyła teraz jej punkty z czasem przejazdu (`/api/nav/wx`), a dodatek odsyła prognozę co około 30 minut jazdy, tak samo jak dla tras planowanych w dodatku.
+- Spójność z ekranem: „Jedź do” z ekranu przesyła teraz także punkty po drodze, wybrany start i siły unikania (1 do 5 dla autostrad, płatnych, gruntowych i szutrowych). Dodatek liczy z nimi tę samą trasę co ekran (te same mnożniki co na ekranie; autostrady na 5 to zakaz), a objazd i „Inna trasa” trzymają te same siły. Wcześniej przy punkcie po drodze albo zmienionej sile ekran liczył sam i trasa nie miała korków ani pełnej prognozy. Dodatek zgłasza ekranowi, że to umie (`api: 2`), więc ekran ze starszym dodatkiem działa po staremu.
+- Żadna z tych tras nie staje się bieżąca, dopóki kierowca nie dotknie „Jedź tą”. Stary sposób (`/api/nav/alt`, jedno pytanie na jeden sposób) działa dalej dla starszych wersji ekranu.
+
 ## Zmiany w 1.5.49 (sygnały jazdy do montażu filmów)
 
 Dodatek przyjmuje i przechowuje nowy plik jazdy `.sig` (10 próbek na sekundę: czas, obroty, gaz, bieg, przechył, prędkość, przyspieszenia) ze skrzynki w wersji z jego zapisem. Pobranie: `/api/rides/<numer>/sig` (CSV: `t_ms,unix_ms,rpm,throttle,gear,lean_deg,speed_kmh,long_g,lat_g,sw`). Jazdy starsze go nie mają (404), `.trk` bez zmian.
