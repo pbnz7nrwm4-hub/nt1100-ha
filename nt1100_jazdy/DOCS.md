@@ -46,6 +46,9 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.51 (odczyt jazd dla Kroniki jazd)
+Inne programy w domu (Kronika jazd, która robi filmy z nagrań GoPro) mogą odczytać jazdy na porcie 8098, z tym samym kluczem co skrzynka (nagłówek `X-Klucz`): lista jazd `/api/odczyt/rides`, trasa co sekundę `/api/odczyt/rides/<numer>/trk` (JSON: `[lat, lon, przechył, prędkość, wysokość, czas]`) i sygnały 10 na sekundę `/api/odczyt/rides/<numer>/sig` (CSV, 404 dla starszych jazd). Tylko odczyt: nic nie zmienia w jazdach, bez klucza odpowiedź 401.
+
 ## Zmiany w 1.5.50 (ekran 5" 2.11.0: inne trasy kilka naraz)
 - „Inna trasa” na ekranie pyta teraz o wszystkie inne drogi jednym pytaniem (`/api/nav/alts`): szybciej z korkami, inną drogą, bardziej i mniej kręto (auto: tylko dwie pierwsze). Dodatek odrzuca trasy prawie takie same jak obecna (85 % wspólnej drogi lub więcej) i odsyła najwyżej trzy, każdą z uproszczonym kształtem, żeby ekran narysował je razem z dymkami „±min”.
 - Pogoda dla każdej trasy ekranu: trasa policzona na samym ekranie (bez GPS na starcie, z punktem po drodze, po zmianie „omijaj”) nie miała prognozy. Ekran wysyła teraz jej punkty z czasem przejazdu (`/api/nav/wx`), a dodatek odsyła prognozę co około 30 minut jazdy, tak samo jak dla tras planowanych w dodatku.
