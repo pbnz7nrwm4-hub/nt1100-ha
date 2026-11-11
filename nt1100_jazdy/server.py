@@ -36,7 +36,7 @@ import navapi  # noqa: E402
 
 # 1.5.44: the number comes from the add-on build (BUILD_VERSION from config.yaml), so the page footer
 # never shows a stale version again; the literal is only a fallback for tests and local runs.
-VERSION = os.environ.get("NT1100_VERSION") or "1.5.50"
+VERSION = os.environ.get("NT1100_VERSION") or "1.5.51"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1593,7 +1593,47 @@ class Ingest(Base):
                 return self.send(404, {"ok": False, "error": "brak pliku"})
             log("Skrzynka pobiera oprogramowanie", o["version"])
             return self.send_path(o["path"], "application/octet-stream")
+        if path.startswith("/api/odczyt/"):
+            return self.odczyt(path)
         self.send(404, {"ok": False, "error": "brak"})
+
+    def odczyt(self, path):
+        """Read-only access for other home programs (e.g. the ride video chronicle), with the box key.
+        /api/odczyt/rides            list: n, name, summary (start, end, km...), which files exist
+        /api/odczyt/rides/<n>/trk    route points [lat, lon, lean, speed, alt, t] as JSON
+        /api/odczyt/rides/<n>/sig    10 Hz signals (CSV), 404 for rides from older box firmware"""
+        if not self.authorized():
+            log("Odczyt odrzucony: zly klucz (", self.client_address[0], ")")
+            return self.send(401, {"ok": False, "error": "zly klucz"})
+        if path == "/api/odczyt/rides":
+            try:
+                names = os.listdir(RIDES)
+            except FileNotFoundError:
+                names = []
+            files = {}
+            for name in names:
+                m = re.fullmatch(r"(\d+)\.([a-z]+)", name)
+                if m:
+                    files.setdefault(int(m.group(1)), []).append(m.group(2))
+            rides = []
+            for n in sorted(files, reverse=True):
+                if "json" in files[n]:
+                    rides.append({"n": n, "name": name_info(n).get("name") or "", "summary": summary(n),
+                                  "files": sorted(files[n])})
+            return self.send(200, {"version": VERSION, "rides": rides})
+        m = re.fullmatch(r"/api/odczyt/rides/(\d{1,7})/(trk|sig)", path)
+        if not m:
+            return self.send(404, {"ok": False, "error": "brak"})
+        n = int(m.group(1))
+        if m.group(2) == "trk":
+            pts, ext = read_track(n)
+            if not pts:
+                return self.send(404, {"ok": False, "error": "brak trasy"})
+            return self.send(200, {"n": n, "source": ext, "pts": pts})
+        p = ride_path(n, "sig")
+        if not os.path.exists(p):
+            return self.send(404, "brak sygnalow tej jazdy (jazda ze starszego firmware skrzynki)", "text/plain")
+        return self.send_path(p, "text/csv; charset=utf-8")
 
     def do_POST(self):
         path, q = self.query()

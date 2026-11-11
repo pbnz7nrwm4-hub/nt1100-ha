@@ -149,6 +149,28 @@ class ServerTest(unittest.TestCase):
         n2 = self.ride(22, "20261011-111111", start="2026-10-11T11:11:11Z")
         self.assertEqual(self.req(self.pu + "/api/rides/%d/sig" % n2)[0], 404)
 
+    def test_read_only_access_with_key(self):
+        sig = b"t_ms,unix_ms,rpm,throttle,gear,lean_deg,speed_kmh,long_g,lat_g,sw\n0,1793900000000,3000,10,2,1,30,0,0,0\n"
+        self.assertEqual(self.send(23, "20261012-090000", "sig", sig)[0], 200)
+        n = self.ride(23, "20261012-090000", start="2026-10-12T09:00:00Z")
+        # without the key: nothing
+        self.assertEqual(self.req(self.iu + "/api/odczyt/rides")[0], 401)
+        self.assertEqual(self.req(self.iu + "/api/odczyt/rides/%d/trk" % n, headers={"X-Klucz": "zly"})[0], 401)
+        h = {"X-Klucz": KEY}
+        code, body, _ = self.req(self.iu + "/api/odczyt/rides", headers=h)
+        self.assertEqual(code, 200)
+        r = [x for x in json.loads(body)["rides"] if x["n"] == n][0]
+        self.assertEqual(r["summary"]["start"], "2026-10-12T09:00:00Z")
+        self.assertIn("sig", r["files"])
+        code, body, _ = self.req(self.iu + "/api/odczyt/rides/%d/trk" % n, headers=h)
+        j = json.loads(body)
+        self.assertEqual((code, j["source"]), (200, "trk"))
+        self.assertEqual(len(j["pts"][0]), 6)
+        self.assertEqual(self.req(self.iu + "/api/odczyt/rides/%d/sig" % n, headers=h)[1], sig)
+        self.assertEqual(self.req(self.iu + "/api/odczyt/rides/9999/trk", headers=h)[0], 404)
+        # writing is still only /api/ingest; read paths do not accept POST
+        self.assertEqual(self.req(self.iu + "/api/odczyt/rides", b"x", h, "POST")[0] in (404, 405, 401), True)
+
     def test_curviness_straight_vs_winding(self):
         def pts(b):
             out = []
