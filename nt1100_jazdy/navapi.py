@@ -269,7 +269,7 @@ def drive_check(now=None):
         points.append({"lat": end[0], "lon": end[1], "name": "cel"})
     jam = route["pts"][k0:k1 + 1] if k1 - k0 >= 1 else []
     routes, errors = NAV.plan(points, ["szybko"], route.get("avoid") or NAV.settings()["avoid"],
-                              ("objazd: " + d["name"])[:40], skip=route.get("skip"), avoid_segment=jam)
+                              ("objazd: " + d["name"])[:40], skip=route.get("skip"), avoid_segment=jam, levels=route.get("avoid_lvl"))
     rest_s = route.get("time_s", 0) * (1 - route["cum"][i] / max(1.0, route["dist_m"])) + delay
     alert = {"rid": rid, "abs_km": route["cum"][first["idx"]] / 1000.0, "delay_s": delay, "t": int(now)}
     if routes:
@@ -479,21 +479,26 @@ def route_summary(r, with_pts=True, full=False):
     return out
 
 
-def goto(text, variant=None, name=None, dest=None, avoid=None):
+def goto(text, variant=None, name=None, dest=None, avoid=None, via=None, start=None, levels=None):
     """Cel z tekstu/linku (albo gotowy punkt dest = {lat, lon, name}, np. adres wybrany na ekranie
     z karty): trasa z pozycji motocykla (albo domu) i oznaczenie jako bieżąca dla ekranu.
-    avoid = lista omijania z ekranu (domyślnie z ustawień)."""
+    avoid = lista omijania z ekranu (domyślnie z ustawień).
+    1.5.50 (spójność z ekranem): via = punkty po drodze [{lat, lon, name}] w kolejności, start = wybrany na
+    ekranie początek (zamiast pozycji motocykla), levels = siły unikania {nazwa: 1..5} – dodatek liczy tę samą
+    trasę co ekran, więc ekran nie musi już liczyć sam, gdy jeździec doda punkt albo zmieni siłę."""
     place = dest if dest else (fav_place(text) or NAV.resolve_place(text))
     if not place:
         raise ValueError("nie rozpoznałem miejsca w: %s" % (text or "")[:60])
-    start = start_point()
+    start = start or start_point()
     if not start:
         raise ValueError("nie znam pozycji motocykla ani domu (ustaw dom w zakładce Nawigacja)")
     s = NAV.settings()
+    mid = [{"lat": p["lat"], "lon": p["lon"], "name": str(p.get("name") or "")[:40]} for p in (via or [])][:3]
     v = variant or s["go_variant"]
     av = [a for a in avoid if a in graf.AVOID] if isinstance(avoid, list) else s["avoid"]
-    routes, errors = NAV.plan([start, {"lat": place["lat"], "lon": place["lon"], "name": place["name"]}], [v],
-                              av, name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True)
+    routes, errors = NAV.plan([start] + mid + [{"lat": place["lat"], "lon": place["lon"], "name": place["name"]}], [v],
+                              av, name or ("→ " + (place["name"] or "cel"))[:40], with_weather=True,
+                              levels=nav.Nav.avoid_levels(levels))
     if not routes:
         raise ValueError(errors.get(v) or "silnik tras nie odpowiedział")
     rid = NAV.store_route(routes[0], True)
@@ -1191,7 +1196,9 @@ def screen_get(h, path, q):
                     route = {"id": r["id"], "version": r["version"], "name": r["name"], "km": r["km"]}
             m = NAV.map.manifest() or {}
             s = NAV.settings()
-            out = {"ok": True, "time": int(time.time()), "route": route,
+            # api 2 (1.5.50): /api/nav/alts, /api/nav/wx i goto z punktami po drodze, startem i siłami unikania –
+            # ekran pyta o nie tylko dodatek, który je zna
+            out = {"ok": True, "api": 2, "time": int(time.time()), "route": route,
                    "map": {"built": m.get("built"), "files": len(m.get("files", [])), "bytes": m.get("bytes", 0)} if m else None,
                    "settings": dict({k: s[k] for k in ("lean_popup_deg", "traffic_min", "offroute_m", "free_km")},
                                     # w samochodzie bez „wyniku zakrętu” (pochył auta nic nie znaczy)
@@ -1442,7 +1449,17 @@ def screen_post(h, path, q, body):
             if dlat is not None and dlon is not None:
                 # ekran 5": cel wybrany na ekranie (adres z karty, ulubione), te same ustawienia co offline
                 dest = {"lat": dlat, "lon": dlon, "name": str(j.get("dest_name") or "")[:40]}
-            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"), dest, j.get("avoid"))
+            via = []
+            for p in (j.get("via") if isinstance(j.get("via"), list) else [])[:3]:
+                # ekran 5": punkty po drodze [lat, lon, "nazwa"]
+                if isinstance(p, list) and len(p) >= 2 and SRV.num(p[0]) is not None and SRV.num(p[1]) is not None:
+                    via.append({"lat": SRV.num(p[0]), "lon": SRV.num(p[1]), "name": str(p[2]) if len(p) > 2 else ""})
+            st = None
+            slat, slon = SRV.num(j.get("start_lat")), SRV.num(j.get("start_lon"))
+            if slat is not None and slon is not None and (slat or slon):
+                st = {"lat": slat, "lon": slon, "name": str(j.get("start_name") or "start")[:40]}
+            r, place = goto(str(j.get("text") or ""), j.get("variant"), j.get("name"), dest, j.get("avoid"), via, st,
+                            j.get("avoid_lvl"))
             return h.send(200, {"ok": True, "route": r, "place": place}) or True
         if path == "/api/nav/use":
             # ekran 5": jeździec wybrał na postoju inną trasę z listy

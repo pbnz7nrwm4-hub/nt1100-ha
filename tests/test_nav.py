@@ -743,6 +743,34 @@ class NavServerTest(unittest.TestCase):
             nv.search = old
             self.jpost(self.pu + "/api/nav/fav", {"fav": []})
 
+    def test_06c_screen_goto_via_start_and_levels(self):
+        """1.5.50 (spójność z ekranem): punkty po drodze, wybrany start i siły unikania z ekranu – dodatek liczy to samo."""
+        self.jpost(self.pu + "/api/nav/settings", {"engine_url": self.ghu, "home": {"lat": 50.0, "lon": 19.9, "name": "Dom"}})
+        FakeGraphHopper.calls = []
+        code, j = self.jpost(self.iu + "/api/nav/goto", {
+            "lat": 50.0, "lon": 19.9, "dest_lat": 50.02, "dest_lon": 19.93, "dest_name": "Cel", "variant": "szybko",
+            "avoid": ["autostrady", "platne", "gruntowe"], "avoid_lvl": {"autostrady": 2, "platne": 5, "gruntowe": 0, "zle": 3},
+            "via": [[50.005, 19.905, "Stacja"], [50.01, 19.915, "Rynek"], ["x", 1]],
+            "start_lat": 50.001, "start_lon": 19.901, "start_name": "Garaż"}, {"X-Klucz": KEY})
+        self.assertEqual(code, 200, j)
+        body = FakeGraphHopper.calls[0]
+        self.assertEqual(body["points"], [[19.901, 50.001], [19.905, 50.005], [19.915, 50.01], [19.93, 50.02]])
+        pr = body["custom_model"]["priority"]
+        mul = {("MOTORWAY" if "MOTORWAY" in r["if"] else "toll" if "toll" in r["if"] else "grunt"): r["multiply_by"] for r in pr}
+        self.assertEqual(mul, {"MOTORWAY": "0.5", "toll": "0.02", "grunt": "0.05"})   # 2 i 5 z ekranu, gruntowe po staremu
+        nv = srv.navapi.NAV
+        route = nv.route(j["route"]["id"])
+        self.assertEqual(route["avoid_lvl"], {"autostrady": 2, "platne": 5})
+        self.assertEqual([w["name"] for w in route["waypoints"]], ["Stacja", "Rynek", "Cel"])
+        # objazd z drogi liczy z tymi samymi siłami
+        FakeGraphHopper.calls = []
+        mid = route["pts"][len(route["pts"]) // 3]
+        nv.reroute(route["id"], mid[0], mid[1])
+        self.assertIn('"0.02"', json.dumps(FakeGraphHopper.calls[0]["custom_model"]["priority"]))
+        # autostrady na 5 = zakaz, bez sił stare mnożniki
+        self.assertEqual(nv.gh_custom_model("szybko", ["autostrady"], {"autostrady": 5})["priority"][0]["multiply_by"], "0")
+        self.assertEqual(nv.gh_custom_model("szybko", ["platne"])["priority"][0]["multiply_by"], "0.1")
+
     def test_07b_screen_backup_and_logs(self):
         # 1.5.46 (a12): what only the screen has goes to the add-on: home saved on the screen, ride ratings, card logs
         code, j = self.jpost(self.iu + "/api/nav/kopia", {"home": {"lat": 50.1, "lon": 19.2, "name": "Dom"},
