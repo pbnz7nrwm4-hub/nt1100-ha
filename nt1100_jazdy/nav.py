@@ -1337,7 +1337,7 @@ class Nav:
         self.store_route(new, make_current=(self.index().get("current") == rid))
         return new
 
-    ALT_MODES = ("kreto", "mniej", "szybciej", "inaczej")
+    ALT_MODES = ("kreto", "mniej", "szybciej", "inaczej", "korek")
 
     def alternatives(self, rid, lat, lon, heading=None, mode="inaczej"):
         """1.5.46 („Inna trasa” z ekranu z internetem, Adrian 8.11/9.11): ta sama reszta drogi inaczej –
@@ -1371,24 +1371,47 @@ class Nav:
             v = order[k - 1]
         elif mode == "szybciej":
             v = "szybko"
+        elif mode == "korek":
+            v = cur
         else:
             v, alt = cur, 1
         avoid = list(route.get("avoid") or self.settings()["avoid"])
         t0 = time.time()
+        now_m = route["dist_m"] - cum[i]
+        cur_tr, jam = None, None
+        if mode == "korek":
+            # 1.5.50 (e2, pasek „szybsza trasa” na ekranie): ta sama trasa tym samym wariantem, ale z ominięciem
+            # odcinka z korkami albo zamknięciem (od pierwszego do końca ostatniego), jak objazd korka w jeździe autem
+            if not self.settings()["tomtom_key"]:
+                raise RuntimeError("brak informacji o korkach")
+            try:
+                cur_tr = self.incidents_along(pts, cum, i, min(now_m, 150000))
+            except Exception as e:
+                log("szybsza trasa: korki nieudane:", e)
+                raise RuntimeError("korki: brak odpowiedzi")
+            big = [x for x in cur_tr["incidents"] if x.get("delay_s", 0) >= 60 or x.get("closed")]
+            if not big:
+                raise RuntimeError("bez korków na trasie")
+            last = max(big, key=lambda x: x["idx"])
+            k0, k1 = max(i + 1, min(x["idx"] for x in big) - 1), last["idx"]
+            while k1 < len(cum) - 1 and cum[k1] - cum[last["idx"]] < max(200, last.get("len_m") or 0):
+                k1 += 1
+            jam = pts[k0:k1 + 1] if k1 - k0 >= 1 else None
+            if not jam:
+                raise RuntimeError("korek zaraz przed motocyklem")
         routes, errors = self.plan(points, [v], avoid, route.get("name") or "", heading=heading, skip=route.get("skip"),
-                                   alt_index=alt, levels=route.get("avoid_lvl"))
+                                   alt_index=alt, levels=route.get("avoid_lvl"), avoid_segment=jam)
         if not routes:
             raise RuntimeError(errors.get(v) or "silnik nie policzył trasy")
         new = routes[0]
         calc_s = round(time.time() - t0, 1)
         # porównanie z resztą obecnej trasy (od pozycji), z korkami i zamknięciami, gdy jest klucz TomToma
-        now_m = route["dist_m"] - cum[i]
         times = route.get("times") or []
         now_s = (route.get("time_s", 0) - times[i]) if len(times) == len(pts) else route.get("time_s", 0) * now_m / max(1, route["dist_m"])
-        cur_tr = new_tr = None
+        new_tr = None
         if self.settings()["tomtom_key"]:
             try:
-                cur_tr = self.incidents_along(pts, cum, i, min(now_m, 150000))
+                cur_tr = cur_tr or self.incidents_along(pts, cum, i, min(now_m, 150000))
                 new_tr = self.incidents_along(new["pts"], new["cum"], 0, 150000)
             except Exception as e:
                 log("inna trasa: korki nieudane:", e)

@@ -613,6 +613,36 @@ class NavServerTest(unittest.TestCase):
         code, a3 = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "zle"},
                               {"X-Klucz": KEY})
         self.assertFalse(a3["ok"])
+        # 1.5.50 (e2, pasek „szybsza trasa”): sposób „korek” omija odcinek z korkiem; bez klucza TomToma i bez korka odmawia
+        nv = srv.navapi.NAV
+        old_set, old_inc = nv.settings, nv.incidents_along
+        nv.settings = lambda: dict(old_set(), tomtom_key="")
+        try:
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+        finally:
+            nv.settings = old_set
+        self.assertEqual((ak["ok"], ak["error"]), (False, "brak informacji o korkach"))
+        n_pts = len(nv.route(rid)["pts"])
+        jams = {"cur": {"delay_s": 600, "closed": 0, "t": 0,
+                        "incidents": [{"idx": n_pts // 2, "delay_s": 600, "len_m": 300, "km": 1.0}]},
+                "none": {"delay_s": 0, "closed": 0, "incidents": [], "t": 0}}
+        which = ["cur"]
+        nv.settings = lambda: dict(old_set(), tomtom_key="k")
+        asked = []
+        # pierwsze pytanie w zapytaniu dotyczy obecnej trasy, drugie nowej
+        nv.incidents_along = lambda pts, cum, i=0, ahead_m=50000: jams[which[0] if not asked.append(1) and len(asked) == 1 else "none"]
+        try:
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+            self.assertTrue(ak["ok"], ak)
+            self.assertEqual((ak["now_delay_min"], ak["new_delay_min"]), (10, 0))
+            feats = (FakeGraphHopper.calls[-1]["custom_model"].get("areas") or {}).get("features") or []
+            self.assertIn("objazd", [f["id"] for f in feats])           # korek jako obszar zakazany
+            which[0] = "none"
+            del asked[:]
+            code, ak = self.jpost(self.iu + "/api/nav/alt", {"id": rid, "lat": 50.0, "lon": 19.9, "mode": "korek"}, {"X-Klucz": KEY})
+            self.assertEqual((ak["ok"], ak["error"]), (False, "bez korków na trasie"))
+        finally:
+            nv.settings, nv.incidents_along = old_set, old_inc
         # 1.5.50 (e2): wszystkie inne drogi naraz – te same co obecna odpadają, zostaje alternatywa silnika z kształtem
         code, al = self.jpost(self.iu + "/api/nav/alts", {"id": rid, "lat": 50.0, "lon": 19.9, "heading": 0}, {"X-Klucz": KEY})
         self.assertEqual(code, 200, al)
