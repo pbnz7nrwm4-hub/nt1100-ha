@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.5.49 (sygnały jazdy do montażu filmów)
+
+Dodatek przyjmuje i przechowuje nowy plik jazdy `.sig` (10 próbek na sekundę: czas, obroty, gaz, bieg, przechył, prędkość, przyspieszenia) ze skrzynki w wersji z jego zapisem. Pobranie: `/api/rides/<numer>/sig` (CSV: `t_ms,unix_ms,rpm,throttle,gear,lean_deg,speed_kmh,long_g,lat_g,sw`). Jazdy starsze go nie mają (404), `.trk` bez zmian.
+
 ## Zmiany w 1.5.48 (mapa 8, jedna pełna przebudowa kontenera)
 
 - Mapa 8 na ekran: sygnalizacja świetlna (skrzyżowania i przejścia ze światłami) i parkingi z OSM; parkingi także w spisie miejsc.
