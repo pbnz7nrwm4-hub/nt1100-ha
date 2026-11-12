@@ -55,6 +55,7 @@ select.pick{background:var(--card2);border:1px solid var(--line);border-radius:9
 .dot.x{background:var(--card2);color:var(--mut)}
 .it .t{font-weight:700}
 .it .r{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.sub{margin-left:14px;border-left:2px solid var(--line);padding-left:8px}
 .mon{font-size:11px;color:var(--mut);letter-spacing:.06em;text-transform:uppercase;padding-top:8px}
 .prog{height:6px;border-radius:999px;background:var(--card2);overflow:hidden;margin-top:6px}
 .prog b{display:block;height:100%;border-radius:999px}
@@ -117,7 +118,7 @@ const ICO={
  term:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
  wiecej:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'};
 const TABS=[["start","Start"],["historia","Historia"],["statystyki","Statystyki"],["terminy","Terminy"],["wiecej","Więcej"]];
-const S={tab:"start",pojazdy:[],hPoj:"",hTyp:"",sPoj:null,sOkres:"rok",sWid:"spalanie"};
+const S={tab:"start",pojazdy:[],hPoj:"",hTyp:"",rozwin:new Set(),sPoj:null,sOkres:"rok",sWid:"spalanie"};
 try{const z=JSON.parse(localStorage.getItem("pojazdy_ui")||"{}");Object.assign(S,z)}catch(e){}
 function zapamietaj(){try{localStorage.setItem("pojazdy_ui",JSON.stringify({tab:S.tab,hPoj:S.hPoj,sPoj:S.sPoj,sOkres:S.sOkres,sWid:S.sWid}))}catch(e){}}
 function tabs(){$("#tabs").innerHTML=TABS.map(([k,n])=>`<button type="button" data-t="${k}" class="${S.tab===k?"on":""}">${ICO[{start:"start",historia:"hist",statystyki:"stat",terminy:"term",wiecej:"wiecej"}[k]]}${n}</button>`).join("");
@@ -155,18 +156,31 @@ async function vStart(){const d=await api("start");$("#tytul").textContent="Poja
 async function vHistoria(){$("#tytul").textContent="Historia";
  $("#topx").innerHTML=`<select class="pick" id="hp"><option value="">Wszystkie</option>${S.pojazdy.map(p=>`<option value="${p.id}" ${String(S.hPoj)===String(p.id)?"selected":""}>${esc(p.nazwa)}</option>`).join("")}</select>`;
  $("#hp").onchange=e=>{S.hPoj=e.target.value;zapamietaj();vHistoria()};
+ const u=await api("ustawienia");
  const lst=await api("historia?pojazd="+(S.hPoj||"")+"&typ="+(S.hTyp||""));
  let h=`<div class="seg">${[["","Wszystko"],["paliwo","Paliwo"],["prad","Prąd"],["koszty","Koszty"]].map(([k,n])=>`<button type="button" data-ht="${k}" class="${S.hTyp===k?"on":""}">${n}</button>`).join("")}</div><div class="card list">`;
  let mies="";
- for(const x of lst){const m=(x.czas||"").slice(0,7);if(m!==mies){mies=m;h+=`<div class="mon">${MIESD[+m.slice(5)-1]} ${m.slice(0,4)}</div>`}
-  const kto=S.hPoj?"":` · ${esc(x.pojazd)}`;
+ const wiersz=x=>{const kto=S.hPoj?"":` · ${esc(x.pojazd)}`;let h="";
   if(x.typ==="tankowanie")h+=`<div class="it" data-ed="tankowania:${x.id}"><div class="dot f">P</div><div class="sp"><div class="t">${nf(x.litry,2)} l${x.pelny?" · do pełna":" · dolanie"}${x.pominiete?' <span class="chip warn">po przerwie</span>':""}</div><div class="mut sm">${dzien(x.czas)} · ${nf(x.przebieg,0)} km${x.l100?" · "+nf(x.l100)+" l/100 km":""}${x.kwh100?" · "+nf(x.kwh100)+" kWh/100 km":""}${kto}</div>${x.stacja?`<div class="mut xs">${esc(x.stacja)}</div>`:""}</div><div class="r">${zl(x.kwota_razem,2)}<div class="mut xs">${nf(x.cena_l,2)} zł/l</div></div></div>`;
   else if(x.typ==="ladowanie"){const pv=x.kwh&&x.kwh_pv?Math.round(100*x.kwh_pv/x.kwh):0;
    h+=`<div class="it" data-ed="ladowania:${x.id}"><div class="dot ${x.wykluczone?"x":"e"}">⚡</div><div class="sp"><div class="t">${nf(x.kwh,1)} kWh${x.zrodlo==="ekran_auta"?"":" · "+esc(x.miejsce==="obce"?"poza domem":(x.miejsce||""))} ${x.zrodlo==="auto"?'<span class="chip auto">auto</span>':x.zrodlo==="ekran_auta"?'<span class="chip">z auta · szacunek</span>':'<span class="chip">ręcznie</span>'}${x.wykluczone?' <span class="chip">wykluczone</span>':""}</div><div class="mut sm">${x.zrodlo==="ekran_auta"?dzien(x.poczatek)+(x.koniec&&x.koniec.slice(0,10)!==x.poczatek.slice(0,10)?" – "+dzien(x.koniec):"")+" · "+nf(x.kwh_bateria,1)+" kWh do baterii":dzien(x.czas)+" "+godz(x.poczatek)+(x.koniec?"–"+godz(x.koniec):"")}${x.soc_od!=null&&x.soc_do!=null?" · "+nf(x.soc_od,0)+"→"+nf(x.soc_do,0)+" %":""}${pv?" · "+pv+" % z PV":""}${kto}</div></div><div class="r">${zl(x.koszt,2)}</div></div>`}
-  else h+=`<div class="it" data-ed="koszty:${x.id}"><div class="dot c">zł</div><div class="sp"><div class="t">${esc(x.tytul||x.kategoria)}</div><div class="mut sm">${dzien(x.czas)} · ${esc(x.kategoria||"")}${x.przebieg?" · "+nf(x.przebieg,0)+" km":""}${kto}</div></div><div class="r">${zl(x.kwota,2)}</div></div>`}
+  else h+=`<div class="it" data-ed="koszty:${x.id}"><div class="dot c">zł</div><div class="sp"><div class="t">${esc(x.tytul||x.kategoria)}</div><div class="mut sm">${dzien(x.czas)} · ${esc(x.kategoria||"")}${x.przebieg?" · "+nf(x.przebieg,0)+" km":""}${kto}</div></div><div class="r">${zl(x.kwota,2)}</div></div>`;
+ return h};
+ const dnia=x=>(x.czas||"").slice(0,10);
+ const gr=u.grupuj_dni!==false;
+ for(let i=0;i<lst.length;i++){const x=lst[i];const m=(x.czas||"").slice(0,7);if(m!==mies){mies=m;h+=`<div class="mon">${MIESD[+m.slice(5)-1]} ${m.slice(0,4)}</div>`}
+  const grp=[x];if(gr&&(x.typ==="ladowanie"||x.typ==="tankowanie")){while(i+1<lst.length&&lst[i+1].typ===x.typ&&lst[i+1].pojazd_id===x.pojazd_id&&dnia(lst[i+1])===dnia(x))grp.push(lst[++i])}
+  if(grp.length<2){h+=wiersz(x);continue}
+  const klucz=x.typ+":"+x.pojazd_id+":"+dnia(x),otw=S.rozwin.has(klucz),lad=x.typ==="ladowanie";
+  const ok=grp.filter(y=>!y.wykluczone);
+  const suma=ok.reduce((t,y)=>t+(lad?(y.kwh||0):(y.litry||0)),0),zl_=ok.reduce((t,y)=>t+((lad?y.koszt:y.kwota_razem)||0),0);
+  const pvs=lad?ok.reduce((t,y)=>t+(y.kwh_pv||0),0):0,pv=lad&&suma?Math.round(100*pvs/suma):0;
+  h+=`<div class="it grp" data-g="${esc(klucz)}"><div class="dot ${lad?"e":"f"}">${lad?"⚡":"P"}</div><div class="sp"><div class="t">${nf(suma,lad?1:2)} ${lad?"kWh":"l"} <span class="chip">${grp.length}×</span></div><div class="mut sm">${dzien(x.czas)}${pv?" · "+pv+" % z PV":""}${S.hPoj?"":" · "+esc(x.pojazd)}</div></div><div class="r">${zl(zl_,2)}<div class="mut xs">${otw?"▾":"▸"}</div></div></div>`;
+  if(otw)h+=`<div class="sub">${grp.map(wiersz).join("")}</div>`}
  if(!lst.length)h+=`<div class="empty">Nic tu jeszcze nie ma. Dodaj tankowanie przyciskiem na dole albo zaimportuj historię z Fuelio (Więcej).</div>`;
  h+=`</div><div class="btns"><button class="btn sec" type="button" id="dodK">+ Koszt</button><button class="btn sec" type="button" id="dodL">+ Ładowanie</button></div>`;
  $("#main").innerHTML=h;
+ document.querySelectorAll("[data-g]").forEach(e=>e.onclick=()=>{const k=e.dataset.g;S.rozwin.has(k)?S.rozwin.delete(k):S.rozwin.add(k);vHistoria()});
  document.querySelectorAll("[data-ht]").forEach(b=>b.onclick=()=>{S.hTyp=b.dataset.ht;vHistoria()});
  document.querySelectorAll("[data-ed]").forEach(e=>e.onclick=()=>{const[t,id]=e.dataset.ed.split(":");edytuj(t,+id)});
  $("#dodK").onclick=()=>arkuszKoszt();$("#dodL").onclick=()=>arkuszLadowanie()}
@@ -245,6 +259,7 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  ${u.stan.sync_blad?`<div class="warnbox">${esc(u.stan.sync_blad)}</div>`:""}
  <div class="note">Koszt: kWh z sieci × cena strefy G13 w danej godzinie (ceny z HA), kWh z nadwyżki PV za 0 zł. Druga wycena: „Wartość kWh” z magazynem. Ładowania liczone od ${dzien(u.dane_pradu_od)}; spalanie prądu tylko z baków zaczętych po tej dacie.</div>
  <div class="btns" style="margin-top:8px"><button class="btn sec" type="button" id="sync">Sprawdź ładowania teraz</button></div></div>
+ <div class="card"><label class="tog"><input type="checkbox" id="grdni" ${u.grupuj_dni!==false?"checked":""}>Grupuj tankowania i ładowania po dniach (rozwijane)</label></div>
  <div class="card"><div class="mon" style="padding-top:0">Powiadomienia</div>
  <div class="f"><label for="pow">Telefon (usługa notify, np. mobile_app_iphone)</label><input id="pow" value="${esc(u.powiadomienie||"")}" placeholder="puste = powiadomienie w HA"></div>
  <div class="f" style="margin-top:8px"><label for="pkm">Przypomnij przed przebiegiem (km)</label><input id="pkm" type="number" inputmode="numeric" value="${esc(u.prog_km)}"></div>
@@ -255,6 +270,7 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  $("#imp").onclick=arkuszImport;$("#pdod").onclick=()=>arkuszPojazd();
  document.querySelectorAll("[data-p]").forEach(e=>e.onclick=()=>arkuszPojazd(S.pojazdy.find(p=>p.id==e.dataset.p)));
  $("#sync").onclick=async()=>{try{const r=await post("ladowania/synchronizuj");toast(r.blad?r.blad:(r.dodane?"Nowe ładowania: "+r.dodane:"Brak nowych ładowań"));vWiecej()}catch(e){toast(e.message)}};
+ $("#grdni").onchange=async e=>{await post("ustawienia",{grupuj_dni:e.target.checked});toast("Zapisane")};
  $("#powz").onclick=async()=>{await post("ustawienia",{powiadomienie:$("#pow").value.trim(),prog_km:+$("#pkm").value||500});toast("Zapisane")};
  $("#odo").onclick=()=>arkuszOdczyt()}
 
