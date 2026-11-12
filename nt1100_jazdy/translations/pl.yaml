@@ -2,6 +2,9 @@ configuration:
   powiadomienie:
     name: Powiadomienie po jezdzie
     description: "Wygodniej wybrac telefon w panelu dodatku (Ustawienia -> Powiadomienie po jezdzie). Tu: nazwa uslugi bez notify., np. mobile_app_iphone_adriana; puste = dzwonek w Home Assistant."
+  telegram_chat:
+    name: Telegram - numer czatu
+    description: "Numer czatu Telegram (integracja telegram_bot w HA), na ktory ida powiadomienia po jezdzie, o serwisie i o baterii skrzynki. Puste = bez Telegrama."
   adres_spoza_domu:
     name: Adres spoza domu
     description: Adres dodatku przez Cloudflare (pokazywany na stronie do wpisania w skrzynce).

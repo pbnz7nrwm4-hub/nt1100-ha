@@ -36,7 +36,7 @@ import navapi  # noqa: E402
 
 # 1.5.44: the number comes from the add-on build (BUILD_VERSION from config.yaml), so the page footer
 # never shows a stale version again; the literal is only a fallback for tests and local runs.
-VERSION = os.environ.get("NT1100_VERSION") or "1.5.51"
+VERSION = os.environ.get("NT1100_VERSION") or "1.6.0"
 SHARE = os.environ.get("NT_SHARE", "/share/nt1100")
 DATA = os.environ.get("NT_DATA", "/data")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -623,10 +623,16 @@ def odometer(rides=None):
     """The bike's odometer: the value entered on the page plus the rides
     recorded after it was entered."""
     odo = settings()["odo"]
-    if not odo or num(odo.get("km")) is None:
+    own = None
+    if odo and num(odo.get("km")) is not None:
+        own = (float(odo["km"]), (num(odo.get("date")) or 0) / 1000.0)
+    # 1.6.0: jedno źródło prawdy – ostatni odczyt z Pojazdów, jeśli jest nowszy niż wpisany tutaj
+    anchor = pojazdy_kotwica()
+    if anchor and (own is None or anchor[1] > own[1]):
+        own = anchor
+    if own is None:
         return None
-    since = (num(odo.get("date")) or 0) / 1000.0
-    km = float(odo["km"])
+    km, since = own
     for n, s, st in rides if rides is not None else ride_starts():
         if st is not None and st > since:
             km += float(num(s.get("distance_km")) or 0)
@@ -653,6 +659,31 @@ def pojazdy_terminy():
     except Exception:
         v = None
     _POJAZDY.update(t=time.time(), v=v)
+    return v
+
+
+POJAZDY_PRZEBIEG = "sensor.pojazdy_nt1100_przebieg"
+_KOTWICA = {"t": 0.0, "v": None}
+
+
+def pojazdy_kotwica():
+    """(km, czas w s) ostatniego ręcznego odczytu licznika NT1100 w dodatku Pojazdy, albo None.
+    Telemetria jest pominięta po stronie Pojazdów, więc jazdy nie liczą się dwa razy."""
+    if not TOKEN:
+        return None
+    if time.time() - _KOTWICA["t"] < 300:
+        return _KOTWICA["v"]
+    v = None
+    try:
+        a = (ha_call("GET", "/core/api/states/" + POJAZDY_PRZEBIEG) or {}).get("attributes") or {}
+        km, d = num(a.get("odczyt_reczny_km")), a.get("odczyt_reczny_data")
+        if km is not None and d:
+            from zoneinfo import ZoneInfo
+            t = datetime.strptime(str(d)[:16], "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("Europe/Warsaw")).timestamp()
+            v = (km, t)
+    except Exception:
+        v = None
+    _KOTWICA.update(t=time.time(), v=v)
     return v
 
 
@@ -1207,8 +1238,21 @@ def service_done(sid):
 
 # ---------------------------------------------------------------- notifications
 
+def send_telegram(title, msg):
+    """Telegram (opcja dodatku telegram_chat; numer czatu nie trafia do repozytorium)."""
+    chat = (options().get("telegram_chat") or "").strip()
+    if not chat or not TOKEN:
+        return
+    try:
+        ha_call("POST", "/core/api/services/telegram_bot/send_message",
+                {"message": "%s\n%s" % (title, msg), "target": int(chat) if re.fullmatch(r"-?\d+", chat) else chat})
+    except Exception as e:
+        log("Telegram nieudany:", e)
+
+
 def send_notification(title, msg, tag="nt1100_jazda", url=None, link_text="Pokaż jazdy"):
     """url: dokąd prowadzi dotknięcie (domyślnie panel dodatku), np. plik GPX dla OsmAnd."""
+    send_telegram(title, msg)
     target = notify_target()
     panel = url or panel_url()
     if target:
@@ -1554,6 +1598,18 @@ class Ingest(Base):
     def source(self):
         return "przez internet" if self.headers.get("CF-Connecting-IP") else "sieć domowa"
 
+    def battery_alert(self, b):
+        """Zima: bateria skrzynki ≤ 30 % -> jedno ostrzeżenie (Telegram + telefon); znów uzbraja się powyżej 40 %."""
+        st = state()
+        if b <= 30 and not st.get("battery_alerted"):
+            save_state(battery_alerted=True)
+            threading.Thread(target=send_notification, daemon=True, args=(
+                "NT1100: bateria skrzynki %d%%" % b,
+                "Skrzynka ma słabą baterię. Jeśli motocykl stoi na zimę, podłącz prostownik albo naładuj skrzynkę.",
+                "nt1100_bateria")).start()
+        elif b > 40 and st.get("battery_alerted"):
+            save_state(battery_alerted=False)
+
     def seen(self, version):
         kw = {}
         if version and re.fullmatch(r"[0-9.]{1,16}", version):
@@ -1564,6 +1620,7 @@ class Ingest(Base):
         b = (self.headers.get("X-Bateria") or "").strip()
         if re.fullmatch(r"\d{1,3}", b) and int(b) <= 100:
             kw.update(box_battery=int(b))
+            self.battery_alert(int(b))
         if kw:
             old = state()
             save_state(**kw)

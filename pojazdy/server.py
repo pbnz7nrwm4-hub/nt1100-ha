@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -73,6 +73,7 @@ DOMYSLNE = {
     "dane_pradu_od": "2026-11-01",  # od kiedy HA mierzy ładowarki (wcześniejsze odcinki bez kWh)
     "grupuj_dni": True,  # Historia: tankowania/ładowania z jednego dnia w jednym rozwijanym wierszu
     "powiadomienie": "",
+    "telegram_chat": "",  # numer czatu Telegram (tylko tutaj, nie w repo); puste = bez Telegrama
     "prog_km": 500,
     "kategorie": ["Serwis", "Eksploatacja", "Ubezpieczenie", "Przegląd", "Opony", "Rejestracja", "Parking",
                   "Myjnia", "Opłaty za przejazd", "Mandaty", "Akcesoria", "Inne"],
@@ -164,7 +165,19 @@ def panel_url():
     return _PANEL[0] if _PANEL else "/hassio/dashboard"
 
 
+def telegram(tytul, tresc):
+    chat = str(ust("telegram_chat") or "").strip()
+    if not chat or not TOKEN:
+        return
+    try:
+        ha_call("POST", "/core/api/services/telegram_bot/send_message",
+                {"message": "%s\n%s" % (tytul, tresc), "target": int(chat) if re.fullmatch(r"-?\d+", chat) else chat})
+    except Exception as e:
+        log("Telegram nieudany:", e)
+
+
 def powiadom(tytul, tresc, tag):
+    telegram(tytul, tresc)
     cel = (ust("powiadomienie") or "").strip()
     if cel.startswith("notify."):
         cel = cel[7:]
@@ -267,6 +280,7 @@ def karta_pojazdu(p):
     if z_pradem(p):
         enc = (ust("bateria") or {}).get(p.get("klucz") or "")
         out["bateria"] = ha_liczba(enc) if enc else None
+        out["kwh100_licznik"] = ob.kwh100_z_licznika(l, ob.przebiegi(t, k, o), prad_od(p, l))
     return out
 
 
@@ -518,9 +532,17 @@ def czujniki():
         add("koszt_100km", sr.get("zl100"), "koszt na 100 km", "zł", "mdi:cash", {"state_class": "measurement"})
         add("koszt_miesiac", c["miesiac"]["razem"], "koszt w tym miesiącu", "zł", "mdi:calendar-month",
             {"paliwo": c["miesiac"]["paliwo"], "prad": c["miesiac"]["prad"], "inne": c["miesiac"]["inne"]})
-        add("przebieg", c["przebieg"], "przebieg", "km", "mdi:counter")
+        t, l, k, o = dane_pojazdu(p["id"])
+        reczne = ob.przebiegi(t, k, [x for x in o if x.get("zrodlo") != "telemetria"])
+        ost = reczne[-1] if reczne else (None, None)
+        # ostatni odczyt wpisany ręcznie/z tankowania/kosztu: kotwica dla NT1100 Jazdy (bez telemetrii, żeby jazdy się nie dublowały)
+        add("przebieg", c["przebieg"], "przebieg", "km", "mdi:counter",
+            {"odczyt_reczny_km": ost[1], "odczyt_reczny_data": ost[0]})
         if z_pradem(p):
             add("zuzycie_pradu", sr.get("kwh100"), "zużycie prądu", "kWh/100km", "mdi:ev-station", {"state_class": "measurement"})
+            kl = c.get("kwh100_licznik")
+            add("zuzycie_pradu_licznik", kl["kwh100"] if kl else None, "zużycie prądu z licznika (na sucho)", "kWh/100km",
+                "mdi:ev-station", dict(kl or {}))
         ter = stan_terminow(p, c["przebieg"])
         add("terminy", sum(1 for t in ter if t["pilne"]), "pilne terminy", None, "mdi:wrench-clock", {
             "najblizszy": ("%s: %s" % (ter[0]["nazwa"], ter[0]["opis"])) if ter else "",
