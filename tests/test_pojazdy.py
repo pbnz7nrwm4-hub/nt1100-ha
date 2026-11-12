@@ -286,6 +286,32 @@ class Serwer(unittest.TestCase):
             b = f.read()
             return json.loads(b) if "json" in f.headers.get("Content-Type", "") else b
 
+    def test_telegram_tankowanie(self):
+        pr = self.req("api/telegram/propozycja", {"pojazd": "nt1100", "litry": "14,32", "kwota": "88,64", "przebieg": 12340})
+        self.assertTrue(pr["ok"])
+        self.assertAlmostEqual(pr["tankowanie"]["cena_l"], 6.19, places=2)
+        self.assertEqual(pr["tankowanie"]["zrodlo"], "telegram")
+        self.assertIn("NT1100: 14,32 l", pr["tekst"])
+        # propozycja nic nie zapisuje
+        poj = [p for p in self.req("api/pojazdy") if p["klucz"] == "nt1100"][0]["id"]
+        przed = len([x for x in self.req("api/historia?pojazd=%d" % poj) if x.get("typ") == "tankowanie"])
+        self.req("api/telegram/propozycja", {"pojazd": "nt1100", "litry": 10, "cena_l": 6})
+        po = len([x for x in self.req("api/historia?pojazd=%d" % poj) if x.get("typ") == "tankowanie"])
+        self.assertEqual(przed, po)
+        # brak pojazdu / litrów
+        self.assertEqual(self.req("api/telegram/propozycja", {"litry": 10, "cena_l": 6})["powod"], "pojazd")
+        self.assertEqual(self.req("api/telegram/propozycja", {"pojazd": "nt1100"})["powod"], "litry")
+        # litry ponad bak i niezgodna kwota
+        uw = self.req("api/telegram/propozycja", {"pojazd": "nt1100", "litry": 30, "cena_l": 6, "kwota": 500})["ostrzezenia"]
+        self.assertTrue(any("bak" in x for x in uw) and any("niezgodna" in x for x in uw))
+        # zapis raz, drugi klik = duplikat
+        z1 = self.req("api/telegram/zapisz", {"pojazd": "nt1100", "litry": 14.32, "kwota": 88.64, "przebieg": 12340, "uid": "m1"})
+        z2 = self.req("api/telegram/zapisz", {"pojazd": "nt1100", "litry": 14.32, "kwota": 88.64, "przebieg": 12340, "uid": "m1"})
+        self.assertIn("id", z1)
+        self.assertTrue(z2.get("duplikat"))
+        po2 = len([x for x in self.req("api/historia?pojazd=%d" % poj) if x.get("typ") == "tankowanie"])
+        self.assertEqual(po2, po + 1)
+
     def test_przeplyw(self):
         poj = self.req("api/pojazdy")
         self.assertEqual(sorted(p["klucz"] for p in poj), ["eclipse", "nt1100"])
