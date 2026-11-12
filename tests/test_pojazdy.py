@@ -135,6 +135,24 @@ class Ladowania(unittest.TestCase):
         s = ld.sesje(ld.seria(self._licznik(start, 30, 2.0)), start + timedelta(minutes=35))
         self.assertFalse(s[0]["skonczona"])
 
+    def test_rzadki_licznik_nie_rozciaga_sesji(self):
+        # jeden przyrost zgłoszony po 3 h ciszy: początek ma być tuż przed raportem, nie sprzed godzin
+        t = datetime(2026, 11, 8, 14, 9, tzinfo=U)
+        h = [{"state": "100.0", "last_changed": (t - timedelta(hours=3)).isoformat()},
+             {"state": "100.12", "last_changed": t.isoformat()}]
+        s = ld.sesje(ld.seria(h), t + timedelta(minutes=ld.KONIEC_PO_MIN + 1), min_kwh=0)
+        self.assertEqual(len(s), 1)
+        self.assertGreaterEqual(s[0]["start"], t - timedelta(minutes=ld.PRZERWA_MIN))
+        # okno historii przesunięte do przodu nie zmienia początku sesji
+        h2 = [{"state": "100.0", "last_changed": (t - timedelta(minutes=25)).isoformat()}, h[1]]
+        s2 = ld.sesje(ld.seria(h2), t + timedelta(hours=1), min_kwh=0)
+        self.assertEqual(s2[0]["start"], s[0]["start"])
+
+    def test_sesja_nie_konczy_sie_przed_mozliwym_przedluzeniem(self):
+        start = datetime(2026, 11, 5, 21, 0, tzinfo=U)
+        s = ld.sesje(ld.seria(self._licznik(start, 30, 2.0)), start + timedelta(minutes=30 + 18))
+        self.assertFalse(s[0]["skonczona"])
+
     def test_przerwa_dzieli(self):
         start = datetime(2026, 11, 5, 10, 0, tzinfo=U)
         h = self._licznik(start, 30, 2.0) + self._licznik(start + timedelta(hours=2), 30, 2.0, baza=101.0)[1:]
@@ -285,6 +303,21 @@ class Serwer(unittest.TestCase):
         with urllib.request.urlopen(r) as f:
             b = f.read()
             return json.loads(b) if "json" in f.headers.get("Content-Type", "") else b
+
+    def test_scalanie_dubli(self):
+        sv = srv
+        pid = sv.DB.lista("pojazdy")[0]["id"]
+        for p, k, kwh in [("2026-11-09 06:05", "2026-11-09 07:20", 0.7), ("2026-11-09 06:55", "2026-11-09 07:20", 0.7),
+                          ("2026-11-09 07:05", "2026-11-09 07:20", 0.3), ("2026-11-09 20:00", "2026-11-10 03:25", 8.5)]:
+            sv.DB.dodaj("ladowania", {"pojazd_id": pid, "poczatek": p, "koniec": k, "kwh": kwh, "miejsce": "dom",
+                                      "zrodlo": "auto", "uid": "t:" + p})
+        self.assertEqual(sv.scal_ladowania(True)["do_usuniecia"], 2)
+        sv.scal_ladowania(False)
+        z = [x for x in sv.DB.lista("ladowania", pojazd_id=pid) if x["poczatek"].startswith("2026-11-09 0")]
+        self.assertEqual([x["poczatek"] for x in z], ["2026-11-09 06:05"])
+        self.assertEqual(sv.scal_ladowania(True)["do_usuniecia"], 0)
+        for x in sv.DB.lista("ladowania", pojazd_id=pid):
+            sv.DB.usun("ladowania", x["id"])
 
     def test_telegram_tankowanie(self):
         pr = self.req("api/telegram/propozycja", {"pojazd": "nt1100", "litry": "14,32", "kwota": "88,64", "przebieg": 12340})
