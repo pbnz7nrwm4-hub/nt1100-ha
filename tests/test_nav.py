@@ -1461,7 +1461,7 @@ class NavServerTest(unittest.TestCase):
         def fake_ha(method, path, body=None, timeout=10):
             seen.append(path)
             if path.startswith("/core/api/calendars/calendar.dom"):
-                return [{"start": {"dateTime": iso(now + 7200)}, "end": {"dateTime": iso(now + 9000)}, "summary": "Dentysta"},
+                return [{"start": {"dateTime": iso(now + 300)}, "end": {"dateTime": iso(now + 2100)}, "summary": "Dentysta"},
                         {"start": {"date": time.strftime("%Y-%m-%d", time.localtime(now + 86400))}, "end": {"date": "x"},
                          "summary": "Urodziny"}]
             return {"state": "closed"}
