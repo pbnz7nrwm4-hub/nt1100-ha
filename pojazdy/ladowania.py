@@ -21,7 +21,7 @@ except Exception:  # bez bazy stref czasowych – czas lokalny systemu
 
 PRZERWA_MIN = 20       # dłuższa przerwa w przyroście = nowa sesja
 MIN_KWH = 0.1          # mniejsze "sesje" to szum licznika
-KONIEC_PO_MIN = 15     # sesja uznana za skończoną po tylu minutach bez przyrostu
+KONIEC_PO_MIN = PRZERWA_MIN  # skończona dopiero, gdy kolejny przyrost nie może już jej przedłużyć (inaczej ta sama sesja zapisuje się kilka razy)
 
 
 def do_utc(lokalny):
@@ -115,6 +115,9 @@ def przyrosty(ser):
     for (t0, a), (t1, b) in zip(ser, ser[1:]):
         d = b - a
         if 0 < d < 50:
+            # licznik raportuje rzadko: przyrost zdarzył się tuż przed raportem, nie w całej przerwie
+            # (inaczej początek sesji = brzeg okna historii albo poprzedni raport sprzed godzin)
+            t0 = max(t0, t1 - timedelta(minutes=PRZERWA_MIN))
             out.append((t0, t1, d))
     return out
 

@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -383,6 +383,10 @@ def synchronizuj_ladowania():
             uid = "auto:%s:%s" % (lad["miejsce"], s["start"].strftime("%Y%m%dT%H%M"))
             if DB.jest_uid("ladowania", uid):
                 continue
+            p0, k0 = ld.lok(s["start"]).strftime("%Y-%m-%d %H:%M"), ld.lok(s["koniec"]).strftime("%Y-%m-%d %H:%M")
+            if any(x.get("miejsce") == lad["miejsce"] and x.get("zrodlo") == "auto" and x["poczatek"] <= k0
+                   and (x.get("koniec") or x["poczatek"]) >= p0 for x in DB.lista("ladowania", pojazd_id=p["id"])):
+                continue  # ta sama sesja już zapisana (inny początek okna) – bez dubla
             if ceny is None:
                 ceny = ceny_teraz()
             okno_od = s["start"].replace(minute=0, second=0, microsecond=0) - timedelta(minutes=5)
