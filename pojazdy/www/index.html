@@ -145,6 +145,7 @@ async function vStart(){const d=await api("start");$("#tytul").textContent="Poja
    ${ev?`<div class="stat"><div class="v ev">${zakres(s)}</div><div class="l">kWh/100 km</div></div>`:`<div class="stat"><div class="v">${nf(c.ostatni_odcinek?c.ostatni_odcinek.l100:null)}</div><div class="l">ostatni bak</div></div>`}
    <div class="stat"><div class="v">${nf(s.zl100)}</div><div class="l">zł/100 km</div></div></div>
   ${!s.km?`<div class="note" style="margin-top:6px">Spalanie pojawi się po dwóch tankowaniach do pełna.</div>`:`<div class="xs mut" style="margin-top:4px">średnio z ostatnich ${nf(s.km,0)} km${ev&&s.kwh100==null?" · prąd i łączny koszt po pierwszym pełnym baku z zapisanymi ładowaniami":""}</div>`}
+  ${ev&&c.kwh100_licznik?`<div class="xs mut" style="margin-top:2px">z liczników ładowarek (na sucho): ${nf(c.kwh100_licznik.kwh100)} kWh/100 km · ${nf(c.kwh100_licznik.kwh,1)} kWh na ${nf(c.kwh100_licznik.km,0)} km od ${dzien(c.kwh100_licznik.od)}</div>`:""}
   <div class="row sm" style="margin-top:8px"><span class="mut">W tym miesiącu</span><span class="sp"></span><span class="num">${zl(razem)}</span></div>
   <div class="split"><b style="width:${pc(m.paliwo)}%;background:var(--acc2)"></b><b style="width:${pc(m.prad)}%;background:var(--ev)"></b><b style="width:${pc(m.inne)}%;background:var(--acc)"></b></div>
   <div class="leg"><span><i style="background:var(--acc2)"></i>paliwo ${zl(m.paliwo)}</span>${ev?`<span><i style="background:var(--ev)"></i>prąd ${zl(m.prad)}</span>`:""}<span><i style="background:var(--acc)"></i>inne ${zl(m.inne)}</span></div></div>`}
@@ -262,6 +263,7 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  <div class="card"><label class="tog"><input type="checkbox" id="grdni" ${u.grupuj_dni!==false?"checked":""}>Grupuj tankowania i ładowania po dniach (rozwijane)</label></div>
  <div class="card"><div class="mon" style="padding-top:0">Powiadomienia</div>
  <div class="f"><label for="pow">Telefon (usługa notify, np. mobile_app_iphone)</label><input id="pow" value="${esc(u.powiadomienie||"")}" placeholder="puste = powiadomienie w HA"></div>
+ <div class="f" style="margin-top:8px"><label for="tgc">Telegram: numer czatu (puste = bez Telegrama)</label><input id="tgc" inputmode="numeric" value="${esc(u.telegram_chat||"")}"></div>
  <div class="f" style="margin-top:8px"><label for="pkm">Przypomnij przed przebiegiem (km)</label><input id="pkm" type="number" inputmode="numeric" value="${esc(u.prog_km)}"></div>
  <div class="btns" style="margin-top:8px"><button class="btn sec" type="button" id="powz">Zapisz</button></div></div>
  <div class="card"><button class="btn sec" type="button" id="odo">Wpisz aktualny przebieg</button></div>
@@ -274,7 +276,7 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  $("#scal").onclick=async()=>{try{const r=await post("ladowania/scal",{podglad:true});if(!r.do_usuniecia){toast("Brak zdublowanych ładowań");return}
   if(!confirm("Zdublowanych wpisów: "+r.do_usuniecia+" (w "+r.grup+" grupach). W każdej grupie zostaje wpis z największą energią. Kopia bazy zapisze się przed scaleniem. Scalić?"))return;
   const w=await post("ladowania/scal",{podglad:false});toast("Usunięto dublety: "+w.usuniete);vWiecej()}catch(e){toast(e.message)}};
- $("#powz").onclick=async()=>{await post("ustawienia",{powiadomienie:$("#pow").value.trim(),prog_km:+$("#pkm").value||500});toast("Zapisane")};
+ $("#powz").onclick=async()=>{await post("ustawienia",{powiadomienie:$("#pow").value.trim(),telegram_chat:$("#tgc").value.trim(),prog_km:+$("#pkm").value||500});toast("Zapisane")};
  $("#odo").onclick=()=>arkuszOdczyt()}
 
 /* ---------- arkusze */

@@ -46,6 +46,11 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.6.0 (przebieg z Pojazdów, Telegram)
+- **Jedno źródło przebiegu.** Gdy dodatek Pojazdy ma nowszy ręczny odczyt licznika NT1100 (z tankowania, kosztu albo wpisany w Pojazdach) niż ten wpisany tutaj, przebieg liczy się od niego plus jazdy zapisane później. Dzięki temu nie wpisujesz licznika dwa razy, a liczniki serwisowe (olej, łańcuch, przegląd) działają od razu. Wymaga Pojazdów 1.6.0.
+- **Telegram.** Nowa opcja dodatku „Telegram - numer czatu” (Konfiguracja dodatku; numer nie trafia do repozytorium). Idą tam: podsumowanie po jeździe, przypomnienie o serwisie i ostrzeżenie o baterii skrzynki.
+- **Zimowy alarm baterii.** Skrzynka zgłasza swój poziom baterii; przy ≤ 30 % przychodzi jedno ostrzeżenie (podłącz prostownik albo naładuj skrzynkę), ponownie uzbraja się po przekroczeniu 40 %. Skrzynka nie mierzy napięcia akumulatora motocykla, więc to alarm baterii samej skrzynki.
+
 ## Zmiany w 1.5.51 (odczyt jazd dla Kroniki jazd)
 Inne programy w domu (Kronika jazd, która robi filmy z nagrań GoPro) mogą odczytać jazdy na porcie 8098, z tym samym kluczem co skrzynka (nagłówek `X-Klucz`): lista jazd `/api/odczyt/rides`, trasa co sekundę `/api/odczyt/rides/<numer>/trk` (JSON: `[lat, lon, przechył, prędkość, wysokość, czas]`) i sygnały 10 na sekundę `/api/odczyt/rides/<numer>/sig` (CSV, 404 dla starszych jazd). Tylko odczyt: nic nie zmienia w jazdach, bez klucza odpowiedź 401.
 

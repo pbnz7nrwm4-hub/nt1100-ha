@@ -3,6 +3,11 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.6.0
+- **Telegram.** W Więcej → Powiadomienia wpisz numer czatu Telegram (zostaje tylko w bazie dodatku, nie w repozytorium). Przypomnienia o terminach idą wtedy także na Telegram (usługa `telegram_bot.send_message` w HA), obok telefonu.
+- **Kotwica przebiegu dla NT1100 Jazdy.** Czujnik `sensor.pojazdy_nt1100_przebieg` ma atrybuty `odczyt_reczny_km` i `odczyt_reczny_data` (ostatni odczyt z tankowania, kosztu albo ręczny, bez telemetrii). NT1100 Jazdy liczy od nich przebieg i dolicza własne jazdy.
+- **kWh/100 km z liczników ładowarek (na sucho).** Obok obecnej metody (z baków) pod kartą PHEV i w czujniku `..._zuzycie_pradu_licznik`: kWh z liczników od dnia, w którym HA zaczął je mierzyć, podzielone przez przejechane km. Bez korekty o stan baterii i bez czekania na tankowania; zamiana metody dopiero po porównaniu.
+
 ## Zmiany w 1.5.1
 - Ładowania z liczników: koniec zdublowanych sesji (ta sama sesja zapisywała się kilka razy z różnym początkiem). Początek sesji liczony od przyrostu, nie od brzegu okna historii; sesja kończy się dopiero po 20 min ciszy; nowa sesja nie zapisze się, jeśli zachodzi na już zapisaną. Stare dublety scalisz przyciskiem „Scal zdublowane ładowania” w Więcej (zostaje wpis z największą energią, przed scaleniem powstaje kopia bazy w /share/pojazdy/kopie).
 

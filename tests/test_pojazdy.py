@@ -63,6 +63,15 @@ class Obliczenia(unittest.TestCase):
         self.assertEqual(ob.podejrzana_kwota({"litry": 14.96, "cena_l": 7.94, "kwota": 1556.24}), 118.78)
         self.assertIsNone(ob.podejrzana_kwota({"litry": 14.96, "cena_l": 7.94, "kwota": 118.8}))
 
+    def test_kwh100_z_licznika(self):
+        pts = [("2026-11-01 08:00", 1000.0), ("2026-11-20 08:00", 1300.0)]
+        lad = [{"poczatek": "2026-11-05T10:00", "kwh": 30.0}, {"poczatek": "2026-11-10T10:00", "kwh": 15.0, "wykluczone": 1},
+               {"poczatek": "2026-11-12T10:00", "kwh": 30.0, "zrodlo": "ekran_auta"}, {"poczatek": "2026-11-15T10:00", "kwh": 30.0}]
+        r = ob.kwh100_z_licznika(lad, pts, "2026-11-01")
+        self.assertEqual(r["kwh"], 60.0)
+        self.assertEqual(r["kwh100"], 20.0)
+        self.assertIsNone(ob.kwh100_z_licznika(lad, pts[:1], "2026-11-01"))
+
     def test_terminy(self):
         t = {"co_mies": 12, "ostatnio_data": "2025-11-18"}
         s = ob.stan_terminu(t, date(2026, 11, 6), None)

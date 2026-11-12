@@ -241,6 +241,17 @@ def przebieg_teraz(pts, z_encji=None):
     return max(vals) if vals else None
 
 
+def kwh100_z_licznika(ladowania, pts, od):
+    """Na sucho: kWh z liczników ładowarek od daty `od` / km w tym czasie (bez poprawki o stan baterii,
+    bez czekania na tankowania). Zwraca None, gdy za mało km."""
+    kwh = sum(float(x.get("kwh") or 0) for x in ladowania
+              if not x.get("wykluczone") and x.get("zrodlo") != "ekran_auta" and (x.get("poczatek") or "")[:10] >= od)
+    km = km_w_okresie(pts, od, "2999-01-01")
+    if km < 50 or kwh <= 0:
+        return None
+    return {"kwh100": round(kwh / km * 100, 2), "kwh": round(kwh, 2), "km": round(km), "od": od}
+
+
 def km_w_okresie(pts, od, do):
     """Przejechane km między datami (od włącznie, do wyłącznie): różnica licznika
     od ostatniego odczytu przed okresem (albo pierwszego w okresie) do ostatniego w okresie."""

@@ -1,5 +1,5 @@
 name: NT1100 Jazdy
-version: "1.5.51"
+version: "1.6.0"
 slug: nt1100_jazdy
 description: Jazdy ze skrzynki telemetrycznej Hondy NT1100 - strona jazd, urzadzenie NT1100 przez MQTT, pogoda, serwis i powiadomienia
 arch:
@@ -26,10 +26,12 @@ ports_description:
   8098/tcp: Odbior jazd ze skrzynki (tylko z kluczem)
 options:
   powiadomienie: ""
+  telegram_chat: ""
   adres_spoza_domu: ""
   klucz: ""
 schema:
   powiadomienie: str?
+  telegram_chat: str?
   adres_spoza_domu: str?
   klucz: str?
   mqtt_host: str?
