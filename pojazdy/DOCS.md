@@ -3,6 +3,14 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.4.0
+
+- **Tankowanie ze zdjęcia dystrybutora (Telegram).** Dodatek ma dwa wywołania dla Home Assistant:
+  `POST api/telegram/propozycja` (nic nie zapisuje: składa litry/cenę/kwotę, bierze przebieg z telemetrii,
+  ostrzega o niezgodnej kwocie, litrach ponad bak, odległej cenie, przebiegu wstecz) i `POST api/telegram/zapisz`
+  (dopisuje wpis ze źródłem „telegram”; ten sam `uid` nie zapisze się dwa razy). Wywołuje je tylko rdzeń HA.
+  Sam bot i odczyt zdjęcia przez Maca – osobno, na sucho.
+
 ## Zmiany w 1.3.0
 
 - **Zużycie prądu jako zakres.** Przy odcinkach z korektą o baterię panel pokazuje np. „9–12 kWh/100 km”: dolna i górna

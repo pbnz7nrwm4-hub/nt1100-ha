@@ -24,13 +24,15 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
 WWW = os.environ.get("PJ_WWW", os.path.join(HERE, "www"))
 PORT = int(os.environ.get("PJ_PORT", "8099"))
 PEERS = set(os.environ.get("PJ_PEERS", "172.30.32.2").split(","))
+# Rdzeń HA (automatyzacja Telegram) – tylko ścieżki /api/telegram/* (propozycja i zapis tankowania ze zdjęcia).
+PEERS_HA = set(os.environ.get("PJ_PEERS_HA", "172.30.32.1").split(","))
 SUPERVISOR = os.environ.get("PJ_SUPERVISOR", "http://supervisor")
 
 
@@ -781,6 +783,66 @@ def oczysc(tabela, j, nowy=True):
     return d
 
 
+def propozycja_tankowania(j):
+    """Tankowanie odczytane ze zdjęcia dystrybutora (Telegram): NIC nie zapisuje.
+    Wejście: pojazd (klucz/id), litry, cena_l, kwota (dwie z trzech), opcjonalnie przebieg, stacja, pelny.
+    Wynik: znormalizowane pola + ostrzeżenia + tekst do potwierdzenia."""
+    p = pojazd_po_kluczu(j.get("pojazd")) if j.get("pojazd") not in (None, "") else None
+    if not p:
+        return {"ok": False, "powod": "pojazd", "pojazdy": [{"klucz": x["klucz"], "nazwa": x["nazwa"]}
+                                                           for x in DB.lista("pojazdy") if x.get("aktywny", 1)]}
+    def liczba(v):
+        return None if v in (None, "") else float(str(v).replace(",", "."))
+    l, c, k = ob.uzupelnij_tankowanie(liczba(j.get("litry")), liczba(j.get("cena_l")), liczba(j.get("kwota")))
+    if not l:
+        return {"ok": False, "powod": "litry"}
+    uw = []
+    tank = DB.lista("tankowania", pojazd_id=p["id"])
+    ost = tank[0] if tank else {}
+    if p.get("bak_l") and l > float(p["bak_l"]) * 1.02:
+        uw.append("litry większe niż bak (%s l)" % p["bak_l"])
+    podej = ob.podejrzana_kwota({"litry": l, "cena_l": liczba(j.get("cena_l")), "kwota": liczba(j.get("kwota"))})
+    if podej:
+        uw.append("kwota niezgodna z litrami × ceną (wychodzi %.2f zł)" % podej)
+    if ost.get("cena_l") and c and abs(c - ost["cena_l"]) > 0.25 * ost["cena_l"]:
+        uw.append("cena za litr daleko od poprzedniej (%.2f)" % ost["cena_l"])
+    km = liczba(j.get("przebieg"))
+    zrodlo_km = "ze zdjęcia" if km is not None else None
+    if km is None and p.get("encja_przebiegu"):
+        km, zrodlo_km = ha_liczba(p["encja_przebiegu"]), "z telemetrii"
+    if km is None:
+        km, zrodlo_km = przebieg_pojazdu(p)[0], "ostatni znany"
+    if km is None:
+        zrodlo_km = None
+    d = {"pojazd_id": p["id"], "data": teraz_lok().strftime("%Y-%m-%d %H:%M"), "przebieg": km, "litry": l,
+         "cena_l": c, "kwota": k, "pelny": 0 if j.get("pelny") in (0, False, "0", "nie") else 1,
+         "stacja": j.get("stacja") or ost.get("stacja") or "", "zrodlo": "telegram"}
+    w = sprawdz_przebieg("tankowania", d)
+    if w:
+        uw.append(w)
+    tekst = "%s: %s l, %s zł/l, %s zł, przebieg %s%s, %s" % (
+        p["nazwa"], ("%.2f" % l).replace(".", ","), ("%.2f" % c).replace(".", ",") if c else "?",
+        ("%.2f" % k).replace(".", ",") if k else "?", "%d km" % km if km is not None else "brak",
+        " (%s)" % zrodlo_km if zrodlo_km else "", "do pełna" if d["pelny"] else "nie do pełna")
+    return {"ok": True, "pojazd": p["klucz"], "tankowanie": d, "ostrzezenia": uw, "tekst": tekst}
+
+
+def zapisz_z_telegramu(j):
+    """Zapis po potwierdzeniu. Klucz `uid` (np. id wiadomości) chroni przed podwójnym zapisem po drugim kliknięciu."""
+    pr = propozycja_tankowania(j)
+    if not pr["ok"]:
+        return pr
+    d = pr["tankowanie"]
+    uid = j.get("uid")
+    if uid:
+        d["uid"] = "telegram:%s" % uid
+        if DB.jest_uid("tankowania", d["uid"]):
+            return {"ok": True, "duplikat": True, "tekst": pr["tekst"]}
+    nid = DB.dodaj("tankowania", d)
+    po_zmianie()
+    return {"ok": True, "id": nid, "tekst": pr["tekst"], "ostrzezenia": pr["ostrzezenia"]}
+
+
 def sprawdz_przebieg(tabela, d, id_=None):
     """Ostrzeżenie (nie błąd): przebieg mniejszy niż wcześniejszy odczyt."""
     if tabela != "tankowania" or d.get("przebieg") is None or not d.get("pojazd_id"):
@@ -817,6 +879,8 @@ class Strona(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def ok_peer(self):
+        if self.client_address[0] in PEERS_HA and urllib.parse.urlsplit(self.path).path.startswith("/api/telegram/"):
+            return True
         if self.client_address[0] not in PEERS:
             self.send(403, {"blad": "tylko przez panel Home Assistant"})
             return False
@@ -948,6 +1012,10 @@ class Strona(BaseHTTPRequestHandler):
                                         "tytul": t["nazwa"], "kwota": float(str(j["kwota"]).replace(",", "."))})
                 po_zmianie()
                 return self.send(200, {"ok": True})
+            if path == "/api/telegram/propozycja":
+                return self.send(200, propozycja_tankowania(j))
+            if path == "/api/telegram/zapisz":
+                return self.send(200, zapisz_z_telegramu(j))
             m = re.match(r"^/api/(tankowania|ladowania|koszty|terminy|pojazdy|odczyty)(?:/(\d+)(/usun)?)?$", path)
             if m:
                 tab, id_, usun = m.group(1), m.group(2), m.group(3)
