@@ -3,6 +3,9 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.5.0
+- Historia: tankowania i ładowania z jednego dnia (tego samego pojazdu) są w jednym wierszu z sumą (kWh lub l, zł); kliknięcie rozwija pojedyncze wpisy. Wyłączysz to w Więcej → „Grupuj tankowania i ładowania po dniach”.
+
 ## Zmiany w 1.4.0
 
 - **Tankowanie ze zdjęcia dystrybutora (Telegram).** Dodatek ma dwa wywołania dla Home Assistant:

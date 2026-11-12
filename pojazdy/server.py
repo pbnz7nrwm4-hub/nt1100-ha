@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -71,6 +71,7 @@ DOMYSLNE = {
     "bateria": {"eclipse": "sensor.eclipse_bateria"},
     "ladowania_od": "2026-10-31T23:00:00+00:00",  # kursor (UTC) – dokąd już sprawdzone
     "dane_pradu_od": "2026-11-01",  # od kiedy HA mierzy ładowarki (wcześniejsze odcinki bez kWh)
+    "grupuj_dni": True,  # Historia: tankowania/ładowania z jednego dnia w jednym rozwijanym wierszu
     "powiadomienie": "",
     "prog_km": 500,
     "kategorie": ["Serwis", "Eksploatacja", "Ubezpieczenie", "Przegląd", "Opony", "Rejestracja", "Parking",
