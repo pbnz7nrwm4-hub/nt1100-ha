@@ -560,6 +560,49 @@ def eksport_fuelio(tylko=None):
     return fuelio.eksport(pozycje)
 
 
+def zdublowane_ladowania():
+    """Zachodzące na siebie sesje auto tej samej ładowarki: [(zostaje, [do_usuniecia])].
+    Zostaje wpis z największą energią (przy remisie najwcześniejszy); usuwane tylko te, które mieszczą się
+    w jego przedziale czasu i nie były ręcznie edytowane."""
+    wyn = []
+    for p in DB.lista("pojazdy"):
+        grupy = {}
+        for x in DB.lista("ladowania", pojazd_id=p["id"]):
+            if x.get("zrodlo") == "auto":
+                grupy.setdefault(x.get("miejsce"), []).append(x)
+        for lst in grupy.values():
+            lst.sort(key=lambda x: x["poczatek"])
+            klaster = []
+            for x in lst + [None]:
+                if x is not None and klaster and x["poczatek"] <= max(k.get("koniec") or k["poczatek"] for k in klaster):
+                    klaster.append(x)
+                    continue
+                if len(klaster) > 1:
+                    zostaje = max(klaster, key=lambda k: (k.get("kwh") or 0, -klaster.index(k)))
+                    kon = lambda k: k.get("koniec") or k["poczatek"]
+                    usun = [k for k in klaster if k["id"] != zostaje["id"] and not k.get("zmienione")
+                            and k["poczatek"] >= zostaje["poczatek"] and kon(k) <= kon(zostaje)]
+                    if usun:
+                        wyn.append((zostaje, usun))
+                klaster = [x] if x is not None else []
+    return wyn
+
+
+def scal_ladowania(podglad):
+    wyn = zdublowane_ladowania()
+    n = sum(len(u) for _, u in wyn)
+    if podglad or not n:
+        return {"do_usuniecia": n, "grup": len(wyn)}
+    kat = os.path.join(SHARE, "kopie")
+    os.makedirs(kat, exist_ok=True)
+    DB.kopia(os.path.join(kat, "pojazdy-przed-scaleniem-%s.db" % teraz_lok().strftime("%Y-%m-%d-%H%M")))
+    for zostaje, usun in wyn:
+        for k in usun:
+            DB.usun("ladowania", k["id"])
+            log("Scalono dubel ładowania:", k["poczatek"], k.get("kwh"), "kWh ->", zostaje["poczatek"], zostaje.get("kwh"))
+    return {"do_usuniecia": n, "grup": len(wyn), "usuniete": n}
+
+
 def kopia_nocna():
     kat = os.path.join(SHARE, "kopie")
     os.makedirs(kat, exist_ok=True)
@@ -989,6 +1032,11 @@ class Strona(BaseHTTPRequestHandler):
             j = json.loads(self.body(2 * 1024 * 1024) or b"{}")
             if path == "/api/import/zapisz":
                 return self.send(200, import_zapisz(j.get("mapowanie") or {}, bool(j.get("popraw", True))))
+            if path == "/api/ladowania/scal":
+                w = scal_ladowania(bool(j.get("podglad", True)))
+                if not j.get("podglad", True):
+                    po_zmianie()
+                return self.send(200, w)
             if path == "/api/ladowania/synchronizuj":
                 n = synchronizuj_ladowania()
                 po_zmianie()

@@ -258,7 +258,7 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  <div class="kv"><span>Ostatnie sprawdzenie</span><span>${u.stan.sync?new Date(u.stan.sync).toLocaleString("pl-PL"):"–"}</span></div>
  ${u.stan.sync_blad?`<div class="warnbox">${esc(u.stan.sync_blad)}</div>`:""}
  <div class="note">Koszt: kWh z sieci × cena strefy G13 w danej godzinie (ceny z HA), kWh z nadwyżki PV za 0 zł. Druga wycena: „Wartość kWh” z magazynem. Ładowania liczone od ${dzien(u.dane_pradu_od)}; spalanie prądu tylko z baków zaczętych po tej dacie.</div>
- <div class="btns" style="margin-top:8px"><button class="btn sec" type="button" id="sync">Sprawdź ładowania teraz</button></div></div>
+ <div class="btns" style="margin-top:8px"><button class="btn sec" type="button" id="sync">Sprawdź ładowania teraz</button><button class="btn sec" type="button" id="scal">Scal zdublowane ładowania</button></div></div>
  <div class="card"><label class="tog"><input type="checkbox" id="grdni" ${u.grupuj_dni!==false?"checked":""}>Grupuj tankowania i ładowania po dniach (rozwijane)</label></div>
  <div class="card"><div class="mon" style="padding-top:0">Powiadomienia</div>
  <div class="f"><label for="pow">Telefon (usługa notify, np. mobile_app_iphone)</label><input id="pow" value="${esc(u.powiadomienie||"")}" placeholder="puste = powiadomienie w HA"></div>
@@ -271,6 +271,9 @@ async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("us
  document.querySelectorAll("[data-p]").forEach(e=>e.onclick=()=>arkuszPojazd(S.pojazdy.find(p=>p.id==e.dataset.p)));
  $("#sync").onclick=async()=>{try{const r=await post("ladowania/synchronizuj");toast(r.blad?r.blad:(r.dodane?"Nowe ładowania: "+r.dodane:"Brak nowych ładowań"));vWiecej()}catch(e){toast(e.message)}};
  $("#grdni").onchange=async e=>{await post("ustawienia",{grupuj_dni:e.target.checked});toast("Zapisane")};
+ $("#scal").onclick=async()=>{try{const r=await post("ladowania/scal",{podglad:true});if(!r.do_usuniecia){toast("Brak zdublowanych ładowań");return}
+  if(!confirm("Zdublowanych wpisów: "+r.do_usuniecia+" (w "+r.grup+" grupach). W każdej grupie zostaje wpis z największą energią. Kopia bazy zapisze się przed scaleniem. Scalić?"))return;
+  const w=await post("ladowania/scal",{podglad:false});toast("Usunięto dublety: "+w.usuniete);vWiecej()}catch(e){toast(e.message)}};
  $("#powz").onclick=async()=>{await post("ustawienia",{powiadomienie:$("#pow").value.trim(),prog_km:+$("#pkm").value||500});toast("Zapisane")};
  $("#odo").onclick=()=>arkuszOdczyt()}
 

@@ -4,7 +4,7 @@ Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistan
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
 ## Zmiany w 1.5.1
-- Ładowania z liczników: koniec zdublowanych sesji (ta sama sesja zapisywała się kilka razy z różnym początkiem). Początek sesji liczony od przyrostu, nie od brzegu okna historii; sesja kończy się dopiero po 20 min ciszy; nowa sesja nie zapisze się, jeśli zachodzi na już zapisaną. Stare dublety zostają do jednorazowego scalenia.
+- Ładowania z liczników: koniec zdublowanych sesji (ta sama sesja zapisywała się kilka razy z różnym początkiem). Początek sesji liczony od przyrostu, nie od brzegu okna historii; sesja kończy się dopiero po 20 min ciszy; nowa sesja nie zapisze się, jeśli zachodzi na już zapisaną. Stare dublety scalisz przyciskiem „Scal zdublowane ładowania” w Więcej (zostaje wpis z największą energią, przed scaleniem powstaje kopia bazy w /share/pojazdy/kopie).
 
 ## Zmiany w 1.5.0
 - Historia: tankowania i ładowania z jednego dnia (tego samego pojazdu) są w jednym wierszu z sumą (kWh lub l, zł); kliknięcie rozwija pojedyncze wpisy. Wyłączysz to w Więcej → „Grupuj tankowania i ładowania po dniach”.

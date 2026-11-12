@@ -304,6 +304,21 @@ class Serwer(unittest.TestCase):
             b = f.read()
             return json.loads(b) if "json" in f.headers.get("Content-Type", "") else b
 
+    def test_scalanie_dubli(self):
+        sv = srv
+        pid = sv.DB.lista("pojazdy")[0]["id"]
+        for p, k, kwh in [("2026-11-09 06:05", "2026-11-09 07:20", 0.7), ("2026-11-09 06:55", "2026-11-09 07:20", 0.7),
+                          ("2026-11-09 07:05", "2026-11-09 07:20", 0.3), ("2026-11-09 20:00", "2026-11-10 03:25", 8.5)]:
+            sv.DB.dodaj("ladowania", {"pojazd_id": pid, "poczatek": p, "koniec": k, "kwh": kwh, "miejsce": "dom",
+                                      "zrodlo": "auto", "uid": "t:" + p})
+        self.assertEqual(sv.scal_ladowania(True)["do_usuniecia"], 2)
+        sv.scal_ladowania(False)
+        z = [x for x in sv.DB.lista("ladowania", pojazd_id=pid) if x["poczatek"].startswith("2026-11-09 0")]
+        self.assertEqual([x["poczatek"] for x in z], ["2026-11-09 06:05"])
+        self.assertEqual(sv.scal_ladowania(True)["do_usuniecia"], 0)
+        for x in sv.DB.lista("ladowania", pojazd_id=pid):
+            sv.DB.usun("ladowania", x["id"])
+
     def test_telegram_tankowanie(self):
         pr = self.req("api/telegram/propozycja", {"pojazd": "nt1100", "litry": "14,32", "kwota": "88,64", "przebieg": 12340})
         self.assertTrue(pr["ok"])
