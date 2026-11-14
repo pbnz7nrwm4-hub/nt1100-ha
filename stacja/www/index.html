@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stacja ekranu</title>
+<style>
+:root{--bg:#F4F5F7;--card:#FFFFFF;--line:#DDE1E7;--line2:#EEF0F3;--ink:#15191F;--ink2:#2A303A;--mut:#4A5260;--acc:#1D5FD1;--okbg:#E6F4EA;--ok:#12632D;--okdot:#1E8E3E;--bad:#B3261E;--badbg:#FCE8E6;--rec:#C62828;--warnbg:#FFF1DC;--warn:#8A4B00;--dis:#E3E7ED;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#111418;--card:#1B1F25;--line:#2C323B;--line2:#252A31;--ink:#EEF1F5;--ink2:#D5DAE1;--mut:#9AA3B0;--acc:#7EA8F5;--okbg:#173322;--ok:#7FD69A;--okdot:#3DBB63;--bad:#F2A49C;--badbg:#3A1E1C;--rec:#E04B4B;--warnbg:#3A2A12;--warn:#F2C27A;--dis:#2A3038;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 24px 48px;display:flex;flex-direction:column;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between}
+h1{margin:0;font-size:28px;font-weight:700;letter-spacing:-.01em}
+h2{margin:0;font-size:18px;font-weight:700}
+.sub{margin:2px 0 0;font-size:14px;color:var(--mut)}
+.pill{display:flex;align-items:center;gap:10px;border-radius:999px;padding:10px 18px;font-weight:600;font-size:15px;background:var(--dis);color:var(--mut)}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}
+.pill i{width:10px;height:10px;border-radius:50%;background:currentColor;display:block}
+.pill.ok i{background:var(--okdot)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.news{flex-direction:row;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding:16px 20px}
+.news b{font-size:13px;letter-spacing:.06em;color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}
+.hd{display:flex;align-items:center;gap:10px}
+.hd svg{width:22px;height:22px;flex:none}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px}
+.kv span:nth-child(odd){color:var(--mut)}.kv span:nth-child(even){font-weight:600}
+.note{margin:0;font-size:13px;color:var(--mut)}
+button{font:600 16px Inter,system-ui,sans-serif;min-height:52px;border-radius:12px;cursor:pointer;padding:0 18px}
+.b-main{border:0;background:var(--acc);color:#fff}
+.b-rec{border:0;background:var(--rec);color:#fff}
+.b-out{border:2px solid var(--ink);background:var(--card);color:var(--ink)}
+.b-link{border:0;background:none;color:var(--acc);min-height:44px;padding:0;text-align:left;font-size:14px}
+button:disabled{background:var(--dis);color:var(--mut);border:0;cursor:default}
+.tag{margin-left:auto;font-size:12px;font-weight:700;color:var(--warn);background:var(--warnbg);border-radius:999px;padding:4px 10px}
+ol{margin:0;padding-left:20px;font-size:14px;color:var(--ink2);display:flex;flex-direction:column;gap:4px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:640px}
+th{text-align:left;color:var(--mut);font-size:13px;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line2)}
+td.okc{color:var(--ok);font-weight:600}td.badc{color:var(--bad);font-weight:600}
+ul.hist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+ul.hist li{display:flex;gap:12px}ul.hist li span:first-child{color:var(--mut);min-width:110px}
+.list .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line2)}
+.list .row:last-child{border-bottom:0}
+.only-wide{display:block}.only-narrow{display:none}
+select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+.veil{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:9}
+.sheet{background:var(--card);border-radius:16px;max-width:820px;width:100%;max-height:90vh;display:flex;flex-direction:column;gap:12px;padding:18px}
+.sheet textarea{width:100%;flex:1;min-height:50vh;font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+@media(max-width:640px){.wrap{padding:18px 16px 40px;gap:14px}h1{font-size:24px}.card{padding:18px;border-radius:14px}.only-wide{display:none}.only-narrow{display:block}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="note">Ładuję…</p></div>
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const kiedy=s=>{if(!s)return"";const d=s.replace("T"," ");const t=new Date(),dz=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+ return (d.slice(0,10)===dz?"dziś":(+d.slice(8,10))+"."+d.slice(5,7))+" "+d.slice(11,16)};
+const IKO={
+ wgraj:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>',
+ demo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="#C62828" stroke="#C62828"/></svg>',
+ ratuj:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>',
+ mapa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14"/><path d="M15 6v14"/></svg>',
+ logo:'<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--acc)"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M9 18.5h6"/><path d="M12 6.5l3 4h-6z"/></svg>'};
+let D=null,timer=null;
+async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});if(!r.ok)throw new Error("błąd "+r.status);return r.headers.get("Content-Type").includes("json")?r.json():r.text()}
+function hist(h){if(h.co==="wgranie")return h.wynik==="ok"?`Wgrano ${esc(h.wersja)}${h.sekund?" · "+h.sekund+" s":""} · suma zgodna${h.ratunek?" · ratunek":""}`:`Wgranie ${esc(h.wersja)} nieudane (${esc(h.wynik)})`;
+ if(h.co==="budowa")return `Budowa ${esc(h.wersja)} pobrana${h.wynik?" · "+esc(h.wynik):""}${h.commit?" · commit "+esc(h.commit):""}`;
+ if(h.co==="nagranie")return `Demo ${esc(h.wersja||"")} · ${h.minut??"?"} min · restarty ${h.restarty??"?"}`;return esc(h.co)}
+let WYB="";
+function render(){const se=$("#sel");if(se)WYB=se.value;const d=D,naj=d.najnowsza,nag=d.nagrywa,zaj=!!d.zadanie;
+ const aktualna=naj&&d.na_ekranie===naj.wersja;
+ const pill=d.port?`<div class="pill ok"><i></i>Ekran podłączony${d.na_ekranie?" · wersja "+esc(d.na_ekranie):""}</div>`:`<div class="pill"><i></i>Ekran niepodłączony</div>`;
+ const poprz=d.budowy.filter(b=>!naj||b.wersja!==naj.wersja);
+ let news=naj?`Gotowa budowa ${esc(naj.wersja)}${naj.czas?" z "+kiedy(naj.czas):""}${naj.commit?" · commit "+esc(naj.commit):""}.`:"Brak pobranych budów.";
+ if(!d.klucz)news="Brak klucza do repozytorium budów – instrukcja w README stacji (polecenie stacja-klucz).";
+ else if(d.blad_budow)news="Budowy: "+esc(d.blad_budow);
+ const dz=d.dzienniki,ost=dz[0];
+ let h=`<header><div style="display:flex;align-items:center;gap:14px">${IKO.logo}<div><h1>Stacja ekranu</h1><p class="sub">Nawigacja motocykla · kontener „aplikacje” na serwerze</p></div></div>${pill}</header>
+ <section class="card news"><b>CO NOWEGO${naj&&naj.pobrano?" · "+esc(kiedy(naj.pobrano)):""}</b><span>${news}</span><span class="note" style="margin-left:auto">${esc(d.komunikat)}</span></section>
+ <div class="grid">
+ <section class="card" style="order:${window.innerWidth<=640?2:1}"><div class="hd">${IKO.wgraj}<h2>Wgraj</h2></div>
+  <div class="kv"><span>Na ekranie</span><span>${esc(d.na_ekranie||"nieznana")}</span><span>Najnowsza</span><span>${naj?esc(naj.wersja)+" · suma zgodna":"brak"}</span></div>
+  <button type="button" class="${aktualna?"":"b-main"}" id="bw" ${!naj||aktualna||zaj?"disabled":""}>${aktualna?"Ekran ma najnowszą wersję":(naj?"Wgraj "+esc(naj.wersja):"Brak budowy")}</button>
+  ${poprz.length?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label for="sel" class="note">Inna wersja:</label><select id="sel">${poprz.map(b=>`<option ${b.wersja===WYB?"selected":""}>${esc(b.wersja)}</option>`).join("")}</select><button type="button" class="b-link" id="bwp" ${zaj?"disabled":""}>Wgraj wybraną</button></div>`:""}
+  <p class="note">Wgrywa tylko plik ze zgodną sumą. Ustawienia i parowanie telefonu zostają.${d.sprawdzono?" Budowy sprawdzone "+esc(kiedy(d.sprawdzono))+".":""} <button type="button" class="b-link" id="bs" style="min-height:0;font-size:13px">Sprawdź teraz</button></p></section>
+ <section class="card" style="order:${window.innerWidth<=640?1:2}"><div class="hd">${IKO.demo}<h2>Demo</h2></div>
+  <div class="kv">${nag?`<span>Nagrywa</span><span>${Math.floor(nag.sekund/60)} min ${nag.sekund%60} s · ${Math.round(nag.bajty/1024)} KB</span>`:(ost?`<span>Ostatnie</span><span>${esc(kiedy(ost.kiedy))} · ${ost.minut??"?"} min</span><span>Wynik</span><span style="color:${ost.restarty||ost.awarie?"var(--bad)":"var(--ok)"}">${ost.restarty} restartów${ost.awarie?" · awarie "+ost.awarie:""}</span>`:`<span>Ostatnie</span><span>brak</span>`)}</div>
+  <button type="button" class="b-rec" id="bn">${nag?"■ Zatrzymaj nagrywanie":"● Nagrywaj demo"}</button>
+  <p class="note">Zapis rusza od pierwszej sekundy. Zatrzymaj po ok. 10 min, potem „Pokaż Claude” przy dzienniku.</p></section>
+ <section class="card" style="order:3"><div class="hd">${IKO.ratuj}<h2>Ratuj ekran</h2></div>
+  <p style="margin:0;color:var(--ink2)">Gdy ekran restartuje się w kółko albo wgrywanie się przerwało.</p>
+  <ol><li>Kliknij „Ratuj ekran”.</li><li>Przytrzymaj RESET ok. 2 s, aż zielona dioda szybko miga.</li><li>Stacja sama czeka na ekran (do 90 s) i wgrywa ostatnią dobrze wgraną wersję.</li></ol>
+  <button type="button" class="b-out" id="br" ${zaj?"disabled":""}>Ratuj ekran</button></section>
+ <section class="card" style="order:4"><div class="hd">${IKO.mapa}<h2>Mapa</h2><span class="tag">fala 2</span></div>
+  <p class="note">Wynik synchronizacji mapy i pełna mapa na nową kartę. Ruszy po 3 udanych wgraniach i 3 nagraniach przez stację (teraz ${d.fala2.wgran} i ${d.fala2.nagran}).</p></section>
+ </div>
+ <section class="card"><div class="hd" style="flex-wrap:wrap"><h2>Budowa</h2><span class="tag" style="margin-left:0">fala 2</span><span>${naj?`Ostatnia: ${esc(naj.wersja)}${naj.wynik?" · wynik "+esc(naj.wynik):""}${naj.czas?" · "+esc(kiedy(naj.czas)):""}${naj.commit?" · commit "+esc(naj.commit):""}`:"Brak budów"}</span></div>
+  <p class="note">Przycisk „Buduj z gałęzi” dojdzie w fali 2. Na razie budowa jak dotąd, przez „buduj” w czacie.</p></section>
+ <section class="card"><h2>Dzienniki</h2>
+  <div class="tbl only-wide"><table><thead><tr><th>Kiedy</th><th>Wersja</th><th>Czas</th><th>Restarty</th><th>Klatki/min</th><th>RAM min</th><th></th></tr></thead><tbody>
+  ${dz.map(x=>`<tr><td>${esc(kiedy(x.kiedy))}</td><td style="font-weight:600">${esc(x.wersja||"?")}</td><td>${x.minut??"?"} min</td><td class="${x.restarty||x.awarie?"badc":"okc"}">${x.restarty}${x.awarie?" · awarie "+x.awarie:""}</td><td>${x.klatki_min?x.klatki_min[0]+"–"+x.klatki_min[1]:"–"}</td><td>${x.ram_min_kb!=null?x.ram_min_kb+" KB":"–"}</td><td style="text-align:right;white-space:nowrap"><a href="d/${encodeURIComponent(x.plik)}" target="_blank" rel="noopener">Plik</a> · <button type="button" class="b-link" data-cl="${esc(x.plik)}" style="min-height:0">Pokaż Claude</button></td></tr>`).join("")||`<tr><td colspan="7" class="note">Brak dzienników.</td></tr>`}
+  </tbody></table></div>
+  <div class="list only-narrow">${dz.map(x=>`<div class="row"><div><div style="font-weight:600">Demo ${esc(kiedy(x.kiedy))}</div><div class="note">${esc(x.wersja||"?")} · ${x.minut??"?"} min · ${x.restarty||x.awarie?`<span style="color:var(--bad)">restarty ${x.restarty}${x.awarie?", awarie "+x.awarie:""}</span>`:"bez błędów"}</div></div><button type="button" class="b-link" data-cl="${esc(x.plik)}">Pokaż Claude</button></div>`).join("")||'<p class="note">Brak dzienników.</p>'}</div>
+  <p class="note">„Pokaż Claude” otwiera podsumowanie z błędami i końcówką dziennika do skopiowania do czatu.</p></section>
+ <section class="card"><h2>Historia</h2><ul class="hist">${d.historia.map(x=>`<li><span>${esc(kiedy(x.ts))}</span><span>${hist(x)}</span></li>`).join("")||'<li class="note">Pusto.</li>'}</ul></section>
+ <p class="note">Strona działa tylko w sieci domowej. Klucze podpisu nigdy tu nie trafiają. Stacja ${esc(d.wersja_stacji)}.</p>`;
+ $("#app").innerHTML=h;
+ const on=(id,f)=>{const e=$(id);if(e)e.onclick=f};
+ on("#bw",()=>akcja("api/wgraj",{}));on("#bwp",()=>akcja("api/wgraj",{wersja:$("#sel").value}));on("#br",()=>akcja("api/ratuj",{}));
+ on("#bn",()=>akcja(nag?"api/stop":"api/nagrywaj",{}));on("#bs",()=>akcja("api/sprawdz",{}));
+ document.querySelectorAll("[data-cl]").forEach(b=>b.onclick=()=>pokazClaude(b.dataset.cl))}
+async function akcja(p,b){try{await api(p,b)}catch(e){alert(e.message)}odswiez()}
+async function pokazClaude(plik){const t=await api("claude/"+encodeURIComponent(plik));const v=document.createElement("div");v.className="veil";
+ v.innerHTML=`<div class="sheet" role="dialog" aria-label="Dziennik dla Claude"><div class="hd"><h2>Dziennik dla Claude</h2><span style="flex:1"></span><button type="button" class="b-main" id="kop">Kopiuj</button><button type="button" class="b-out" id="zam">Zamknij</button></div><textarea readonly></textarea><p class="note">Skopiuj i wklej w wątku Tab5.</p></div>`;
+ v.querySelector("textarea").value=t;document.body.appendChild(v);
+ v.querySelector("#zam").onclick=()=>v.remove();v.onclick=e=>{if(e.target===v)v.remove()};
+ v.querySelector("#kop").onclick=()=>{const a=v.querySelector("textarea");a.focus();a.select();let ok=false;try{ok=document.execCommand("copy")}catch(e){}v.querySelector("#kop").textContent=ok?"Skopiowane":"Zaznaczone – skopiuj"}}
+async function odswiez(){clearTimeout(timer);try{D=await api("api/stan");if(!document.querySelector(".veil"))render()}catch(e){$("#app").innerHTML=`<p class="note">Stacja nie odpowiada: ${esc(e.message)}</p>`}
+ timer=setTimeout(odswiez,D&&(D.nagrywa||D.zadanie)?2000:15000)}
+odswiez();
+</script>
+</body>
+</html>
