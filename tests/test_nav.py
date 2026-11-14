@@ -39,6 +39,28 @@ spec = importlib.util.spec_from_file_location("server", SERVER)
 srv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(srv)
 import nav  # noqa: E402
+
+
+# Testy nie wychodzą do internetu (Open-Meteo, Photon, TomTom, Google): na CI wolna odpowiedź
+# trzymała zapytanie do lokalnego serwera ponad 20 s i 9 testów kończyło się limitem czasu (14.11).
+# Zapytania poza 127.0.0.1/localhost od razu dostają błąd sieci; kod łapie go jak brak internetu.
+_URLOPEN = urllib.request.urlopen
+
+
+def _tylko_lokalnie(req, *a, **k):
+    url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise urllib.error.URLError("testy bez internetu: " + host)
+    return _URLOPEN(req, *a, **k)
+
+
+def setUpModule():
+    urllib.request.urlopen = _tylko_lokalnie
+
+
+def tearDownModule():
+    urllib.request.urlopen = _URLOPEN
 import ntt  # noqa: E402
 
 _ms = importlib.util.spec_from_file_location("mapa_serwer", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "silnik-tras", "mapa-serwer.py"))
