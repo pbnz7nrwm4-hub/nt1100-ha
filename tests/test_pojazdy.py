@@ -2,6 +2,8 @@
 import importlib
 import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -550,6 +552,104 @@ class Serwer(unittest.TestCase):
         finally:
             srv.PEERS.clear()
             srv.PEERS.update(old)
+
+
+
+class Kontener(unittest.TestCase):
+    """1.8.0: aplikacja samodzielna (kontener) + dodatek-pośrednik w HA – dwa prawdziwe procesy."""
+
+    def _start(self, env):
+        e = dict(os.environ, PJ_PORT="0", PJ_PETLA="0", SUPERVISOR_TOKEN="", **env)
+        for k in ("PJ_HA_URL", "PJ_KLUCZ", "PJ_LAN", "PJ_APLIKACJA", "PJ_HA_TOKEN"):
+            if k not in env:
+                e.pop(k, None)
+        p = subprocess.Popen([sys.executable, "-u", os.path.join(POJ, "server.py")], env=e, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+        self.addCleanup(lambda: (p.kill(), p.wait(), p.stdout.close()))
+        linia = p.stdout.readline()
+        port = int(re.search(r"porcie (\d+)", linia).group(1))
+        threading.Thread(target=lambda: [None for _ in p.stdout], daemon=True).start()
+        return "http://127.0.0.1:%d/" % port, linia
+
+    def _req(self, url, body=None, headers=None):
+        r = urllib.request.Request(url, data=None if body is None else json.dumps(body).encode(),
+                                   method="POST" if body is not None else "GET",
+                                   headers=dict({"Content-Type": "application/json"}, **(headers or {})))
+        with urllib.request.urlopen(r, timeout=10) as f:
+            b = f.read()
+            return json.loads(b) if "json" in f.headers.get("Content-Type", "") else b
+
+    def test_przenosiny_i_posrednik(self):
+        import baza as bz
+        kat = tempfile.mkdtemp(prefix="pojazdy-kontener-")
+        a_dane, b_dane = os.path.join(kat, "app"), os.path.join(kat, "dodatek")
+        os.makedirs(a_dane)
+        os.makedirs(b_dane)
+        # dodatek ma już dane (jak u użytkownika przed przenosinami)
+        stara = bz.Baza(os.path.join(b_dane, "pojazdy.db"))
+        nt = [p for p in stara.lista("pojazdy") if p["klucz"] == "nt1100"][0]["id"]
+        stara.dodaj("tankowania", {"pojazd_id": nt, "data": "2026-11-01 10:00", "przebieg": 1000, "litry": 15, "cena_l": 6, "kwota": 90})
+        stara.ustaw("telegram_chat", "123")
+        stara.db.close()
+        app, linia = self._start({"PJ_DATA": a_dane, "PJ_SHARE": a_dane, "PJ_HA_URL": "http://127.0.0.1:9", "PJ_KLUCZ": "sekret"})
+        self.assertIn("aplikacja samodzielna", linia)
+        # bez klucza nic; z kluczem pusta aplikacja
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self._req(app + "api/pojazdy")
+        self.assertEqual(e.exception.code, 403)
+        self.assertTrue(self._req(app + "api/przenosiny", headers={"X-Pojazdy-Klucz": "sekret"})["pusta"])
+        with open(os.path.join(b_dane, "options.json"), "w") as f:
+            json.dump({"adres_aplikacji": app.rstrip("/"), "klucz_aplikacji": "sekret", "token_ha": "tok-123"}, f)
+        dod, linia = self._start({"PJ_DATA": b_dane, "PJ_SHARE": b_dane, "PJ_PEERS": "127.0.0.1"})
+        self.assertIn("pośrednik", linia)
+        # dodatek sam przenosi bazę i token; panel przez dodatek pokazuje dane z aplikacji
+        for _ in range(50):
+            st = self._req(app + "api/przenosiny", headers={"X-Pojazdy-Klucz": "sekret"})
+            if not st["pusta"] and st["token"]:
+                break
+            threading.Event().wait(0.2)
+        self.assertFalse(st["pusta"])
+        self.assertTrue(st["token"])
+        with open(os.path.join(a_dane, "ha_token")) as f:
+            self.assertEqual(f.read(), "tok-123")
+        self.assertEqual(os.stat(os.path.join(a_dane, "ha_token")).st_mode & 0o777, 0o600)
+        self.assertIn(b"Pojazdy", self._req(dod))
+        h = self._req(dod + "api/historia?pojazd=%d" % nt)
+        self.assertEqual([x["litry"] for x in h if x["typ"] == "tankowanie"], [15])
+        self.assertEqual(self._req(dod + "api/ustawienia")["telegram_chat"], "123")
+        # zapis przez pośrednika trafia do aplikacji, nie do starej bazy dodatku
+        self._req(dod + "api/koszty", {"pojazd_id": nt, "kategoria": "Serwis", "tytul": "Olej", "kwota": 300, "data": "2026-11-10"})
+        h2 = self._req(app + "api/historia?pojazd=%d" % nt, headers={"X-Pojazdy-Klucz": "sekret"})
+        self.assertTrue(any(x["typ"] == "koszt" and x["kwota"] == 300 for x in h2))
+        stara = bz.Baza(os.path.join(b_dane, "pojazdy.db"))
+        self.assertEqual(stara.lista("koszty"), [])
+        stara.db.close()
+        # aplikacja z danymi nie da się nadpisać
+        r = urllib.request.Request(app + "api/przenosiny", data=b"SQLite format 3\x00", method="POST",
+                                   headers={"X-Pojazdy-Klucz": "sekret"})
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(r, timeout=10)
+        self.assertEqual(e.exception.code, 409)
+
+    def test_lan_i_adres_ha(self):
+        kat = tempfile.mkdtemp(prefix="pojazdy-lan-")
+        app, _ = self._start({"PJ_DATA": kat, "PJ_SHARE": kat, "PJ_HA_URL": "http://127.0.0.1:9", "PJ_KLUCZ": "sekret", "PJ_LAN": "1"})
+        self.assertEqual(len(self._req(app + "api/pojazdy")), 2)  # panel w sieci domowej bez klucza
+        with self.assertRaises(urllib.error.HTTPError) as e:  # przenosiny zawsze z kluczem
+            self._req(app + "api/przenosiny")
+        self.assertEqual(e.exception.code, 403)
+        # w dodatku adresy HA idą przez Supervisora (bez zmian)
+        self.assertEqual(srv.ha_adres("/core/api/states/x"), "http://supervisor/core/api/states/x")
+
+    def test_posrednik_bez_aplikacji(self):
+        kat = tempfile.mkdtemp(prefix="pojazdy-brak-")
+        with open(os.path.join(kat, "options.json"), "w") as f:
+            json.dump({"adres_aplikacji": "http://127.0.0.1:9", "klucz_aplikacji": "x"}, f)
+        dod, _ = self._start({"PJ_DATA": kat, "PJ_SHARE": kat, "PJ_PEERS": "127.0.0.1"})
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self._req(dod + "api/start")
+        self.assertEqual(e.exception.code, 502)
+        self.assertIn("nie odpowiada", json.loads(e.exception.read())["blad"])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,37 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.8.0
+- **Pojazdy mogą działać w kontenerze na serwerze domowym**, a dodatek w Home Assistant zostaje jako pośrednik panelu
+  (ten sam wzór co NT1100 Jazdy i silnik tras). Panel otwierasz jak dotąd z menu HA, także poza domem.
+  Dopóki pole „Adres aplikacji w kontenerze” w konfiguracji dodatku jest puste, nic się nie zmienia.
+- Opis przenosin: sekcja „Pojazdy w kontenerze” niżej.
+
+## Pojazdy w kontenerze
+
+1. W kontenerze (Debian) jako root: `bash instaluj.sh http://ADRES_HOME_ASSISTANT:8123 8091`
+   (plik `pojazdy/kontener/instaluj.sh`). Instalator pobiera kod z repozytorium do `/opt/pojazdy`, zakłada usługę
+   `pojazdy` (osobny użytkownik, dane w `/var/lib/pojazdy`), włącza sprawdzanie aktualizacji co godzinę
+   i wypisuje adres oraz klucz aplikacji.
+2. W Home Assistant utwórz token długoterminowy (profil użytkownika → Bezpieczeństwo → Tokeny długoterminowe).
+3. Ustawienia → Dodatki → Pojazdy → Konfiguracja: wpisz adres aplikacji, klucz aplikacji i token, zapisz,
+   uruchom dodatek ponownie.
+4. Dodatek sam wysyła do aplikacji token i swoją bazę (tylko gdy aplikacja jest pusta, nigdy nie nadpisuje danych).
+   Od tej chwili liczy, powiadamia i wystawia czujniki aplikacja w kontenerze; dodatek tylko przekazuje panel
+   i wywołania Telegrama.
+
+Co warto wiedzieć:
+- Aktualizacje aplikacji przychodzą same (co godzinę z gałęzi main). Dodatek w HA aktualizujesz jak dotąd, ale po
+  przenosinach zmienia się w nim już tylko pośrednik.
+- Panel działa też bezpośrednio w sieci domowej pod adresem aplikacji, nawet gdy HA nie działa (bez nowych ładowań
+  i czujników). Wyłączysz to, ustawiając `PJ_LAN=0` w `/etc/pojazdy.env`.
+- Klucz aplikacji i token HA są tylko w kontenerze (`/etc/pojazdy.env`, `/var/lib/pojazdy/ha_token`) i w konfiguracji
+  dodatku, nie w repozytorium i nie w bazie.
+- Kopie: co noc do `/var/lib/pojazdy/kopie` (30 ostatnich) oraz kopia całego kontenera.
+- Powrót: wyczyść „Adres aplikacji w kontenerze” i uruchom dodatek ponownie. Dodatek wraca do własnej bazy
+  z dnia przenosin; nowsze wpisy trzeba przenieść plikiem z `/var/lib/pojazdy/kopie`.
+- Gdy kontener nie odpowiada, panel pokazuje komunikat „Pojazdy nie odpowiadają”.
+
 ## Zmiany w 1.7.0
 - **Polisy OC/AC z ratami.** Terminy → „+ Polisa”: pojazd, zakres (OC, OC + AC, AC…), od–do, składka, liczba rat
   (raty rozkładają się same co 12/n miesięcy, daty i kwoty można poprawić), ubezpieczyciel, numer. Karta polisy pokazuje,

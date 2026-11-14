@@ -1,5 +1,5 @@
 name: Pojazdy
-version: "1.7.0"
+version: "1.8.0"
 slug: pojazdy
 description: Tankowania, ładowania, koszty, terminy i polisy pojazdów (jak Fuelio) – ładowania auta wpisują się same z Home Assistant
 arch:
@@ -17,5 +17,11 @@ hassio_api: true
 map:
   - type: share
     read_only: false
-options: {}
-schema: {}
+options:
+  adres_aplikacji: ""
+  klucz_aplikacji: ""
+  token_ha: ""
+schema:
+  adres_aplikacji: "str?"
+  klucz_aplikacji: "password?"
+  token_ha: "password?"
