@@ -37,7 +37,7 @@ PJ_SHARE=$DANE
 PJ_PORT=$PORT
 PJ_HA_URL=$HA
 PJ_KLUCZ=$KLUCZ
-PJ_LAN=1
+PJ_LAN=0
 TZ=Europe/Warsaw
 EOT
 chown root:pojazdy "$ENV"; chmod 640 "$ENV"
@@ -75,7 +75,7 @@ git fetch -q --depth 1 origin main
 git reset -q --hard origin/main
 PO=\$(git rev-parse HEAD:pojazdy)
 if [ "\$PRZED" != "\$PO" ]; then
-  python3 -m py_compile pojazdy/server.py pojazdy/baza.py pojazdy/obliczenia.py pojazdy/ladowania.py pojazdy/fuelio.py
+  python3 -m py_compile pojazdy/*.py
   systemctl restart pojazdy
   echo "Pojazdy zaktualizowane: \$(sed -n 's/^version: //p' pojazdy/config.yaml)"
 fi

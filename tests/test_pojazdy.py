@@ -555,6 +555,136 @@ class Serwer(unittest.TestCase):
 
 
 
+class Opony(unittest.TestCase):
+    def test_km_w_dniu_dokladny_i_liniowo(self):
+        import opony as op
+        pts = op.punkty([{"data": "2026-04-01 10:00", "przebieg": 1000}, {"data": "2026-04-11 10:00", "przebieg": 2000}],
+                        [], [{"data": "2026-05-01", "przebieg": 3000, "zrodlo": "telemetria"}])
+        a = op.km_w_dniu(pts, "2026-04-01")
+        self.assertTrue(a["dokladny"])
+        self.assertEqual(a["km"], 1000)
+        b = op.km_w_dniu(pts, "2026-04-06")
+        self.assertFalse(b["dokladny"])
+        self.assertEqual(b["km"], 1500)
+        self.assertIn("tankowanie", b["opis"])
+        self.assertIn("telemetria", op.km_w_dniu(pts, "2026-05-01")["opis"])
+
+    def test_sezony_i_bieznik(self):
+        import opony as op
+        pts = op.punkty([{"data": "2025-11-01", "przebieg": 10000}, {"data": "2026-04-01", "przebieg": 17000},
+                         {"data": "2026-11-01", "przebieg": 29000}], [], [])
+        wym = [{"id": 1, "data": "2025-11-01", "os": "komplet", "opona_id": 7, "bieznik_zakl": 6.1},
+               {"id": 2, "data": "2026-04-01", "os": "komplet", "opona_id": 8, "zdjeta_id": 7, "bieznik_zdjm": 5.4},
+               {"id": 3, "data": "2026-11-01", "os": "komplet", "opona_id": 7, "zdjeta_id": 8}]
+        z = op.sezony(wym, 7, pts, "2026-11-14", 29300)
+        self.assertEqual([x["km"] for x in z], [7000, 300])
+        self.assertIsNone(z[-1]["do"])
+        l = op.sezony(wym, 8, pts, "2026-11-14", 29300)
+        self.assertEqual(l[0]["km"], 12000)
+        pom = op.pomiary_bieznika(wym, 7)
+        self.assertEqual(pom, [("2025-11-01", 6.1), ("2026-04-01", 5.4)])
+        zu = op.zuzycie_bieznika(z, pom, "zimowe", 7000)
+        self.assertAlmostEqual(zu["mm_na_1000"], 0.1, places=3)
+        self.assertEqual(zu["minimum"], 4.0)
+        self.assertEqual(zu["km_zostalo"], 14000)
+        self.assertEqual(zu["sezonow_zostalo"], 2.0)
+
+    def test_podpowiedz(self):
+        import opony as op
+        zimno = [("2026-11-1%d" % i, 4.0) for i in range(5)]
+        self.assertEqual(op.podpowiedz_wymiany("letnie", zimno, {"zimowe"})["na"], "zimowe")
+        self.assertIsNone(op.podpowiedz_wymiany("zimowe", zimno, {"letnie"}))
+        self.assertIsNone(op.podpowiedz_wymiany("letnie", zimno, set()))  # brak zimówek w garażu
+        cieplo = [("2026-04-0%d" % i, 9.0) for i in range(1, 8)]
+        self.assertEqual(op.podpowiedz_wymiany("zimowe", cieplo, {"letnie"})["na"], "letnie")
+        self.assertIsNone(op.podpowiedz_wymiany("zimowe", cieplo[:5], {"letnie"}))
+
+
+class Prognoza(unittest.TestCase):
+    def test_paliwo_rok_temu_i_raty(self):
+        import prognoza as pg
+        dzis = date(2026, 11, 14)
+        # rok temu: grudzień 2025 stał (0 km), maj 2026 1000 km; koszt 0,5 zł/km
+        t = [tank("2025-11-20", 10000, 10, 5), tank("2026-01-05", 10000, 10, 5), tank("2026-05-01", 10000, 10, 5),
+             tank("2026-05-31", 10900, 90, 5), tank("2026-06-01", 11000, 10, 5), tank("2026-11-10", 12000, 0, 5)]
+        pol = [{"nazwa": "OC", "do": "2027-08-10", "skladka": 600, "raty": [
+            {"termin": "2026-12-15", "kwota": 300, "zaplacono": None}, {"termin": "2026-06-15", "kwota": 300, "zaplacono": "2026-06-10"}]}]
+        p = {"nazwa": "Moto"}
+        w = pg.prognoza_pojazdu(p, t, [], [], [], pol, [], [{"data": "2026-04-03", "koszt": 120, "zdjeta_id": 5}, {"data": "2026-04-12", "koszt": None}], dzis, 12000)
+        self.assertEqual(list(w["miesiace"])[0], "2026-12")
+        self.assertEqual(len(w["miesiace"]), 12)
+        self.assertEqual(w["miesiace"]["2026-12"]["paliwo"], 0)  # rok temu w grudniu stał
+        self.assertEqual(w["miesiace"]["2026-12"]["polisy"], 300)
+        self.assertGreater(w["miesiace"]["2027-05"]["paliwo"], 0)
+        self.assertEqual(w["miesiace"]["2027-04"]["serwis"], 120)
+        self.assertEqual(w["pewne"], 300)
+        nowe = [x for x in w["pozycje"] if x["tytul"].startswith("nowa polisa")]
+        self.assertEqual(len(nowe), 1)
+        self.assertEqual(nowe[0]["data"], "2027-08-11")
+        self.assertFalse(nowe[0]["pewne"])
+
+
+class OponyAPI(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = srv.uruchom()
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = "http://127.0.0.1:%d/" % cls.srv.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def req(self, path, body=None):
+        data = None if body is None else json.dumps(body).encode()
+        r = urllib.request.Request(self.url + path, data=data, method="POST" if data is not None else "GET",
+                                   headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(r) as f:
+            return json.loads(f.read())
+
+    def test_wymiany_i_prognoza(self):
+        ecl = srv.pojazd_po_kluczu("eclipse")["id"]
+        nt = srv.pojazd_po_kluczu("nt1100")["id"]
+        srv.DB.dodaj("odczyty", {"pojazd_id": ecl, "data": "2025-10-28", "przebieg": 40000})
+        srv.DB.dodaj("odczyty", {"pojazd_id": ecl, "data": "2026-04-03", "przebieg": 46900})
+        srv.DB.dodaj("odczyty", {"pojazd_id": ecl, "data": "2026-11-10", "przebieg": 58000})
+        z = self.req("api/opony", {"pojazd_id": ecl, "rodzaj": "zimowe", "nazwa": "Testowe zimowe", "rozmiar": "225/55 R18"})["id"]
+        self.req("api/wymiany_opon", {"pojazd_id": ecl, "data": "2025-10-28", "opona_id": z, "bieznik_zakl": "6,1"})
+        w = self.req("api/wymiany_opon", {"pojazd_id": ecl, "data": "2026-04-02", "nowy": {"rodzaj": "letnie"}, "koszt": 120})["id"]
+        self.req("api/wymiany_opon", {"pojazd_id": ecl, "data": "2026-11-06", "opona_id": z, "bieznik_zdjm": 4.5})
+        e = [x for x in self.req("api/opony") if x["pojazd_id"] == ecl][0]
+        zim = [x for x in e["komplety"] if x["id"] == z][0]
+        self.assertTrue(zim["zalozony"])
+        self.assertEqual(len(zim["sezony"]), 2)
+        self.assertTrue(zim["przyblizony"])  # 2.04 bez odczytu: liczone między 28.10 a 3.04
+        let = [x for x in e["komplety"] if x["id"] != z][0]
+        self.assertEqual(let["rodzaj"], "letnie")
+        self.assertFalse(let["zalozony"])
+        self.assertEqual(self.req("api/wymiany_opon/%d" % w)["zdjeta_id"], z)
+        k = srv.DB.lista("koszty", uid="opony:wymiana:%d" % w)
+        self.assertEqual(len(k), 1)
+        self.assertEqual(k[0]["kategoria"], "Opony")
+        # motocykl: przód i tył osobno
+        pr = self.req("api/opony", {"pojazd_id": nt, "os": "przod"})["id"]
+        ty = self.req("api/opony", {"pojazd_id": nt, "os": "tyl"})["id"]
+        self.req("api/wymiany_opon", {"pojazd_id": nt, "data": "2026-04-12", "opona_id": pr, "os": "przod"})
+        self.req("api/wymiany_opon", {"pojazd_id": nt, "data": "2026-04-12", "opona_id": ty, "os": "tyl"})
+        n = [x for x in self.req("api/opony") if x["pojazd_id"] == nt][0]
+        self.assertEqual(n["osie"], ["przod", "tyl"])
+        self.assertTrue(all(x["zalozony"] for x in n["komplety"]))
+        p = self.req("api/prognoza")
+        self.assertEqual(len(p["miesiace"]), 12)
+        self.assertIn("pozycje", p)
+        self.assertTrue(any(x[0] == "sensor.pojazdy_prognoza_12m" for x in srv.czujniki()))
+        self.req("api/opony/%d/usun" % z, {})
+        self.assertEqual(srv.DB.lista("wymiany_opon", opona_id=z), [])
+        for x in srv.DB.lista("opony"):
+            srv.usun_komplet(x["id"])
+        for o in srv.DB.lista("odczyty"):
+            srv.DB.usun("odczyty", o["id"])
+        self.assertEqual(srv.DB.lista("koszty", uid="opony:wymiana:%d" % w), [])
+
+
 class Kontener(unittest.TestCase):
     """1.8.0: aplikacja samodzielna (kontener) + dodatek-pośrednik w HA – dwa prawdziwe procesy."""
 

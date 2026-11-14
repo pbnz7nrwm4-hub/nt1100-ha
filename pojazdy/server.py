@@ -26,8 +26,10 @@ import baza as bz  # noqa: E402
 import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
+import opony as op  # noqa: E402
+import prognoza as pg  # noqa: E402
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -109,6 +111,7 @@ DOMYSLNE = {
     "powiadomienie": "",
     "telegram_chat": "",  # numer czatu Telegram (tylko tutaj, nie w repo); puste = bez Telegrama
     "prog_km": 500,
+    "temperatura_dwor": "sensor.temperatura_na_dworze_pomiar",  # termometr w cieniu – podpowiedź o wymianie opon
     "kategorie": ["Serwis", "Eksploatacja", "Ubezpieczenie", "Przegląd", "Opony", "Rejestracja", "Parking",
                   "Myjnia", "Opłaty za przejazd", "Mandaty", "Akcesoria", "Inne"],
 }
@@ -754,6 +757,211 @@ def polisy_krotko(lst):
              "wznowi_sie": x["stan"]["wznowi_sie"], "dni_do_konca": x["stan"]["dni_do_konca"]} for x in lst]
 
 
+# ---------------------------------------------------------------- opony
+
+def _liczba(v):
+    return None if v in (None, "") else float(str(v).replace(",", "."))
+
+
+def osie_pojazdu(p):
+    return ["przod", "tyl"] if p.get("rodzaj") == "motocykl" else ["komplet"]
+
+
+def opony_pojazdu(p, dzis=None):
+    """Komplety pojazdu z sezonami, przebiegiem, bieżnikiem i tym, co teraz jest na pojeździe."""
+    dzis = dzis or teraz_lok().date()
+    t, l, k, o = dane_pojazdu(p["id"])
+    pts = op.punkty(t, k, o, l)
+    km_teraz = ob.przebieg_teraz(ob.przebiegi(t, k, o, l))
+    wym = DB.lista("wymiany_opon", pojazd_id=p["id"])
+    na = {}
+    for w in wym:
+        na[w.get("os") or "komplet"] = w["opona_id"]
+    out = []
+    for x in DB.lista("opony", pojazd_id=p["id"]):
+        sez = op.sezony(wym, x["id"], pts, dzis.isoformat(), km_teraz)
+        zalozony = x["id"] in na.values()
+        km = sum(s["km"] or 0 for s in sez)
+        zamk = [s for s in sez if s["do"] and s["km"] is not None]
+        biez = sez[-1] if sez and not sez[-1]["do"] and zalozony else None
+        pom = op.pomiary_bieznika(wym, x["id"])
+        sr = (sum(s["km"] for s in zamk) / len(zamk)) if zamk else None
+        out.append(dict(x, sezony=list(reversed(sez)), km=round(km), przyblizony=any(not s["dokladny"] for s in sez),
+                        zalozony=zalozony, na_osi=[a for a, b in na.items() if b == x["id"]],
+                        km_sezonu=biez["km"] if biez else None, od=biez["od"] if biez else None,
+                        ostatni_sezon=zamk[-1] if zamk else None, zdjety=(sez[-1]["do"] if sez and not zalozony else None),
+                        sezonow=len(sez), bieznik=pom, zuzycie=op.zuzycie_bieznika(sez, pom, x.get("rodzaj"), sr),
+                        rodzaj_nazwa=op.RODZAJE.get(x.get("rodzaj"), x.get("rodzaj")), os_nazwa=op.OSIE.get(x.get("os"), x.get("os"))))
+    out.sort(key=lambda x: (bool(x.get("zuzyty")), not x["zalozony"], x["id"]))
+    return {"pojazd_id": p["id"], "pojazd": p["nazwa"], "rodzaj": p.get("rodzaj"), "osie": osie_pojazdu(p), "komplety": out,
+            "wymiany": list(reversed(wym)), "podpowiedz": (STAN.get("opony_podp") or {}).get(str(p["id"]))}
+
+
+def zapisz_komplet(j, id_=None):
+    d = {k: j[k] for k in ("pojazd_id", "nazwa", "rodzaj", "os", "rozmiar", "dot", "zuzyty", "notatka") if k in j}
+    for k in ("rodzaj", "os"):
+        if d.get(k) in (None, ""):
+            d.pop(k, None)
+    if "pojazd_id" in d:
+        d["pojazd_id"] = int(d["pojazd_id"])
+    if "zuzyty" in d:
+        d["zuzyty"] = 1 if d["zuzyty"] in (1, True, "1") else 0
+    if "rodzaj" in d and d["rodzaj"] not in op.RODZAJE:
+        raise ValueError("nieznany rodzaj opon")
+    if "os" in d and d["os"] not in op.OSIE:
+        raise ValueError("nieznana oś")
+    if id_:
+        if not DB.jeden("opony", id_):
+            raise KeyError("nie ma kompletu")
+        DB.zmien("opony", id_, d)
+        return id_
+    if not d.get("pojazd_id"):
+        raise ValueError("wybierz pojazd")
+    p = DB.jeden("pojazdy", d["pojazd_id"]) or {}
+    d.setdefault("os", osie_pojazdu(p)[0] if len(osie_pojazdu(p)) == 1 else "przod")
+    d.setdefault("rodzaj", "opony" if p.get("rodzaj") == "motocykl" else "zimowe")
+    return DB.dodaj("opony", d)
+
+
+def zapisz_wymiane(j, id_=None):
+    """Wymiana opon: data (wymagana), co zakładam (komplet albo nowy), opcjonalnie przebieg, bieżnik i koszt.
+    Zdejmowany komplet to ten, który był na tej osi przed datą wymiany. Koszt trafia do kosztów („Opony”)."""
+    stara = DB.jeden("wymiany_opon", id_) if id_ else None
+    if id_ and not stara:
+        raise KeyError("nie ma wymiany")
+    pid = int(j.get("pojazd_id") or (stara or {}).get("pojazd_id") or 0)
+    p = DB.jeden("pojazdy", pid)
+    if not p:
+        raise ValueError("wybierz pojazd")
+    data = str(j.get("data") or (stara or {}).get("data") or "")[:10]
+    if not data:
+        raise ValueError("podaj datę wymiany")
+    ob.d10(data)
+    oid = j.get("opona_id") or (stara or {}).get("opona_id")
+    if j.get("nowy"):
+        n = j["nowy"]
+        oid = zapisz_komplet({"pojazd_id": pid, "nazwa": n.get("nazwa") or "", "rodzaj": n.get("rodzaj") or None,
+                              "os": j.get("os") or None, "rozmiar": n.get("rozmiar")})
+    if not oid:
+        raise ValueError("wybierz komplet albo dodaj nowy")
+    oid = int(oid)
+    kom = DB.jeden("opony", oid)
+    if not kom or kom["pojazd_id"] != pid:
+        raise ValueError("ten komplet jest z innego pojazdu")
+    os_ = j.get("os") or kom.get("os") or "komplet"
+    if os_ not in osie_pojazdu(p):
+        os_ = osie_pojazdu(p)[0]
+    zdj = None
+    for w in DB.lista("wymiany_opon", pojazd_id=pid):
+        if w["id"] != id_ and (w.get("os") or "komplet") == os_ and w["data"] <= data:
+            zdj = w["opona_id"]
+    if zdj == oid:
+        zdj = None
+    d = {"pojazd_id": pid, "data": data, "os": os_, "opona_id": oid, "zdjeta_id": zdj,
+         "przebieg": _liczba(j.get("przebieg")), "bieznik_zakl": _liczba(j.get("bieznik_zakl")),
+         "bieznik_zdjm": _liczba(j.get("bieznik_zdjm")), "koszt": _liczba(j.get("koszt")), "notatka": j.get("notatka")}
+    if id_:
+        DB.zmien("wymiany_opon", id_, d)
+    else:
+        id_ = DB.dodaj("wymiany_opon", d)
+    w = DB.jeden("wymiany_opon", id_)
+    uid = "opony:wymiana:%d" % id_
+    for k in DB.lista("koszty", uid=uid):
+        DB.usun("koszty", k["id"])
+    kid = None
+    if w.get("koszt"):
+        kid = DB.dodaj("koszty", {"pojazd_id": pid, "data": data, "przebieg": w.get("przebieg"), "kategoria": "Opony",
+                                  "tytul": "Wymiana opon – %s" % (kom.get("nazwa") or op.RODZAJE.get(kom.get("rodzaj"), "opony")),
+                                  "kwota": w["koszt"], "zrodlo": "opony", "uid": uid})
+    DB.zmien("wymiany_opon", id_, {"koszt_id": kid})
+    return id_
+
+
+def usun_wymiane(id_):
+    for k in DB.lista("koszty", uid="opony:wymiana:%d" % id_):
+        DB.usun("koszty", k["id"])
+    DB.usun("wymiany_opon", id_)
+
+
+def usun_komplet(id_):
+    for w in DB.lista("wymiany_opon"):
+        if w["opona_id"] == id_:
+            usun_wymiane(w["id"])
+    DB.usun("opony", id_)
+
+
+def temperatury_dobowe(dni=8):
+    enc = ust("temperatura_dwor")
+    if not enc or not TOKEN:
+        return []
+    teraz = datetime.now(timezone.utc)
+    h = ha_historia([enc], teraz - timedelta(days=dni + 1), teraz).get(enc) or []
+    for s in h:
+        try:
+            s["lok"] = ld.lok(datetime.fromisoformat(str(s.get("last_changed")).replace("Z", "+00:00"))).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            pass
+    return op.srednie_dobowe(h, teraz_lok().date().isoformat())
+
+
+def powiadomienia_opon():
+    """Podpowiedź o wymianie opon z termometru na dworze (auta z kompletami zimowe/letnie). Raz na sezon."""
+    podp = {}
+    auta = []
+    for p in DB.lista("pojazdy"):
+        if not p.get("aktywny", 1) or p.get("rodzaj") == "motocykl":
+            continue
+        kom = [x for x in DB.lista("opony", pojazd_id=p["id"]) if not x.get("zuzyty")]
+        wym = DB.lista("wymiany_opon", pojazd_id=p["id"])
+        if not wym or len(kom) < 2:
+            continue
+        auta.append((p, kom, wym))
+    if not auta:
+        STAN["opony_podp"] = {}
+        return
+    dobowe = temperatury_dobowe()
+    for p, kom, wym in auta:
+        na = DB.jeden("opony", wym[-1]["opona_id"]) or {}
+        garaz = {x.get("rodzaj") for x in kom if x["id"] != na.get("id")}
+        x = op.podpowiedz_wymiany(na.get("rodzaj"), dobowe, garaz)
+        if not x:
+            continue
+        podp[str(p["id"])] = x
+        znak = "%s:%s" % (x["na"], teraz_lok().strftime("%Y"))
+        klucz = "opony_powiadomiono_%d" % p["id"]
+        if DB.ust(klucz) == znak:
+            continue
+        DB.ustaw(klucz, znak)
+        if x["na"] == "zimowe":
+            tr = "Od %d dni średnia temperatura na dworze jest poniżej 7 °C (%s °C), a auto ma letnie." % (x["dni"], str(x["srednia"]).replace(".", ","))
+        else:
+            tr = "Od %d dni średnia powyżej 7 °C (%s °C). Przy okazji zmierz bieżnik zimówek." % (x["dni"], str(x["srednia"]).replace(".", ","))
+        powiadom("%s: pora na %s?" % (p["nazwa"], x["na"]), tr + " To podpowiedź, nie termin.", "pojazdy_opony_%d" % p["id"])
+    STAN["opony_podp"] = podp
+
+
+# ---------------------------------------------------------------- prognoza kosztów
+
+def prognoza_pojazdu(p, dzis=None):
+    dzis = dzis or teraz_lok().date()
+    t, l, k, o = dane_pojazdu(p["id"])
+    km, _ = przebieg_pojazdu(p, t, k, o, l)
+    pol = [x for x in polisy_pojazdu(p, wszystkie=True) if not x.get("odnowiona")]
+    return pg.prognoza_pojazdu(p, t, l, k, o, pol, DB.lista("terminy", pojazd_id=p["id"]),
+                               DB.lista("wymiany_opon", pojazd_id=p["id"]), dzis, km)
+
+
+def prognoza(pid=None):
+    poj = [p for p in DB.lista("pojazdy") if p.get("aktywny", 1)]
+    if pid not in (None, "", "wszystkie"):
+        poj = [p for p in poj if str(p["id"]) == str(pid)]
+    per = [prognoza_pojazdu(p) for p in poj]
+    out = pg.razem(per) if len(per) != 1 else dict(per[0])
+    out["pojazdy"] = [{"nazwa": p["nazwa"], "razem": x["razem"]} for p, x in zip(poj, per)]
+    out["okno"] = pg.miesiace_okna(teraz_lok().date())
+    return out
+
+
 # ---------------------------------------------------------------- czujniki w HA
 
 def slug(s):
@@ -817,6 +1025,15 @@ def czujniki():
                         "nastepna_kwota": x["nastepna"]["kwota"] if x["nastepna"] else None,
                         "wznowi_sie": x["wznowi_sie"]} for x in pol],
             "panel": panel_url()})
+    try:
+        pr = prognoza()
+        out.append(("sensor.pojazdy_prognoza_12m", pr["razem"], {
+            "friendly_name": "Pojazdy prognoza kosztów 12 mies.", "unit_of_measurement": "zł", "icon": "mdi:chart-timeline-variant",
+            "srednio_miesiecznie": round(pr["razem"] / 12, 2), "pewne": pr["pewne"],
+            "miesiace": {k: v["razem"] for k, v in pr["miesiace"].items()},
+            "pojazdy": pr["pojazdy"], "panel": panel_url()}))
+    except Exception as e:
+        log("Prognoza:", e)
     return out
 
 
@@ -948,7 +1165,8 @@ def petla():
             time.sleep(10)
     ostatnia_kopia = DB.ust("kopia_ostatnia") or ""
     while True:
-        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, uzupelnij_soc, powiadomienia_terminow, powiadomienia_polis, publikuj):
+        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, uzupelnij_soc, powiadomienia_terminow,
+                     powiadomienia_polis, powiadomienia_opon, publikuj):
             try:
                 krok()
             except Exception as e:
@@ -1080,7 +1298,7 @@ def import_ladowan_z_auta(pid, lad):
 
 # ---------------------------------------------------------------- przenosiny do kontenera i pośrednik
 
-TABELE_DANYCH = ("tankowania", "ladowania", "koszty", "terminy", "polisy")
+TABELE_DANYCH = ("tankowania", "ladowania", "koszty", "terminy", "polisy", "opony")
 
 
 def pusta():
@@ -1428,6 +1646,14 @@ class Strona(BaseHTTPRequestHandler):
             if m:
                 p = DB.jeden("polisy", int(m.group(1)))
                 return self.send(200 if p else 404, polisa_pelna(p) if p else {"blad": "nie ma"})
+            if path == "/api/opony":
+                return self.send(200, [opony_pojazdu(p) for p in DB.lista("pojazdy") if p.get("aktywny", 1)])
+            if path == "/api/prognoza":
+                return self.send(200, prognoza(q.get("pojazd")))
+            m = re.match(r"^/api/(opony|wymiany_opon)/(\d+)$", path)
+            if m:
+                w = DB.jeden(m.group(1), int(m.group(2)))
+                return self.send(200 if w else 404, w or {"blad": "nie ma"})
             if path == "/api/przenosiny":
                 return self.send(200, {"pusta": pusta(), "wersja": VERSION, "token": bool(TOKEN), "samodzielna": SAMODZIELNA})
             if path == "/api/pojazdy":
@@ -1532,6 +1758,16 @@ class Strona(BaseHTTPRequestHandler):
                     nid = odnow_polise(id_)
                 else:
                     nid = zapisz_polise(j, id_)
+                po_zmianie()
+                return self.send(200, {"ok": True, "id": nid})
+            m = re.match(r"^/api/(opony|wymiany_opon)(?:/(\d+)(/usun)?)?$", path)
+            if m:
+                tab, id_ = m.group(1), int(m.group(2)) if m.group(2) else None
+                if m.group(3):
+                    (usun_komplet if tab == "opony" else usun_wymiane)(id_)
+                    nid = None
+                else:
+                    nid = (zapisz_komplet if tab == "opony" else zapisz_wymiane)(j, id_)
                 po_zmianie()
                 return self.send(200, {"ok": True, "id": nid})
             m = re.match(r"^/api/raty/(\d+)/zaplac$", path)

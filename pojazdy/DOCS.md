@@ -3,6 +3,21 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.9.0
+- **Opony** (Terminy → Opony): komplety (zimowe, letnie, całoroczne; w motocyklu przód i tył osobno) i tylko daty
+  wymian. Przebieg każdego kompletu liczy się sam z odczytów licznika (tankowania, koszty, telemetria, ręczne odczyty).
+  Gdy w dniu wymiany nie ma odczytu, przebieg jest liczony między najbliższymi odczytami i oznaczony „≈”.
+  Bieżnik wpisujesz przy wymianie, jeśli chcesz: po dwóch pomiarach widać zużycie na 1000 km i ile zostało
+  do 4 mm (zimowe, zalecenie poradników) albo 1,6 mm (minimum prawne). Koszt wymiany trafia do kosztów („Opony”).
+- **Podpowiedź o wymianie** z termometru na dworze (`sensor.temperatura_na_dworze_pomiar`): 3 dni średnio poniżej
+  7 °C, a auto ma letnie (albo 7 dni powyżej, a ma zimowe). Próg 7 °C to zalecenie PZPO, dlatego to podpowiedź,
+  a nie termin. Raz na sezon, w telefonie i w Telegramie.
+- **Prognoza kosztów na 12 miesięcy** (Statystyki → Prognoza, dla jednego pojazdu albo obu): raty polis (pewne),
+  paliwo i prąd (zł/km z ostatnich 12 miesięcy × km z tego samego miesiąca rok temu), nowa polisa po końcu obecnej,
+  terminy i wymiany opon według ostatniego kosztu. Czujnik `sensor.pojazdy_prognoza_12m`.
+- Panel aplikacji w kontenerze otwiera się tylko przez HA (`PJ_LAN=0`, decyzja z 14.11).
+- Budowa dodatku bez `build.yaml` (HA go wycofuje): obraz bazowy w Dockerfile.
+
 ## Zmiany w 1.8.0
 - **Pojazdy mogą działać w kontenerze na serwerze domowym**, a dodatek w Home Assistant zostaje jako pośrednik panelu
   (ten sam wzór co NT1100 Jazdy i silnik tras). Panel otwierasz jak dotąd z menu HA, także poza domem.
@@ -25,8 +40,8 @@ Fuelio, ale ładowania auta z wtyczką wpisują się same.
 Co warto wiedzieć:
 - Aktualizacje aplikacji przychodzą same (co godzinę z gałęzi main). Dodatek w HA aktualizujesz jak dotąd, ale po
   przenosinach zmienia się w nim już tylko pośrednik.
-- Panel działa też bezpośrednio w sieci domowej pod adresem aplikacji, nawet gdy HA nie działa (bez nowych ładowań
-  i czujników). Wyłączysz to, ustawiając `PJ_LAN=0` w `/etc/pojazdy.env`.
+- Panel otwiera się tylko przez HA (`PJ_LAN=0` w `/etc/pojazdy.env`). Bezpośredni dostęp z sieci domowej, także
+  gdy HA nie działa, włączysz wpisem `PJ_LAN=1` i `systemctl restart pojazdy`.
 - Klucz aplikacji i token HA są tylko w kontenerze (`/etc/pojazdy.env`, `/var/lib/pojazdy/ha_token`) i w konfiguracji
   dodatku, nie w repozytorium i nie w bazie.
 - Kopie: co noc do `/var/lib/pojazdy/kopie` (30 ostatnich) oraz kopia całego kontenera.
@@ -161,6 +176,8 @@ net‑meteringu. Każde automatyczne ładowanie można otworzyć, poprawić kosz
 Dodatek wystawia czujniki (co 10 minut i po każdej zmianie), dla każdego pojazdu:
 `sensor.pojazdy_<pojazd>_spalanie`, `_koszt_100km`, `_koszt_miesiac`, `_przebieg`, `_terminy`, `_polisa`
 (stan = liczba pilnych terminów, atrybuty: lista terminów), dla aut z wtyczką także `_zuzycie_pradu`.
+Wspólny dla wszystkich pojazdów: `sensor.pojazdy_prognoza_12m` (zł na najbliższe 12 miesięcy, atrybuty: miesiące,
+średnio miesięcznie, część pewna, podział na pojazdy).
 Można je dodać do dowolnego pulpitu.
 
 Dodatek NT1100 Jazdy (od 1.5.27) czyta terminy motocykla z `sensor.pojazdy_nt1100_terminy`: pokazuje
