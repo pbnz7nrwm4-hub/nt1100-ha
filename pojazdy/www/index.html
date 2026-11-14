@@ -226,20 +226,24 @@ function wykresMiesiace(m,ev=true){const k=Object.keys(m);if(!k.length)return `<
  k.forEach((a,i)=>{const cx=L+gap*i+(gap-bw)/2;let b=0;for(const[kk,kol] of [["paliwo","var(--acc2)"],["prad","var(--ev)"],["inne","var(--acc)"]]){const v=m[a][kk];if(v>0){s+=`<rect x="${cx}" y="${y(b+v)}" width="${bw}" height="${y(b)-y(b+v)}" fill="${kol}"><title>${MIESD[+a.slice(5)-1]}: ${kk} ${zl(v)}</title></rect>`;b+=v}}
   if(k.length<=12||i%2===0)s+=`<text x="${cx}" y="${H-6}">${MIES[+a.slice(5)-1]}</text>`});
  return s+`</svg><div class="leg"><span><i style="background:var(--acc2)"></i>paliwo</span>${ev?'<span><i style="background:var(--ev)"></i>prąd</span>':""}<span><i style="background:var(--acc)"></i>serwis, OC, inne</span></div>`}
+function segStat(wsz){const o=wsz?[["koszty","Koszty"],["prognoza","Prognoza"]]:[["spalanie","Spalanie"],["koszty","Koszty"],["prognoza","Prognoza"]];
+ return `<div class="seg">${o.map(([k,n])=>`<button type="button" data-w="${k}" class="${S.sWid===k||(wsz&&k==="koszty"&&S.sWid!=="prognoza")?"on":""}">${n}</button>`).join("")}</div>`}
 async function vStat(){$("#tytul").textContent="Statystyki";
  if(S.sPoj==null&&S.pojazdy.length)S.sPoj=String(S.pojazdy[0].id);
  $("#topx").innerHTML=`<select class="pick" id="sp">${S.pojazdy.map(p=>`<option value="${p.id}" ${String(S.sPoj)===String(p.id)?"selected":""}>${esc(p.nazwa)}</option>`).join("")}<option value="wszystkie" ${S.sPoj==="wszystkie"?"selected":""}>Wszystkie</option></select>`;
  $("#sp").onchange=e=>{S.sPoj=e.target.value;zapamietaj();vStat()};
  const d=await api(`statystyki?pojazd=${S.sPoj}&okres=${S.sOkres}`);
- let h=`<div class="seg">${[["miesiac","Miesiąc"],["rok","Rok"],["12m","12 mies."],["calosc","Całość"]].map(([k,n])=>`<button type="button" data-ok="${k}" class="${S.sOkres===k?"on":""}">${n}</button>`).join("")}</div>`;
+ let h=S.sWid==="prognoza"?"":`<div class="seg">${[["miesiac","Miesiąc"],["rok","Rok"],["12m","12 mies."],["calosc","Całość"]].map(([k,n])=>`<button type="button" data-ok="${k}" class="${S.sOkres===k?"on":""}">${n}</button>`).join("")}</div>`;
  const p=d.pojazd;
- if(!p){const s=d.podsumowanie;h+=`<div class="card"><div class="row"><span class="mut">Razem</span><span class="sp"></span><span class="big">${zl(s.razem)}</span></div><div class="mut sm">${s.zl_km!=null?nf(s.zl_km,2)+" zł/km · ":""}${nf(s.km,0)} km</div></div>
+ if(!p&&S.sWid==="prognoza"){h+=segStat(true)+await widokPrognozy("wszystkie")}
+ else if(!p){const s=d.podsumowanie;h+=segStat(true)+`<div class="card"><div class="row"><span class="mut">Razem</span><span class="sp"></span><span class="big">${zl(s.razem)}</span></div><div class="mut sm">${s.zl_km!=null?nf(s.zl_km,2)+" zł/km · ":""}${nf(s.km,0)} km</div></div>
   <div class="card"><div class="row sm" style="margin-bottom:6px"><b>Miesięcznie</b><span class="sp"></span><span class="mut">zł</span></div>${wykresMiesiace(d.miesiace)}</div>
   <div class="card">${d.pojazdy.map(x=>`<div class="kv"><span>${esc(x.nazwa)}</span><span>${zl(x.razem)}${x.zl_km!=null?" · "+nf(x.zl_km,2)+" zł/km":""}</span></div>`).join("")}</div>`}
  else{const s=d.srednie,ev=zPradem(p),po=d.podsumowanie;
   h+=`<div class="stats" style="margin-top:0"><div class="stat"><div class="v fuel">${nf(s.l100)}</div><div class="l">l/100 km</div></div>${ev?`<div class="stat"><div class="v ev">${zakres(s)}</div><div class="l">kWh/100 km</div></div>`:`<div class="stat"><div class="v">${nf(s.km,0)}</div><div class="l">km (pełne baki)</div></div>`}<div class="stat"><div class="v">${nf(s.zl100)}</div><div class="l">zł/100 km</div></div></div>`;
-  h+=`<div class="seg">${[["spalanie","Spalanie"],["koszty","Koszty"]].map(([k,n])=>`<button type="button" data-w="${k}" class="${S.sWid===k?"on":""}">${n}</button>`).join("")}</div>`;
-  if(S.sWid==="spalanie"){h+=`<div class="card"><div class="row sm"><b>Spalanie między pełnymi bakami</b><span class="sp"></span><span class="mut">l/100 km</span></div>${wykresLinia(d.odcinki.map(o=>({v:o.l100,d:o.do})),"var(--acc2)","Spalanie")}</div>`;
+  h+=segStat(false);
+  if(S.sWid==="prognoza")h+=await widokPrognozy(p.id);
+  else{if(S.sWid==="spalanie"){h+=`<div class="card"><div class="row sm"><b>Spalanie między pełnymi bakami</b><span class="sp"></span><span class="mut">l/100 km</span></div>${wykresLinia(d.odcinki.map(o=>({v:o.l100,d:o.do})),"var(--acc2)","Spalanie")}</div>`;
    if(ev)h+=`<div class="card"><div class="row sm"><b>Prąd między tankowaniami</b><span class="sp"></span><span class="mut">kWh/100 km</span></div>${wykresLinia(d.odcinki.filter(o=>o.kwh>0).map(o=>({v:o.kwh100,d:o.do})),"var(--ev)","Zużycie prądu")}</div>`}
   else h+=`<div class="card"><div class="row sm" style="margin-bottom:6px"><b>Miesięcznie</b><span class="sp"></span><span class="mut">zł</span></div>${wykresMiesiace(d.miesiace,ev)}</div>`;
   h+=`<div class="card"><div class="kv"><span>Przejechane</span><span>${nf(po.km,0)} km</span></div><div class="kv"><span>${ev?"Paliwo · prąd · inne":"Paliwo · inne"}</span><span>${nf(po.paliwo,0)}${ev?" · "+nf(po.prad,0):""} · ${nf(po.inne,0)} zł</span></div><div class="kv"><span>Razem</span><span>${zl(po.razem)}${po.zl_km!=null?" · "+nf(po.zl_km,2)+" zł/km":""}</span></div><div class="kv"><span>Zatankowano</span><span>${nf(po.litry,1)} l w ${po.tankowan} tankowaniach</span></div>`;
@@ -249,7 +253,7 @@ async function vStat(){$("#tytul").textContent="Statystyki";
   const kat=Object.entries(d.kategorie||{});if(kat.length)h+=`<div class="card"><b class="sm">Inne koszty</b>${kat.sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="kv"><span>${esc(k)}</span><span>${zl(v,2)}</span></div>`).join("")}</div>`;
   if(ev&&s.kwh100==null&&d.odcinki.length)h+=`<div class="note">Zużycie prądu policzę od pierwszego baku zatankowanego do pełna po ${dzien(d.prad_od||"")}: wtedy HA ma już wszystkie ładowania między tankowaniami. Wcześniejsze baki liczą tylko paliwo.</div>`;
   if(ev&&d.odcinki.some(o=>o.skorygowano))h+=`<div class="note">Część baków skorygowana o stan baterii przy tankowaniu (zaczęte z naładowaną, skończone z rozładowaną i odwrotnie).</div>`;
-  if(!d.odcinki.length)h+=`<div class="note">Spalanie liczę metodą „od pełnego do pełnego”, jak Fuelio: potrzebne są co najmniej dwa tankowania do pełna z przebiegiem.</div>`}
+  if(!d.odcinki.length)h+=`<div class="note">Spalanie liczę metodą „od pełnego do pełnego”, jak Fuelio: potrzebne są co najmniej dwa tankowania do pełna z przebiegiem.</div>`}}
  $("#main").innerHTML=h;
  document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=()=>{S.sOkres=b.dataset.ok;zapamietaj();vStat()});
  document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{S.sWid=b.dataset.w;zapamietaj();vStat()})}
@@ -257,11 +261,12 @@ async function vStat(){$("#tytul").textContent="Statystyki";
 /* ---------- TERMINY */
 async function vTerminy(){$("#tytul").textContent="Terminy";$("#topx").innerHTML=`<button type="button" class="chip acc" id="pdodt" style="border:0;cursor:pointer;margin-right:6px">+ Polisa</button><button type="button" class="chip acc" id="tdod" style="border:0;cursor:pointer">+ Termin</button>`;
  $("#tdod").onclick=()=>arkuszTermin();$("#pdodt").onclick=()=>arkuszPolisa();
- const [lst,pol]=await Promise.all([api("terminy"),api("polisy?wszystkie=1")]);
+ const [lst,pol,opo]=await Promise.all([api("terminy"),api("polisy?wszystkie=1"),api("opony")]);S.opony=opo;
  const bie=pol.filter(x=>x.biezaca),daw=pol.filter(x=>!x.biezaca);
  let h=`<div class="mon">Polisy</div>`;
  h+=bie.map(kartaPolisy).join("")||`<div class="card empty" style="padding:14px">Brak polisy. „+ Polisa” – podaj okres, składkę i raty, a przypomnę o ratach i o końcu ważności.</div>`;
  if(daw.length)h+=`<details class="card"><summary class="mut sm" style="cursor:pointer">Wcześniejsze polisy (${daw.length})</summary>${daw.map(kartaPolisy).join("")}</details>`;
+ h+=sekcjaOpon(opo);
  h+=`<div class="mon">Serwis i inne</div><div class="card list">`;
  for(const t of lst){const kol=t.po_terminie?"var(--bad)":(t.pilne?"var(--warn)":"var(--acc)");
   const co=[t.co_km?"co "+nf(t.co_km,0)+" km":"",t.co_mies?(t.co_mies%12===0?"co "+(t.co_mies/12===1?"rok":t.co_mies/12+" lata"):"co "+t.co_mies+" mies."):""].filter(Boolean).join(" lub ");
@@ -269,7 +274,97 @@ async function vTerminy(){$("#tytul").textContent="Terminy";$("#topx").innerHTML
   h+=`<div class="it" data-tid="${t.id}"><div class="dot c">!</div><div class="sp"><div class="t">${esc(t.nazwa)} · ${esc(t.pojazd)}</div><div class="mut sm">${kiedy||"ustaw datę lub przebieg"}${co?" · "+co:""}</div>${t.postep!=null?`<div class="prog"><b style="width:${Math.round(t.postep*100)}%;background:${kol}"></b></div>`:""}</div>${chipTerm(t)}</div>`}
  if(!lst.length)h+=`<div class="empty">Brak terminów. Dodaj przegląd, serwis albo wymianę oleju – przypomnę o nich w telefonie.</div>`;
  h+=`</div><div class="note">Polisy: przypomnienie o racie 14, 7 i 1 dzień przed, w dniu terminu i co 3 dni po terminie, aż ją odhaczysz; o końcu ważności 30, 14 i 1 dzień przed. Zapłacona rata trafia do kosztów sama.<br>Terminy: przypomnienie 30, 7 i 1 dzień przed albo 500 i 100 km przed przebiegiem. Po „Zrobione” termin przesuwa się sam o okres, a koszt trafia do historii.</div>`;
- $("#main").innerHTML=h;document.querySelectorAll("[data-tid]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.tid));podepnijPolisy()}
+ $("#main").innerHTML=h;document.querySelectorAll("[data-tid]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.tid));podepnijPolisy();podepnijOpony()}
+
+/* ---------- OPONY */
+const RODZ=[["zimowe","zimowe"],["letnie","letnie"],["caloroczne","całoroczne"],["opony","opony"]];
+const OSN={komplet:"komplet",przod:"przód",tyl:"tył"};
+const ok_=(x)=>(x.przyblizony?"≈ ":"");
+function nazwaKompletu(x){return [x.rodzaj_nazwa,x.nazwa,x.rozmiar].filter(Boolean).join(" · ")}
+function chipKompletu(x){if(x.zuzyty)return `<span class="chip">zużyty</span>`;if(x.zalozony)return `<span class="chip ok">${x.na_osi.includes("komplet")?"na pojeździe":"założona"} od ${dzien(x.od)}</span>`;
+ return `<span class="chip">${x.zdjety?"w garażu, zdjęte "+dzien(x.zdjety):"nie założony"}</span>`}
+function kartaKompletu(x,moto){const b=x.bieznik.length?x.bieznik[x.bieznik.length-1]:null;
+ return `<div class="card" data-opo="${x.id}" style="cursor:pointer"><div class="row"><div class="dot c">${moto?(x.os==="tyl"?"T":"P"):"O"}</div><div class="sp"><div style="font-weight:700">${esc(moto?OSN[x.os]+(x.nazwa?" · "+x.nazwa:""):nazwaKompletu(x))}</div><div class="mut sm">${x.sezonow?x.sezonow+" "+(x.sezonow===1?"sezon":(x.sezonow<5?"sezony":"sezonów")):"bez wymian"}${x.dot?" · DOT "+esc(x.dot):""}</div></div>${chipKompletu(x)}</div>
+ <div class="stats"><div class="stat"><div class="v">${x.sezonow?ok_(x)+nf(x.km,0):"–"}</div><div class="l">km łącznie</div></div>
+ <div class="stat"><div class="v">${x.zalozony?nf(x.km_sezonu,0):(x.ostatni_sezon?nf(x.ostatni_sezon.km,0):"–")}</div><div class="l">${x.zalozony?"km w tym sezonie":"km ostatni sezon"}</div></div>
+ <div class="stat"><div class="v">${b?nf(b[1],1)+" mm":"–"}</div><div class="l">${b?"bieżnik "+dzien(b[0]):"bieżnik"}</div></div></div></div>`}
+function sekcjaOpon(lst){let h=`<div class="mon">Opony</div>`;
+ for(const p of lst){const moto=p.rodzaj==="motocykl";
+  if(p.podpowiedz)h+=`<div class="card row banner" data-wym="${p.pojazd_id}"><span class="chip warn">podpowiedź</span><span class="sp">${esc(p.pojazd)}: pora na ${esc(p.podpowiedz.na)}? Średnio ${nf(p.podpowiedz.srednia,1)} °C od ${p.podpowiedz.dni} dni.</span></div>`;
+  const kom=p.komplety.filter(x=>!x.zuzyty),zuz=p.komplety.filter(x=>x.zuzyty);
+  if(!kom.length){h+=`<div class="card row"><span class="sp mut sm">${esc(p.pojazd)}: brak kompletów opon.</span><button type="button" class="chip acc" data-nkom="${p.pojazd_id}" style="border:0;cursor:pointer">+ Komplet</button></div>`;continue}
+  h+=`<div class="row sm" style="margin-top:2px"><b>${esc(p.pojazd)}</b>${moto?'<span class="mut">&nbsp;· przód i tył osobno</span>':""}<span class="sp"></span><button type="button" class="chip acc" data-nkom="${p.pojazd_id}" style="border:0;cursor:pointer">+ Komplet</button></div>`;
+  h+=kom.map(x=>kartaKompletu(x,moto)).join("");
+  if(zuz.length)h+=`<details class="card"><summary class="mut sm" style="cursor:pointer">Zużyte komplety (${zuz.length})</summary>${zuz.map(x=>kartaKompletu(x,moto)).join("")}</details>`;
+  h+=`<button type="button" class="btn sec" data-wym="${p.pojazd_id}">Wymiana opon · ${esc(p.pojazd)}</button>`}
+ return h+`<div class="note">Wpisujesz tylko datę wymiany. Przebieg każdego kompletu liczy się sam z odczytów licznika (tankowania, przeglądy, telemetria, ręczne odczyty). „≈” znaczy, że w dniu wymiany nie było odczytu i przebieg jest liczony między najbliższymi.</div>`}
+function podepnijOpony(){document.querySelectorAll("[data-opo]").forEach(e=>e.onclick=()=>arkuszKompletWidok(+e.dataset.opo));
+ document.querySelectorAll("[data-nkom]").forEach(e=>e.onclick=ev=>{ev.stopPropagation();arkuszKomplet({pojazd_id:+e.dataset.nkom})});
+ document.querySelectorAll("[data-wym]").forEach(e=>e.onclick=()=>arkuszWymiana({pojazd_id:+e.dataset.wym}))}
+const opPoj=pid=>(S.opony||[]).find(p=>p.pojazd_id===pid)||{komplety:[],wymiany:[],osie:["komplet"]};
+const kompletPo=id=>{for(const p of S.opony||[])for(const x of p.komplety)if(x.id===id)return [x,p];return [null,null]};
+async function arkuszKompletWidok(id){if(!S.opony)S.opony=await api("opony");const [x,p]=kompletPo(id);if(!x)return;const moto=p.rodzaj==="motocykl";
+ const sez=x.sezony.map(s=>`<div class="it" style="cursor:default"><div class="sp"><div class="t">${s.do?"sezon":"na pojeździe"} ${dzien(s.od)} – ${s.do?dzien(s.do):"teraz"}</div><div class="mut xs">${esc(s.opis_od)} → ${esc(s.opis_do)}</div></div><div class="r">${s.km==null?"–":(s.dokladny?"":"≈ ")+nf(s.km,0)+" km"}</div></div>`).join("")||`<div class="note">Brak wymian. Dodaj datę założenia przez „Wymiana opon”.</div>`;
+ const z=x.zuzycie;let bz=x.bieznik.map(b=>`<div class="kv"><span>${dataPL(b[0])}</span><span>${nf(b[1],1)} mm</span></div>`).join("");
+ if(z&&z.mm_na_1000)bz+=`<div class="note">Spadek ${nf(z.mm_od-z.mm_do,1)} mm na ok. ${nf(z.km,0)} km (${nf(z.mm_na_1000,2)} mm na 1000 km). Do ${nf(z.minimum,1)} mm (${esc(z.minimum_zrodlo)}) zostało ok. ${nf(z.km_zostalo,0)} km${z.sezonow_zostalo!=null?", czyli ok. "+nf(z.sezonow_zostalo,1)+" sezonu":""} (prognoza liniowa).</div>`;
+ else if(x.bieznik.length===1)bz+=`<div class="note">Zużycie policzę po drugim pomiarze (wpisz bieżnik przy następnej wymianie).</div>`;
+ arkusz(moto?esc(p.pojazd)+" · "+OSN[x.os]:esc(p.pojazd)+" · "+nazwaKompletu(x),`<div class="card"><div class="kv"><span>Przejechane łącznie</span><span>${ok_(x)}${nf(x.km,0)} km</span></div>${x.rozmiar?`<div class="kv"><span>Rozmiar</span><span>${esc(x.rozmiar)}</span></div>`:""}${x.dot?`<div class="kv"><span>DOT</span><span>${esc(x.dot)}</span></div>`:""}</div>
+ <div class="mon">Sezony (z dat wymian)</div><div class="card list">${sez}</div>
+ <div class="mon">Bieżnik (opcjonalnie)</div><div class="card">${bz||'<div class="note">Brak pomiarów. Bieżnik wpiszesz przy wymianie, jeśli chcesz.</div>'}</div>
+ <div class="note">Dokumenty (faktura za opony) pojawią się tu z bazy dokumentów na Macu, gdy będzie gotowa.</div>
+ <button type="button" class="btn sec" id="edk">Edytuj komplet</button>${x.sezony.length?`<div class="mon">Wymiany tego kompletu</div><div class="card list">${x.sezony.map(s=>`<div class="it" data-ew="${s.wymiana_id}"><div class="sp"><div class="t">Założony ${dataPL(s.od)}</div></div><div class="r mut sm">edytuj</div></div>`).join("")}</div>`:""}`,null,(v,zamknij)=>{
+ v.querySelector("#edk").onclick=()=>{zamknij();arkuszKomplet(x)};
+ v.querySelectorAll("[data-ew]").forEach(e=>e.onclick=()=>{const w=(p.wymiany||[]).find(y=>y.id===+e.dataset.ew);zamknij();arkuszWymiana(w)})})}
+function arkuszKomplet(x){x=x||{};const p=S.pojazdy.find(q=>q.id===x.pojazd_id)||{};const moto=p.rodzaj==="motocykl";
+ arkusz(x.id?"Edytuj komplet":"Nowy komplet",`${wybor("pojazd_id","Pojazd",pojOpts(),x.pojazd_id)}
+ <div class="two">${wybor("rodzaj","Rodzaj",RODZ,x.rodzaj||(moto?"opony":"zimowe"))}${moto?wybor("os","Oś",[["przod","przód"],["tyl","tył"]],x.os||"przod"):`<input type="hidden" id="os" value="komplet">`}</div>
+ ${pole("nazwa","Marka i model (opcjonalnie)",x.nazwa,{ph:"np. Michelin Alpin 6"})}
+ <div class="two">${pole("rozmiar","Rozmiar",x.rozmiar,{ph:"np. 225/55 R18"})}${pole("dot","DOT (rok)",x.dot,{ph:"np. 2023"})}</div>
+ <label class="tog"><input type="checkbox" id="zuzyty" ${x.zuzyty?"checked":""}> Zużyty (zostaje w historii)</label>
+ ${pole("notatka","Notatka",x.notatka)}${x.id?`<button type="button" class="btn del" data-usunkom="${x.id}">Usuń komplet (i jego wymiany)</button>`:""}`,
+ async v=>{const d={};for(const k of ["pojazd_id","rodzaj","os","nazwa","rozmiar","dot","notatka"])d[k]=val(v,k)||null;d.zuzyty=val(v,"zuzyty");
+  await post("opony"+(x.id?"/"+x.id:""),d);toast("Zapisane")},
+ (v,zamknij)=>{const b=v.querySelector("[data-usunkom]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno? Usunie też wymiany i ich koszty. Dotknij jeszcze raz";return}await post("opony/"+x.id+"/usun");zamknij();toast("Usunięte");pokaz()}}})}
+async function arkuszWymiana(x){x=x||{};if(!S.opony)S.opony=await api("opony");let pid=x.pojazd_id||(S.pojazdy.find(p=>p.aktywny)||{}).id;
+ const v=arkusz(x.id?"Edytuj wymianę":"Wymiana opon",`<div id="wbd"></div>`,async v=>{const d={pojazd_id:val(v,"wp"),os:val(v,"wos"),data:val(v,"wd"),przebieg:val(v,"wk"),koszt:val(v,"wkw"),bieznik_zdjm:val(v,"wbz"),bieznik_zakl:val(v,"wbn"),notatka:val(v,"wn")||null};
+  const o=val(v,"wo");if(o==="nowy")d.nowy={rodzaj:val(v,"wnr"),nazwa:val(v,"wnn")||"",rozmiar:val(v,"wns")||null};else d.opona_id=o;
+  if(!d.data){toast("Podaj datę");return false}await post("wymiany_opon"+(x.id?"/"+x.id:""),d);toast("Zapisane, przebiegi przeliczone")},
+ (v,zamknij)=>{const b=v.querySelector("[data-usunw]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno usunąć wymianę? Dotknij jeszcze raz";return}await post("wymiany_opon/"+x.id+"/usun");zamknij();toast("Usunięte");pokaz()}}});
+ const rys=(os)=>{const op=opPoj(+pid),moto=op.rodzaj==="motocykl";os=os||x.os||op.osie[0];
+  const kom=op.komplety.filter(k=>!k.zuzyty&&k.os===os||k.id===x.opona_id);
+  const na=kom.find(k=>k.zalozony&&k.na_osi.includes(os));
+  const dom=x.opona_id||((kom.find(k=>!k.zalozony)||{}).id)||"nowy";
+  v.querySelector("#wbd").innerHTML=`${wybor("wp","Pojazd",pojOpts(),pid)}${moto?wybor("wos","Oś",[["przod","przód"],["tyl","tył"]],os):`<input type="hidden" id="wos" value="komplet">`}
+  ${wybor("wo","Zakładam",kom.map(k=>[k.id,(moto?OSN[k.os]+(k.nazwa?" · "+k.nazwa:""):nazwaKompletu(k))+(k.zalozony?" (teraz na pojeździe)":"")]).concat([["nowy","+ nowy komplet"]]),dom)}
+  <div id="wnowy" class="two">${wybor("wnr","Rodzaj nowego",RODZ,moto?"opony":"zimowe")}${pole("wnn","Marka i model","",{ph:"opcjonalnie"})}</div><div id="wnowy2">${pole("wns","Rozmiar","",{ph:"opcjonalnie"})}</div>
+  ${na&&!x.id?`<div class="note">Zdejmuję: ${esc(moto?OSN[na.os]:nazwaKompletu(na))}.</div>`:""}
+  <div class="two">${pole("wd","Data wymiany",(x.data||new Date().toISOString()).slice(0,10),{type:"date"})}${pole("wkw","Koszt (zł, do Historii)",x.koszt,{type:"number",im:"decimal",ph:"opcjonalnie"})}</div>
+  ${pole("wk","Przebieg (opcjonalnie)",x.przebieg,{type:"number",im:"decimal",ph:"puste = wyliczę z odczytów"})}
+  <div class="two">${pole("wbz","Bieżnik zdejmowanych (mm)",x.bieznik_zdjm,{type:"number",im:"decimal",ph:"opcjonalnie"})}${pole("wbn","Bieżnik zakładanych (mm)",x.bieznik_zakl,{type:"number",im:"decimal",ph:"opcjonalnie"})}</div>
+  ${pole("wn","Notatka",x.notatka)}<div class="note">Wystarczy data. Starsze wymiany dopiszesz tak samo, a przebiegi przeliczą się wstecz.</div>${x.id?`<button type="button" class="btn del" data-usunw="${x.id}">Usuń wymianę</button>`:""}`;
+  const pokNowy=()=>{const n=val(v,"wo")==="nowy";v.querySelector("#wnowy").style.display=n?"":"none";v.querySelector("#wnowy2").style.display=n?"":"none"};pokNowy();
+  v.querySelector("#wo").onchange=pokNowy;v.querySelector("#wp").onchange=e=>{pid=e.target.value;rys()};
+  const wo=v.querySelector("#wos");if(wo.tagName==="SELECT")wo.onchange=e=>rys(e.target.value);
+  const b=v.querySelector("[data-usunw]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno usunąć wymianę? Dotknij jeszcze raz";return}await post("wymiany_opon/"+x.id+"/usun");v.remove();toast("Usunięte");pokaz()}}};
+ rys()}
+
+/* ---------- PROGNOZA */
+const PKOL=[["paliwo","var(--acc2)","paliwo (szacunek)"],["prad","var(--ev)","prąd (szacunek)"],["polisy","#9775fa","polisy"],["serwis","var(--acc)","serwis, przegląd, opony"]];
+function wykresPrognozy(m){const k=Object.keys(m);const W=300,H=150,L=34,R=4,T=10,B=22;const mx=Math.max(...k.map(a=>m[a].razem),1);const st=Math.pow(10,Math.floor(Math.log10(mx)));const top=Math.ceil(mx/st)*st;
+ const gap=(W-L-R)/k.length,bw=Math.min(18,gap*.7);const y=v=>T+(H-T-B)*(1-v/top);
+ let s=`<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="Prognoza kosztów na 12 miesięcy">`;
+ for(const t of [0,top/2,top])s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="2" y="${y(t)+3}">${nf(t,0)}</text>`;
+ k.forEach((a,i)=>{const cx=L+gap*i+(gap-bw)/2;let b=0;for(const[kk,kol,n] of PKOL){const v=m[a][kk];if(v>0){s+=`<rect x="${cx}" y="${y(b+v)}" width="${bw}" height="${y(b)-y(b+v)}" fill="${kol}"><title>${MIESD[+a.slice(5)-1]} ${a.slice(0,4)}: ${n} ${zl(v)}</title></rect>`;b+=v}}
+  s+=`<text x="${cx}" y="${H-6}">${["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"][+a.slice(5)-1]}</text>`});
+ return s+`</svg><div class="leg">${PKOL.map(([k,kol,n])=>`<span><i style="background:${kol}"></i>${n}</span>`).join("")}</div>`}
+async function widokPrognozy(pid){const d=await api("prognoza?pojazd="+(pid||"wszystkie"));
+ let h=`<div class="card"><div class="row"><span class="mut">Najbliższe 12 miesięcy${d.pojazdy&&d.pojazdy.length>1?" · oba pojazdy":""}</span><span class="sp"></span><span class="big">≈ ${zl(d.razem)}</span></div><div class="mut sm">średnio ${zl(d.razem/12)}/mies.${d.pewne?" · pewne (raty polis) "+zl(d.pewne):""}</div></div>
+ <div class="card">${wykresPrognozy(d.miesiace)}</div>`;
+ const poz=d.pozycje||[];
+ h+=`<div class="card list"><b class="sm">Pewne i zaplanowane</b>${poz.map(x=>`<div class="it" style="cursor:default"><div class="dot ${x.pewne?"sh":"x"}">${x.pewne?"✓":"≈"}</div><div class="sp"><div class="t">${dzien(x.data)} · ${esc(x.tytul)}</div><div class="mut xs">${esc(x.pojazd)}${x.pewne?"":" · szacunek"}</div></div><div class="r">${x.kwota==null?"–":(x.pewne?"":"≈ ")+zl(x.kwota)}</div></div>`).join("")||'<div class="note">Brak rat, terminów i wymian w najbliższych 12 miesiącach.</div>'}</div>`;
+ if(d.pojazdy&&d.pojazdy.length>1)h+=`<div class="card">${d.pojazdy.map(x=>`<div class="kv"><span>${esc(x.nazwa)}</span><span>≈ ${zl(x.razem)}</span></div>`).join("")}</div>`;
+ h+=`<div class="note">Paliwo i prąd: Twoje zł za km z ostatnich 12 miesięcy × km z tego samego miesiąca rok temu (sezon motocyklowy), a bez odczytów z tamtego miesiąca średnia z ostatnich 3 miesięcy. Raty polis są pewne. Nowa polisa po końcu obecnej, terminy i wymiany opon wycenione według ostatniego kosztu tej samej pozycji (bez kosztu pokazane bez kwoty).</div>`;
+ return h}
 
 /* ---------- WIĘCEJ */
 async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("ustawienia");

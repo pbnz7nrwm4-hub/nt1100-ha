@@ -1,4 +1,4 @@
-"""Pojazdy: baza SQLite (/data/pojazdy.db) – pojazdy, tankowania, ładowania, koszty, terminy, polisy z ratami."""
+"""Pojazdy: baza SQLite (/data/pojazdy.db) – pojazdy, tankowania, ładowania, koszty, terminy, polisy z ratami, opony."""
 
 import json
 import sqlite3
@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS polisy (
 CREATE TABLE IF NOT EXISTS raty (
   id INTEGER PRIMARY KEY, polisa_id INTEGER NOT NULL, nr INTEGER NOT NULL, termin TEXT NOT NULL, kwota REAL,
   zaplacono TEXT, koszt_id INTEGER, powiadomiono TEXT);
+CREATE TABLE IF NOT EXISTS opony (
+  id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, nazwa TEXT, rodzaj TEXT NOT NULL DEFAULT 'opony',
+  os TEXT NOT NULL DEFAULT 'komplet', rozmiar TEXT, dot TEXT, zuzyty INTEGER DEFAULT 0, notatka TEXT);
+CREATE TABLE IF NOT EXISTS wymiany_opon (
+  id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, data TEXT NOT NULL, os TEXT NOT NULL DEFAULT 'komplet',
+  opona_id INTEGER NOT NULL, zdjeta_id INTEGER, przebieg REAL, bieznik_zakl REAL, bieznik_zdjm REAL, koszt REAL,
+  koszt_id INTEGER, notatka TEXT);
 """
 
 POLA = {
@@ -52,10 +59,13 @@ POLA = {
     "polisy": ["pojazd_id", "zakres", "ubezpieczyciel", "numer", "od", "do", "skladka", "wypowiedziana", "odnowiona",
                "notatka", "powiadomiono"],
     "raty": ["polisa_id", "nr", "termin", "kwota", "zaplacono", "koszt_id", "powiadomiono"],
+    "opony": ["pojazd_id", "nazwa", "rodzaj", "os", "rozmiar", "dot", "zuzyty", "notatka"],
+    "wymiany_opon": ["pojazd_id", "data", "os", "opona_id", "zdjeta_id", "przebieg", "bieznik_zakl", "bieznik_zdjm",
+                     "koszt", "koszt_id", "notatka"],
 }
 SORT = {"pojazdy": "kolejnosc, id", "tankowania": "data DESC, przebieg DESC", "ladowania": "poczatek DESC",
         "koszty": "data DESC", "terminy": "id", "odczyty": "data DESC",
-        "polisy": "do DESC, id", "raty": "nr"}
+        "polisy": "do DESC, id", "raty": "nr", "opony": "pojazd_id, zuzyty, id", "wymiany_opon": "data, id"}
 
 # Pojazdy na start (Adrian: NT1100 i Eclipse Cross PHEV; bez archiwalnej Hondy).
 STARTOWE = [
