@@ -6,13 +6,16 @@ same z historii HA (liczniki energii ładowarek, bilans sieci, ceny G13, % bater
 Czujniki trafiają do HA przez REST API (sensor.pojazdy_*), co 10 min i po każdej zmianie.
 """
 
+import hmac
 import json
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -24,7 +27,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.7.0"
+VERSION = "1.8.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -36,9 +39,40 @@ PEERS_HA = set(os.environ.get("PJ_PEERS_HA", "172.30.32.1").split(","))
 SUPERVISOR = os.environ.get("PJ_SUPERVISOR", "http://supervisor")
 
 
+def _opcje():
+    """Opcje dodatku z Home Assistant (/data/options.json); poza HA pusto."""
+    try:
+        with open(os.path.join(DATA, "options.json"), encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+OPCJE = _opcje()
+# Trzy sposoby pracy (1.8.0):
+#  * dodatek HA (domyślnie) – wszystko jak dotąd;
+#  * aplikacja samodzielna w kontenerze: PJ_HA_URL = adres Home Assistant, klucz do HA w pliku ha_token;
+#  * dodatek-pośrednik: opcja „adres_aplikacji” – dodatek tylko przekazuje panel do aplikacji w kontenerze
+#    (wzór: NT1100 Jazdy -> silnik tras), więc panel działa w aplikacji HA także poza domem.
+HA_URL = (os.environ.get("PJ_HA_URL") or "").rstrip("/")
+SAMODZIELNA = bool(HA_URL)
+APLIKACJA = "" if SAMODZIELNA else (os.environ.get("PJ_APLIKACJA") or OPCJE.get("adres_aplikacji") or "").strip().rstrip("/")
+KLUCZ = (os.environ.get("PJ_KLUCZ") or OPCJE.get("klucz_aplikacji") or "").strip()
+LAN = os.environ.get("PJ_LAN", "0") == "1"  # samodzielna: panel bez klucza z sieci domowej (jak Kronika)
+PLIK_TOKENU = os.path.join(DATA, "ha_token")
+
+
 def token():
     """Klucz do API Home Assistant od Supervisora: zmienna środowiska albo plik s6
     (przy starcie przez /init zmienne kontenera bywają tylko w /run/s6/container_environment)."""
+    if SAMODZIELNA:
+        if os.environ.get("PJ_HA_TOKEN"):
+            return os.environ["PJ_HA_TOKEN"].strip()
+        try:
+            with open(PLIK_TOKENU, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
     for k in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
         if os.environ.get(k):
             return os.environ[k].strip()
@@ -101,14 +135,23 @@ def teraz_lok():
 
 # ---------------------------------------------------------------- Home Assistant
 
+def ha_adres(path):
+    """Adres wywołania HA: w dodatku przez Supervisora, samodzielnie prosto do HA (None = niedostępne poza dodatkiem)."""
+    if not SAMODZIELNA:
+        return SUPERVISOR + path
+    if path.startswith("/core/api"):
+        return HA_URL + path[len("/core"):]
+    return None
+
+
 def ha_call(method, path, body=None, timeout=20):
     global TOKEN
     if not TOKEN:
         TOKEN = token()
-    if not TOKEN:
+    if not TOKEN or not ha_adres(path):
         return None
     req = urllib.request.Request(
-        SUPERVISOR + path, data=None if body is None else json.dumps(body).encode(), method=method,
+        ha_adres(path), data=None if body is None else json.dumps(body).encode(), method=method,
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         data = r.read()
@@ -155,6 +198,8 @@ _PANEL = []
 
 
 def panel_url():
+    if SAMODZIELNA:
+        return DB.ust("panel_url") or "/"
     if not _PANEL and TOKEN:
         try:
             slug = ((ha_call("GET", "/addons/self/info") or {}).get("data") or {}).get("slug")
@@ -369,7 +414,8 @@ def ceny_teraz():
 def synchronizuj_ladowania():
     """Nowe, zakończone sesje ładowania z liczników -> tabela ladowania."""
     if not TOKEN and not token():
-        STAN["sync_blad"] = "brak klucza do Home Assistant (SUPERVISOR_TOKEN) – zrestartuj dodatek; jeśli zostaje, wyślij dziennik dodatku"
+        STAN["sync_blad"] = ("brak klucza do Home Assistant – wpisz „token_ha” w konfiguracji dodatku Pojazdy w HA" if SAMODZIELNA else
+                             "brak klucza do Home Assistant (SUPERVISOR_TOKEN) – zrestartuj dodatek; jeśli zostaje, wyślij dziennik dodatku")
         return 0
     try:
         ha_call("GET", "/core/api/")
@@ -1032,6 +1078,106 @@ def import_ladowan_z_auta(pid, lad):
     return {"ladowan": n, "prad_od": ust("dane_pradu_od")}
 
 
+# ---------------------------------------------------------------- przenosiny do kontenera i pośrednik
+
+TABELE_DANYCH = ("tankowania", "ladowania", "koszty", "terminy", "polisy")
+
+
+def pusta():
+    """Aplikacja bez żadnych wpisów (świeżo zainstalowana) – tylko taka przyjmuje bazę z dodatku."""
+    return not any(DB.lista(t) for t in TABELE_DANYCH)
+
+
+def przyjmij_baze(dane):
+    """Samodzielna: baza przysłana przez dodatek zastępuje pustą bazę (po sprawdzeniu, że to baza Pojazdów)."""
+    global DB
+    if not dane.startswith(b"SQLite format 3"):
+        raise ValueError("to nie jest baza Pojazdów")
+    tmp = os.path.join(DATA, "przyjeta.db")
+    with open(tmp, "wb") as f:
+        f.write(dane)
+    t = sqlite3.connect(tmp)
+    try:
+        tab = {r[0] for r in t.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        ok = t.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        t.close()
+    if not ok or not {"pojazdy", "tankowania", "ustawienia"} <= tab:
+        os.remove(tmp)
+        raise ValueError("to nie jest baza Pojazdów")
+    sciezka = os.path.join(DATA, "pojazdy.db")
+    with DB.lock:
+        DB.db.close()
+        os.replace(tmp, sciezka)
+        DB = bz.Baza(sciezka)
+    log("Przenosiny: przyjęto bazę z dodatku (%d B)" % len(dane))
+
+
+def zapisz_token(tok):
+    global TOKEN
+    tok = (tok or "").strip()
+    if not tok:
+        return
+    fd = os.open(PLIK_TOKENU, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(tok)
+    TOKEN = tok
+
+
+def do_aplikacji(adres, method, path, body=None, naglowki=None, timeout=60):
+    """Dodatek-pośrednik -> aplikacja w kontenerze. Zwraca (kod, nagłówki, treść)."""
+    h = {"X-Pojazdy-Klucz": KLUCZ}
+    h.update(naglowki or {})
+    req = urllib.request.Request(adres + path, data=body, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+
+
+def przenies(adres):
+    """Dodatek-pośrednik: klucz do HA z opcji i (raz) własna baza -> aplikacja w kontenerze. True = załatwione."""
+    kod, _, tr = do_aplikacji(adres, "GET", "/api/przenosiny", timeout=15)
+    if kod != 200:
+        raise RuntimeError("aplikacja odpowiada kodem %s (zły klucz?)" % kod)
+    stan = json.loads(tr)
+    tok = (OPCJE.get("token_ha") or "").strip()
+    if tok:
+        do_aplikacji(adres, "POST", "/api/przenosiny/token", json.dumps({"token": tok}).encode(),
+                     {"Content-Type": "application/json"}, 15)
+    if stan.get("pusta") and not pusta():
+        tmp = os.path.join(DATA, "do-przeniesienia.db")
+        DB.kopia(tmp)
+        with open(tmp, "rb") as f:
+            dane = f.read()
+        os.remove(tmp)
+        kod, _, tr = do_aplikacji(adres, "POST", "/api/przenosiny", dane, {"Content-Type": "application/octet-stream"})
+        if kod != 200:
+            raise RuntimeError("aplikacja nie przyjęła bazy: %s" % tr[:200].decode("utf-8", "replace"))
+        log("Przenosiny: baza wysłana do aplikacji (%d B)" % len(dane))
+    return True
+
+
+def petla_przenosin(adres):
+    while True:
+        try:
+            if przenies(adres):
+                STAN["przenosiny"] = "ok"
+                return
+        except Exception as e:
+            STAN["przenosiny"] = str(e)
+            log("Przenosiny: aplikacja %s jeszcze niegotowa: %s" % (adres, e))
+        time.sleep(30)
+
+
+BRAK_APLIKACJI = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font:16px system-ui;padding:24px;background:#0b1220;color:#e8edf6"><h2>Pojazdy nie odpowiadają</h2>
+<p>Aplikacja Pojazdy działa w kontenerze na serwerze domowym i teraz nie odpowiada (%s).</p>
+<p>Sprawdź, czy kontener jest włączony. Żeby wrócić do pracy w samym Home Assistant, wyczyść pole
+„Adres aplikacji w kontenerze” w konfiguracji dodatku i uruchom go ponownie.</p></body>"""
+
+
 # ---------------------------------------------------------------- HTTP
 
 TABELE = {"tankowania", "ladowania", "koszty", "terminy", "pojazdy", "odczyty"}
@@ -1169,6 +1315,18 @@ class Strona(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def ok_peer(self):
+        if SAMODZIELNA and not getattr(self.server, "posrednik", ""):
+            path = urllib.parse.urlsplit(self.path).path
+            klucz = self.headers.get("X-Pojazdy-Klucz") or ""
+            if KLUCZ and hmac.compare_digest(klucz.encode(), KLUCZ.encode()):
+                panel = self.headers.get("X-Pojazdy-Panel")
+                if panel and panel != DB.ust("panel_url"):
+                    DB.ustaw("panel_url", panel)
+                return True
+            if LAN and not path.startswith("/api/przenosiny"):
+                return True
+            self.send(403, {"blad": "brak dostępu (potrzebny klucz aplikacji)"})
+            return False
         if self.client_address[0] in PEERS_HA and urllib.parse.urlsplit(self.path).path.startswith("/api/telegram/"):
             return True
         if self.client_address[0] not in PEERS:
@@ -1182,9 +1340,36 @@ class Strona(BaseHTTPRequestHandler):
             raise ValueError("plik za duży")
         return self.rfile.read(n) if n else b""
 
+    def przekaz(self):
+        """Dodatek-pośrednik: całe żądanie idzie do aplikacji w kontenerze, odpowiedź wraca bez zmian."""
+        adres = self.server.posrednik
+        h = {"X-Pojazdy-Panel": panel_url()}
+        for k in ("Content-Type", "X-Nazwa-Pliku"):
+            if self.headers.get(k):
+                h[k] = self.headers[k]
+        try:
+            body = self.body() if self.command == "POST" else None
+            kod, nag, tr = do_aplikacji(adres, self.command, self.path, body, h)
+        except Exception as e:
+            if urllib.parse.urlsplit(self.path).path.startswith("/api/"):
+                return self.send(502, {"blad": "aplikacja Pojazdy w kontenerze nie odpowiada (%s)" % e})
+            return self.send(502, BRAK_APLIKACJI % e, "text/html")
+        extra = {"Content-Disposition": nag["Content-Disposition"]} if nag.get("Content-Disposition") else None
+        ctype = (nag.get("Content-Type") or "application/octet-stream")
+        self.send_response(kod)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(tr)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(tr)
+
     def do_GET(self):
         if not self.ok_peer():
             return
+        if getattr(self.server, "posrednik", ""):
+            return self.przekaz()
         u = urllib.parse.urlsplit(self.path)
         path = u.path.rstrip("/") or "/"
         q = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
@@ -1243,6 +1428,8 @@ class Strona(BaseHTTPRequestHandler):
             if m:
                 p = DB.jeden("polisy", int(m.group(1)))
                 return self.send(200 if p else 404, polisa_pelna(p) if p else {"blad": "nie ma"})
+            if path == "/api/przenosiny":
+                return self.send(200, {"pusta": pusta(), "wersja": VERSION, "token": bool(TOKEN), "samodzielna": SAMODZIELNA})
             if path == "/api/pojazdy":
                 return self.send(200, DB.lista("pojazdy"))
             m = re.match(r"^/api/(tankowania|ladowania|koszty|terminy|odczyty)/(\d+)$", path)
@@ -1279,12 +1466,27 @@ class Strona(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.ok_peer():
             return
+        if getattr(self.server, "posrednik", ""):
+            return self.przekaz()
         path = urllib.parse.urlsplit(self.path).path.rstrip("/")
         try:
+            if path == "/api/przenosiny":
+                if not SAMODZIELNA:
+                    return self.send(404, {"blad": "nie ma"})
+                if not pusta():
+                    return self.send(409, {"blad": "aplikacja ma już dane – baza nie została nadpisana"})
+                przyjmij_baze(self.body(200 * 1024 * 1024))
+                po_zmianie()
+                return self.send(200, {"ok": True})
             if path == "/api/import/podglad":
                 nazwa = urllib.parse.unquote(self.headers.get("X-Nazwa-Pliku") or "")
                 return self.send(200, import_podglad(self.body(), nazwa))
             j = json.loads(self.body(2 * 1024 * 1024) or b"{}")
+            if path == "/api/przenosiny/token":
+                if not SAMODZIELNA:
+                    return self.send(404, {"blad": "nie ma"})
+                zapisz_token(j.get("token"))
+                return self.send(200, {"ok": True})
             if path == "/api/import/zapisz":
                 return self.send(200, import_zapisz(j.get("mapowanie") or {}, bool(j.get("popraw", True))))
             if path == "/api/ladowania/scal":
@@ -1373,13 +1575,18 @@ def uruchom():
     DB = bz.Baza(os.path.join(DATA, "pojazdy.db"))
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Strona)
     srv.daemon_threads = True
+    srv.posrednik = APLIKACJA
     return srv
 
 
 def main():
     srv = uruchom()
-    log("Pojazdy %s – panel na porcie %d, klucz do HA: %s" % (VERSION, srv.server_address[1], "jest" if TOKEN else "BRAK"))
-    if PETLA:
+    tryb = "pośrednik do " + APLIKACJA if APLIKACJA else ("aplikacja samodzielna, HA: " + HA_URL if SAMODZIELNA else "dodatek HA")
+    log("Pojazdy %s – panel na porcie %d, klucz do HA: %s, tryb: %s" % (VERSION, srv.server_address[1], "jest" if TOKEN else "BRAK", tryb))
+    if APLIKACJA:
+        # pośrednik nie liczy i nie powiadamia (robi to aplikacja w kontenerze) – tylko przekazuje panel i raz przenosi dane
+        threading.Thread(target=petla_przenosin, args=(APLIKACJA,), daemon=True).start()
+    elif PETLA:
         threading.Thread(target=petla, daemon=True).start()
     srv.serve_forever()
 

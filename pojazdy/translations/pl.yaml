@@ -1,1 +1,10 @@
-configuration: {}
+configuration:
+  adres_aplikacji:
+    name: Adres aplikacji w kontenerze
+    description: Puste = Pojazdy działają w Home Assistant jak dotąd. Wpisany adres (np. http://adres-kontenera:8091) = dodatek tylko przekazuje panel do aplikacji Pojazdy w kontenerze i raz przenosi tam dane.
+  klucz_aplikacji:
+    name: Klucz aplikacji
+    description: Klucz wypisany przez instalator aplikacji w kontenerze.
+  token_ha:
+    name: Token Home Assistant dla aplikacji
+    description: Token długoterminowy (Profil → Bezpieczeństwo → Tokeny długoterminowe). Aplikacja w kontenerze czyta nim liczniki i wysyła powiadomienia.
