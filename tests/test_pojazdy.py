@@ -85,6 +85,38 @@ class Obliczenia(unittest.TestCase):
         self.assertEqual(ob.ktore_powiadomienie(s), "d30")
         self.assertEqual(ob.dodaj_miesiace(date(2026, 1, 31), 1), date(2026, 2, 28))
 
+    def test_polisa_raty_i_stan(self):
+        r = ob.rozloz_raty("2026-09-01", 680, 2)
+        self.assertEqual([(x["termin"], x["kwota"]) for x in r], [("2026-09-01", 340.0), ("2027-03-01", 340.0)])
+        r4 = ob.rozloz_raty("2026-01-31", 1000, 3)
+        self.assertEqual([x["termin"] for x in r4], ["2026-01-31", "2026-05-31", "2026-09-30"])
+        self.assertAlmostEqual(sum(x["kwota"] for x in r4), 1000)
+        p = {"zakres": "OC", "od": "2026-09-01", "do": "2027-08-31"}
+        raty = [{"nr": 1, "termin": "2026-09-01", "kwota": 340, "zaplacono": "2026-08-29"},
+                {"nr": 2, "termin": "2027-01-31", "kwota": 340, "zaplacono": None}]
+        s = ob.stan_polisy(p, raty, date(2026, 11, 14))
+        self.assertEqual((s["waznosc"], s["zaplaconych"], s["do_zaplaty"], s["nastepna"]["dni"]), ("wazna", 1, 340, 78))
+        self.assertFalse(s["pilne"])
+        self.assertFalse(s["wznowi_sie"])  # niezapłacona rata -> OC nie wznowi się samo
+        s = ob.stan_polisy(p, raty, date(2027, 1, 10))
+        self.assertEqual((s["opis"], s["poziom"], s["pilne"]), ("rata za 21 dni", "warn", True))
+        s = ob.stan_polisy(p, raty, date(2027, 2, 3))
+        self.assertEqual((s["opis"], s["poziom"]), ("rata po terminie 3 dni", "bad"))
+        raty[1]["zaplacono"] = "2027-01-20"
+        s = ob.stan_polisy(p, raty, date(2027, 2, 3))
+        self.assertEqual((s["opis"], s["wznowi_sie"], s["wypowiedz_do"]), ("opłacona", True, "2027-08-30"))
+        s = ob.stan_polisy(p, raty, date(2027, 8, 20))
+        self.assertEqual((s["opis"], s["poziom"], s["pilne"]), ("koniec za 11 dni", "ok", False))
+        s = ob.stan_polisy(dict(p, wypowiedziana=1), raty, date(2027, 8, 20))
+        self.assertEqual((s["poziom"], s["pilne"], s["wznowi_sie"]), ("warn", True, False))
+        self.assertFalse(ob.stan_polisy(dict(p, zakres="AC"), raty, date(2027, 2, 3))["wznowi_sie"])
+        self.assertEqual(ob.stan_polisy(p, raty, date(2027, 9, 2))["waznosc"], "wygasla")
+        # progi przypomnień: 14/7/1/0 przed, potem co 3 dni; koniec 30/14/1/0
+        self.assertEqual([ob.powiadomienie_raty(d) for d in (20, 14, 8, 7, 1, 0, -1, -3, -4, -7)],
+                         [None, "d14", "d14", "d7", "d1", "d0", "po0", "po0", "po1", "po2"])
+        self.assertEqual([ob.powiadomienie_konca(d) for d in (31, 30, 14, 2, 1, 0, -1)],
+                         [None, "k30", "k14", "k14", "k1", "k0", None])
+
     def test_koszty_miesieczne_i_km(self):
         t = [tank("2026-10-01", 1000, 40, 6), tank("2026-11-01", 1500, 30, 6)]
         m = ob.koszty_miesieczne(t, [{"poczatek": "2026-11-03 10:00", "koszt": 5}], [{"data": "2026-11-04", "kwota": 100}])
@@ -415,6 +447,78 @@ class Serwer(unittest.TestCase):
         ids = [c[0] for c in srv.czujniki()]
         self.assertIn("sensor.pojazdy_eclipse_zuzycie_pradu", ids)
         self.assertIn("sensor.pojazdy_nt1100_terminy", ids)
+
+    def test_polisy(self):
+        nt = [p for p in self.req("api/pojazdy") if p["klucz"] == "nt1100"][0]["id"]
+        tid = self.req("api/terminy", {"pojazd_id": nt, "nazwa": "2 rata polisy", "kategoria": "Ubezpieczenie",
+                                       "nastepny_data": "2027-01-31"})["id"]
+        # nowa polisa z terminu: raty z formularza, pierwsza zapłacona -> koszt, termin znika
+        r = self.req("api/polisy", {"pojazd_id": nt, "zakres": "OC", "od": "2026-09-01", "do": "2027-08-31",
+                                    "skladka": "680", "z_terminu": tid,
+                                    "raty": [{"termin": "2026-09-01", "kwota": 340, "zaplacono": "2026-08-29"},
+                                             {"termin": "2027-01-31", "kwota": "340"}]})
+        pid = r["id"]
+        self.assertFalse(any(t["id"] == tid for t in self.req("api/terminy")))
+        pol = self.req("api/polisy/%d" % pid)
+        self.assertEqual((pol["stan"]["zaplaconych"], pol["stan"]["liczba_rat"], pol["stan"]["do_zaplaty"]), (1, 2, 340))
+        kos = lambda: [x for x in self.req("api/historia?pojazd=%d" % nt) if x.get("zrodlo") == "polisa"]
+        self.assertEqual([(x["kwota"], x["data"][:10], x["kategoria"]) for x in kos()], [(340, "2026-08-29", "Ubezpieczenie")])
+        self.assertIn("rata 1 z 2", kos()[0]["tytul"])
+        # zapłata 2 raty -> drugi koszt; cofnięcie -> koszt znika
+        r2 = pol["raty"][1]["id"]
+        self.req("api/raty/%d/zaplac" % r2, {"data": "2027-01-20"})
+        self.assertEqual(len(kos()), 2)
+        self.assertTrue(self.req("api/polisy/%d" % pid)["stan"]["oplacona"])
+        self.req("api/raty/%d/zaplac" % r2, {"cofnij": True})
+        self.assertEqual(len(kos()), 1)
+        # edycja bez rat zostawia raty i koszty; wypowiedzenie
+        self.req("api/polisy/%d" % pid, {"wypowiedziana": 1, "ubezpieczyciel": "Test"})
+        p2 = self.req("api/polisy/%d" % pid)
+        self.assertEqual((len(p2["raty"]), p2["wypowiedziana"], len(kos())), (2, 1, 1))
+        # Start, czujnik
+        st = self.req("api/start")
+        karta = [c for c in st["pojazdy"] if c["id"] == nt][0]
+        self.assertEqual(karta["polisy"][0]["zaplaconych"], 1)
+        cz = {c[0]: c for c in srv.czujniki()}
+        self.assertIn("sensor.pojazdy_nt1100_polisa", cz)
+        self.assertEqual(cz["sensor.pojazdy_nt1100_polisa"][2]["polisy"][0]["raty"], "1/2")
+        # odnowienie: nowa polisa od dnia po końcu, stara ukryta z bieżących
+        n = self.req("api/polisy/%d/odnow" % pid, {})["id"]
+        nowa = self.req("api/polisy/%d" % n)
+        self.assertEqual((nowa["od"], nowa["do"], len(nowa["raty"]), nowa["raty"][1]["termin"]),
+                         ("2027-09-01", "2028-08-31", 2, "2028-03-01"))
+        self.assertEqual([x["id"] for x in self.req("api/polisy")], [n])
+        self.assertEqual(len(self.req("api/polisy?wszystkie=1")), 2)
+        # błędne daty
+        with self.assertRaises(urllib.error.HTTPError):
+            self.req("api/polisy", {"pojazd_id": nt, "od": "2027-01-01", "do": "2026-01-01"})
+        # usunięcie polisy usuwa jej raty i koszty
+        self.req("api/polisy/%d/usun" % pid, {})
+        self.req("api/polisy/%d/usun" % n, {})
+        self.assertEqual(kos(), [])
+        self.assertEqual(srv.DB.lista("raty"), [])
+
+    def test_powiadomienia_polis(self):
+        nt = [p for p in self.req("api/pojazdy") if p["klucz"] == "nt1100"][0]["id"]
+        dzis = srv.teraz_lok().date()
+        r = self.req("api/polisy", {"pojazd_id": nt, "zakres": "OC+AC", "od": (dzis - timedelta(days=300)).isoformat(),
+                                    "do": (dzis + timedelta(days=10)).isoformat(),
+                                    "raty": [{"termin": (dzis - timedelta(days=300)).isoformat(), "kwota": 500, "zaplacono": "2026-01-01"},
+                                             {"termin": (dzis - timedelta(days=2)).isoformat(), "kwota": 512}]})
+        wyslane = []
+        stare = srv.powiadom
+        srv.powiadom = lambda t, tr, tag: wyslane.append((t, tr))
+        try:
+            srv.powiadomienia_polis()
+            srv.powiadomienia_polis()  # drugi raz nic nowego
+        finally:
+            srv.powiadom = stare
+        self.assertEqual(len(wyslane), 2)
+        self.assertIn("po terminie", wyslane[0][0])
+        self.assertIn("AC może zostać rozwiązane", wyslane[0][1])
+        self.assertIn("kończy się za 10 dni", wyslane[1][0])
+        self.assertIn("sama się nie wznowi", wyslane[1][1])
+        self.req("api/polisy/%d/usun" % r["id"], {})
 
     def test_soc_z_historii(self):
         ecl = [p for p in self.req("api/pojazdy") if p["klucz"] == "eclipse"][0]["id"]

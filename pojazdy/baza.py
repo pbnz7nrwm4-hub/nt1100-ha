@@ -1,4 +1,4 @@
-"""Pojazdy: baza SQLite (/data/pojazdy.db) – pojazdy, tankowania, ładowania, koszty, terminy."""
+"""Pojazdy: baza SQLite (/data/pojazdy.db) – pojazdy, tankowania, ładowania, koszty, terminy, polisy z ratami."""
 
 import json
 import sqlite3
@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS odczyty (
   id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, data TEXT NOT NULL, przebieg REAL NOT NULL,
   zrodlo TEXT DEFAULT 'recznie');
 CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT);
+CREATE TABLE IF NOT EXISTS polisy (
+  id INTEGER PRIMARY KEY, pojazd_id INTEGER NOT NULL, zakres TEXT NOT NULL DEFAULT 'OC', ubezpieczyciel TEXT,
+  numer TEXT, od TEXT NOT NULL, do TEXT NOT NULL, skladka REAL, wypowiedziana INTEGER DEFAULT 0,
+  odnowiona INTEGER DEFAULT 0, notatka TEXT, powiadomiono TEXT);
+CREATE TABLE IF NOT EXISTS raty (
+  id INTEGER PRIMARY KEY, polisa_id INTEGER NOT NULL, nr INTEGER NOT NULL, termin TEXT NOT NULL, kwota REAL,
+  zaplacono TEXT, koszt_id INTEGER, powiadomiono TEXT);
 """
 
 POLA = {
@@ -42,9 +49,13 @@ POLA = {
     "terminy": ["pojazd_id", "nazwa", "kategoria", "co_km", "co_mies", "ostatnio_data", "ostatnio_km",
                 "nastepny_data", "nastepny_km", "aktywny", "powiadomiono", "klucz"],
     "odczyty": ["pojazd_id", "data", "przebieg", "zrodlo"],
+    "polisy": ["pojazd_id", "zakres", "ubezpieczyciel", "numer", "od", "do", "skladka", "wypowiedziana", "odnowiona",
+               "notatka", "powiadomiono"],
+    "raty": ["polisa_id", "nr", "termin", "kwota", "zaplacono", "koszt_id", "powiadomiono"],
 }
 SORT = {"pojazdy": "kolejnosc, id", "tankowania": "data DESC, przebieg DESC", "ladowania": "poczatek DESC",
-        "koszty": "data DESC", "terminy": "id", "odczyty": "data DESC"}
+        "koszty": "data DESC", "terminy": "id", "odczyty": "data DESC",
+        "polisy": "do DESC, id", "raty": "nr"}
 
 # Pojazdy na start (Adrian: NT1100 i Eclipse Cross PHEV; bez archiwalnej Hondy).
 STARTOWE = [

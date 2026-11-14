@@ -24,7 +24,7 @@ import fuelio  # noqa: E402
 import ladowania as ld  # noqa: E402
 import obliczenia as ob  # noqa: E402
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -276,7 +276,7 @@ def karta_pojazdu(p):
     out = {"id": p["id"], "klucz": p.get("klucz"), "nazwa": p["nazwa"], "rodzaj": p["rodzaj"], "przebieg": km,
            "srednie": ost, "ostatni_odcinek": odc[-1] if odc else None, "miesiac": mies,
            "terminy": stan_terminow(p, km)[:3], "ostatnie_tankowanie": t[0] if t else None,
-           "bak_l": p.get("bak_l"), "bateria_kwh": p.get("bateria_kwh")}
+           "bak_l": p.get("bak_l"), "bateria_kwh": p.get("bateria_kwh"), "polisy": polisy_krotko(polisy_pojazdu(p))}
     if z_pradem(p):
         enc = (ust("bateria") or {}).get(p.get("klucz") or "")
         out["bateria"] = ha_liczba(enc) if enc else None
@@ -501,6 +501,213 @@ def powiadomienia_terminow():
             powiadom("%s: %s" % (p["nazwa"], s["nazwa"]), "%s: %s." % (s["nazwa"], s["opis"]), "pojazdy_termin_%d" % s["id"])
 
 
+# ---------------------------------------------------------------- polisy i raty
+
+NAZWY_ZAKRESU = {"OC": "OC", "OC+AC": "OC + AC", "AC": "AC"}
+
+
+def nazwa_polisy(p):
+    return NAZWY_ZAKRESU.get(p.get("zakres"), p.get("zakres") or "Polisa")
+
+
+def polisa_pelna(p, dzis=None, poj=None):
+    """Polisa z ratami, stanem na dziś i nazwą pojazdu."""
+    dzis = dzis or teraz_lok().date()
+    raty = DB.lista("raty", polisa_id=p["id"])
+    poj = poj or DB.jeden("pojazdy", p["pojazd_id"]) or {}
+    return dict(p, raty=raty, stan=ob.stan_polisy(p, raty, dzis), pojazd=poj.get("nazwa"), nazwa=nazwa_polisy(p))
+
+
+def biezaca(x):
+    """Pokazywana jako bieżąca: nie zastąpiona nowszą, nie wygasła dawniej niż 60 dni temu (albo ma niezapłacone raty)."""
+    st = x["stan"]
+    return not x.get("odnowiona") and (st["dni_do_konca"] >= -60 or not st["oplacona"])
+
+
+def polisy_pojazdu(p, wszystkie=False):
+    out = [polisa_pelna(x, poj=p) for x in DB.lista("polisy", pojazd_id=p["id"])]
+    if not wszystkie:
+        out = [x for x in out if biezaca(x)]
+    out.sort(key=lambda x: (not x["stan"]["pilne"], x["do"]))
+    return out
+
+
+def koszt_raty(pol, r, poj, n=None):
+    """Zapłacona rata -> jeden koszt „Ubezpieczenie” (uid polisa:<id>:rata:<nr>); niezapłacona -> bez kosztu."""
+    uid = "polisa:%d:rata:%d" % (pol["id"], r["nr"])
+    if r.get("koszt_id") and DB.jeden("koszty", r["koszt_id"]):
+        DB.usun("koszty", r["koszt_id"])
+    for k in DB.lista("koszty", uid=uid):
+        DB.usun("koszty", k["id"])
+    kid = None
+    if r.get("zaplacono"):
+        n = n or len(DB.lista("raty", polisa_id=pol["id"]))
+        kid = DB.dodaj("koszty", {"pojazd_id": pol["pojazd_id"], "data": r["zaplacono"][:10], "kategoria": "Ubezpieczenie",
+                                  "tytul": "%s – rata %d z %d" % (nazwa_polisy(pol), r["nr"], n),
+                                  "kwota": r.get("kwota"), "zrodlo": "polisa", "uid": uid})
+    DB.zmien("raty", r["id"], {"koszt_id": kid})
+
+
+def zapisz_polise(j, id_=None):
+    """Nowa albo zmieniona polisa. Raty: lista z formularza albo rozłożone z liczby rat. Zapłacone raty mają koszt."""
+    d = {}
+    for k in ("pojazd_id", "zakres", "ubezpieczyciel", "numer", "od", "do", "skladka", "notatka", "wypowiedziana"):
+        if k in j:
+            d[k] = j[k]
+    if "pojazd_id" in d:
+        d["pojazd_id"] = int(d["pojazd_id"])
+    if "skladka" in d:
+        d["skladka"] = None if d["skladka"] in (None, "") else float(str(d["skladka"]).replace(",", "."))
+    if "wypowiedziana" in d:
+        d["wypowiedziana"] = 1 if d["wypowiedziana"] in (1, True, "1") else 0
+    stara = DB.jeden("polisy", id_) if id_ else {}
+    if id_ and not stara:
+        raise KeyError("nie ma polisy")
+    pelna = dict(stara or {}, **d)
+    if not pelna.get("pojazd_id"):
+        raise ValueError("wybierz pojazd")
+    for k in ("od", "do"):
+        if not pelna.get(k):
+            raise ValueError("podaj daty od i do")
+        pelna[k] = str(pelna[k])[:10]
+        if k in d:
+            d[k] = pelna[k]
+        ob.d10(pelna[k])
+    if pelna["do"] < pelna["od"]:
+        raise ValueError("data „do” wcześniejsza niż „od”")
+    for i, r in enumerate(j.get("raty") or []):
+        if not r.get("termin"):
+            raise ValueError("rata %d bez terminu" % (i + 1))
+        ob.d10(str(r["termin"]))
+    if id_:
+        DB.zmien("polisy", id_, d)
+    else:
+        d.setdefault("zakres", "OC")
+        id_ = DB.dodaj("polisy", d)
+    pol = DB.jeden("polisy", id_)
+    raty = j.get("raty")
+    if raty is None and (j.get("liczba_rat") or not stara):
+        raty = ob.rozloz_raty(pol["od"], pol.get("skladka"), j.get("liczba_rat") or 1)
+    if raty is not None:
+        poj = DB.jeden("pojazdy", pol["pojazd_id"]) or {}
+        bylo = {}
+        for r in DB.lista("raty", polisa_id=id_):
+            bylo[(r["termin"], bool(r.get("zaplacono")))] = r.get("powiadomiono")
+            if r.get("koszt_id"):
+                DB.usun("koszty", r["koszt_id"])
+            DB.usun("raty", r["id"])
+        for i, r in enumerate(raty):
+            kw = r.get("kwota")
+            zap = str(r["zaplacono"])[:10] if r.get("zaplacono") else None
+            # przypomnienie już wysłane dla tej samej raty nie wraca po edycji polisy
+            rid = DB.dodaj("raty", {"polisa_id": id_, "nr": i + 1, "termin": str(r["termin"])[:10],
+                                    "kwota": None if kw in (None, "") else round(float(str(kw).replace(",", ".")), 2),
+                                    "zaplacono": zap, "powiadomiono": bylo.get((str(r["termin"])[:10], bool(zap)))})
+            koszt_raty(pol, DB.jeden("raty", rid), poj, len(raty))
+        if pol.get("skladka") is None:
+            DB.zmien("polisy", id_, {"skladka": round(sum(float(r.get("kwota") or 0) for r in DB.lista("raty", polisa_id=id_)), 2)})
+    elif stara:
+        # zmiana pojazdu, zakresu itp. – koszty zapłaconych rat idą za polisą
+        poj = DB.jeden("pojazdy", pol["pojazd_id"]) or {}
+        lst = DB.lista("raty", polisa_id=id_)
+        for r in lst:
+            koszt_raty(pol, r, poj, len(lst))
+    if j.get("z_terminu"):
+        DB.zmien("terminy", int(j["z_terminu"]), {"aktywny": 0})
+    if stara and (stara.get("do") != pol.get("do")):
+        DB.zmien("polisy", id_, {"powiadomiono": ""})
+    return id_
+
+
+def usun_polise(id_):
+    for r in DB.lista("raty", polisa_id=id_):
+        if r.get("koszt_id"):
+            DB.usun("koszty", r["koszt_id"])
+        DB.usun("raty", r["id"])
+    DB.usun("polisy", id_)
+
+
+def zaplac_rate(id_, data=None, cofnij=False):
+    r = DB.jeden("raty", id_)
+    if not r:
+        raise KeyError("nie ma raty")
+    pol = DB.jeden("polisy", r["polisa_id"])
+    DB.zmien("raty", id_, {"zaplacono": None if cofnij else (data or teraz_lok().strftime("%Y-%m-%d"))[:10], "powiadomiono": ""})
+    koszt_raty(pol, DB.jeden("raty", id_), DB.jeden("pojazdy", pol["pojazd_id"]) or {})
+
+
+def odnow_polise(id_):
+    """Kopia polisy na kolejny rok: od = dzień po końcu, te same: zakres, ubezpieczyciel, składka, liczba rat."""
+    p = DB.jeden("polisy", id_)
+    if not p:
+        raise KeyError("nie ma polisy")
+    od = ob.d10(p["do"]) + timedelta(days=1)
+    do = ob.dodaj_miesiace(od, 12) - timedelta(days=1)
+    n = len(DB.lista("raty", polisa_id=id_)) or 1
+    nid = zapisz_polise({"pojazd_id": p["pojazd_id"], "zakres": p["zakres"], "ubezpieczyciel": p.get("ubezpieczyciel"),
+                         "numer": p.get("numer"), "od": od.isoformat(), "do": do.isoformat(), "skladka": p.get("skladka"),
+                         "liczba_rat": n})
+    DB.zmien("polisy", id_, {"odnowiona": 1})
+    return nid
+
+
+def tekst_konca(x):
+    st, pj = x["stan"], x["pojazd"]
+    do = ob.d10(x["do"]).strftime("%d.%m.%Y")
+    if not ob.ma_oc(x.get("zakres")):
+        return "%s kończy się %s. Jeśli chcesz dalej, kup nową polisę." % (x["nazwa"], do)
+    if x.get("wypowiedziana"):
+        return "%s kończy się %s i jest wypowiedziana – kup nową polisę przed tym dniem." % (x["nazwa"], do)
+    if st["wznowi_sie"]:
+        return ("%s kończy się %s. Raty zapłacone, więc wznowi się sama na rok. Chcesz zmienić ubezpieczyciela – "
+                "wypowiedz do %s." % (x["nazwa"], do, ob.d10(st["wypowiedz_do"]).strftime("%d.%m.%Y")))
+    return ("%s kończy się %s. Są niezapłacone raty (%s zł), więc sama się nie wznowi – zapłać albo kup nową."
+            % (x["nazwa"], do, ("%.2f" % st["do_zaplaty"]).replace(".", ",")))
+
+
+def tekst_raty(x, r, dni):
+    kw = ("%.2f zł" % float(r["kwota"])).replace(".", ",") if r.get("kwota") is not None else "kwota?"
+    term = ob.d10(r["termin"]).strftime("%d.%m.%Y")
+    n = x["stan"]["liczba_rat"]
+    if dni < 0:
+        dop = "OC dalej chroni, ale grożą odsetki i windykacja." if ob.ma_oc(x.get("zakres")) else ""
+        if "AC" in (x.get("zakres") or "").upper():
+            dop += (" " if dop else "") + "AC może zostać rozwiązane – zapłać albo sprawdź warunki."
+        return "%s, termin minął %d %s temu (%s). Rata %d z %d. %s" % (kw, -dni, "dzień" if dni == -1 else "dni", term, r["nr"], n, dop)
+    kiedy = "dziś" if dni == 0 else ("jutro" if dni == 1 else "za %d dni" % dni)
+    return "%s do %s (%s). Rata %d z %d." % (kw, term, kiedy, r["nr"], n)
+
+
+def powiadomienia_polis():
+    dzis = teraz_lok().date()
+    for p in DB.lista("pojazdy"):
+        for x in polisy_pojazdu(p):
+            for r in x["raty"]:
+                if r.get("zaplacono"):
+                    continue
+                dni = (ob.d10(r["termin"]) - dzis).days
+                prog = ob.powiadomienie_raty(dni)
+                if not prog or (r.get("powiadomiono") or "") == prog:
+                    continue
+                DB.zmien("raty", r["id"], {"powiadomiono": prog})
+                tyt = "%s: rata %s%s" % (p["nazwa"], x["nazwa"], " po terminie" if dni < 0 else "")
+                powiadom(tyt, tekst_raty(x, r, dni), "pojazdy_rata_%d" % r["id"])
+            prog = ob.powiadomienie_konca(x["stan"]["dni_do_konca"])
+            if prog and (x.get("powiadomiono") or "") != prog and x["stan"]["waznosc"] != "przyszla":
+                DB.zmien("polisy", x["id"], {"powiadomiono": prog})
+                d = x["stan"]["dni_do_konca"]
+                powiadom("%s: %s kończy się %s" % (p["nazwa"], x["nazwa"], "dziś" if d == 0 else ("jutro" if d == 1 else "za %d dni" % d)),
+                         tekst_konca(x), "pojazdy_polisa_%d" % x["id"])
+
+
+def polisy_krotko(lst):
+    return [{"id": x["id"], "nazwa": x["nazwa"], "zakres": x["zakres"], "od": x["od"], "do": x["do"],
+             "opis": x["stan"]["opis"], "poziom": x["stan"]["poziom"], "pilne": x["stan"]["pilne"],
+             "zaplaconych": x["stan"]["zaplaconych"], "liczba_rat": x["stan"]["liczba_rat"],
+             "do_zaplaty": x["stan"]["do_zaplaty"], "nastepna": x["stan"]["nastepna"], "waznosc": x["stan"]["waznosc"],
+             "wznowi_sie": x["stan"]["wznowi_sie"], "dni_do_konca": x["stan"]["dni_do_konca"]} for x in lst]
+
+
 # ---------------------------------------------------------------- czujniki w HA
 
 def slug(s):
@@ -550,6 +757,19 @@ def czujniki():
                          "klucz": t.get("klucz"), "co_km": t.get("co_km"), "ostatnio_km": t.get("ostatnio_km"),
                          "nastepny_data": t["nastepny_data"], "nastepny_km": t["nastepny_km"], "pilne": t["pilne"],
                          "kategoria": t.get("kategoria")} for t in ter],
+            "panel": panel_url()})
+        pol = c["polisy"]
+        wazne = [x for x in pol if x["waznosc"] == "wazna"]
+        gl = min(wazne, key=lambda x: x["do"]) if wazne else None
+        add("polisa", gl["dni_do_konca"] if gl else None, "polisa – dni do końca", "d", "mdi:shield-car", {
+            "do": gl["do"] if gl else None, "opis": gl["opis"] if gl else "brak ważnej polisy",
+            "opłacona": all(x["do_zaplaty"] <= 0 for x in pol) if pol else None,
+            "pilne": sum(1 for x in pol if x["pilne"]),
+            "polisy": [{"nazwa": x["nazwa"], "od": x["od"], "do": x["do"], "opis": x["opis"],
+                        "raty": "%d/%d" % (x["zaplaconych"], x["liczba_rat"]), "do_zaplaty": x["do_zaplaty"],
+                        "nastepna_rata": x["nastepna"]["termin"] if x["nastepna"] else None,
+                        "nastepna_kwota": x["nastepna"]["kwota"] if x["nastepna"] else None,
+                        "wznowi_sie": x["wznowi_sie"]} for x in pol],
             "panel": panel_url()})
     return out
 
@@ -682,7 +902,7 @@ def petla():
             time.sleep(10)
     ostatnia_kopia = DB.ust("kopia_ostatnia") or ""
     while True:
-        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, uzupelnij_soc, powiadomienia_terminow, publikuj):
+        for krok in (migracja_serwisu_nt1100, przebieg_z_encji, synchronizuj_ladowania, uzupelnij_soc, powiadomienia_terminow, powiadomienia_polis, publikuj):
             try:
                 krok()
             except Exception as e:
@@ -981,7 +1201,8 @@ class Strona(BaseHTTPRequestHandler):
                     karty.append(c)
                     ter += stan_terminow(p, c["przebieg"])
                 ter.sort(key=lambda s: (not s["pilne"], s["dni"] if s["dni"] is not None else 99999))
-                return self.send(200, {"pojazdy": karty, "terminy": ter[:3], "wersja": VERSION,
+                pol = [dict(x, pojazd=c["nazwa"], pojazd_id=c["id"]) for c in karty for x in c["polisy"] if x["pilne"]]
+                return self.send(200, {"pojazdy": karty, "terminy": ter[:3], "polisy": pol, "wersja": VERSION,
                                        "miesiac": teraz_lok().strftime("%Y-%m")})
             if path == "/api/historia":
                 return self.send(200, historia(q.get("pojazd"), q.get("typ")))
@@ -1010,6 +1231,18 @@ class Strona(BaseHTTPRequestHandler):
                     out += stan_terminow(p, km)
                 out.sort(key=lambda s: (s["dni"] if s["dni"] is not None else 99999))
                 return self.send(200, out)
+            if path == "/api/polisy":
+                out = []
+                for p in DB.lista("pojazdy"):
+                    out += polisy_pojazdu(p, wszystkie=q.get("wszystkie") == "1")
+                for x in out:
+                    x["biezaca"] = biezaca(x)
+                out.sort(key=lambda x: (not x["biezaca"], not x["stan"]["pilne"], x["do"]))
+                return self.send(200, out)
+            m = re.match(r"^/api/polisy/(\d+)$", path)
+            if m:
+                p = DB.jeden("polisy", int(m.group(1)))
+                return self.send(200 if p else 404, polisa_pelna(p) if p else {"blad": "nie ma"})
             if path == "/api/pojazdy":
                 return self.send(200, DB.lista("pojazdy"))
             m = re.match(r"^/api/(tankowania|ladowania|koszty|terminy|odczyty)/(\d+)$", path)
@@ -1085,6 +1318,23 @@ class Strona(BaseHTTPRequestHandler):
                 if j.get("kwota") not in (None, ""):
                     DB.dodaj("koszty", {"pojazd_id": p["id"], "data": data, "przebieg": km, "kategoria": t.get("kategoria") or "Serwis",
                                         "tytul": t["nazwa"], "kwota": float(str(j["kwota"]).replace(",", "."))})
+                po_zmianie()
+                return self.send(200, {"ok": True})
+            m = re.match(r"^/api/polisy(?:/(\d+)(/usun|/odnow)?)?$", path)
+            if m:
+                id_ = int(m.group(1)) if m.group(1) else None
+                if m.group(2) == "/usun":
+                    usun_polise(id_)
+                    nid = None
+                elif m.group(2) == "/odnow":
+                    nid = odnow_polise(id_)
+                else:
+                    nid = zapisz_polise(j, id_)
+                po_zmianie()
+                return self.send(200, {"ok": True, "id": nid})
+            m = re.match(r"^/api/raty/(\d+)/zaplac$", path)
+            if m:
+                zaplac_rate(int(m.group(1)), j.get("data"), bool(j.get("cofnij")))
                 po_zmianie()
                 return self.send(200, {"ok": True})
             if path == "/api/telegram/propozycja":
