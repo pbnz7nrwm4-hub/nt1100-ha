@@ -3,6 +3,26 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.7.0
+- **Polisy OC/AC z ratami.** Terminy → „+ Polisa”: pojazd, zakres (OC, OC + AC, AC…), od–do, składka, liczba rat
+  (raty rozkładają się same co 12/n miesięcy, daty i kwoty można poprawić), ubezpieczyciel, numer. Karta polisy pokazuje,
+  czy jest ważna, ile rat zapłacono, ile zostało do zapłaty i kiedy następna rata.
+- **Zapłacona rata = koszt.** Odhaczenie raty zapisuje koszt „Ubezpieczenie” w Historii (z datą zapłaty); cofnięcie go usuwa.
+  Kliknięcie takiego kosztu w Historii otwiera polisę.
+- **Przypomnienia (telefon i Telegram):** o racie 14, 7 i 1 dzień przed, w dniu terminu i co 3 dni po terminie, aż ją
+  odhaczysz; o końcu ważności 30, 14 i 1 dzień przed oraz w dniu końca. Treść mówi, czy OC wznowi się samo (wszystkie raty
+  zapłacone i bez wypowiedzenia) i do kiedy można wypowiedzieć (dzień przed końcem).
+- **Start:** przy każdym pojeździe „OC do …” i „raty 2/2”; rata albo koniec ważności w ciągu 30 dni (lub rata po terminie)
+  trafia na górę jako ostrzeżenie. Pojazd bez polisy ma „brak polisy · dodaj”.
+- **„Zmieniam ubezpieczyciela”** zaznacza, że polisa się nie wznowi (przypomnienie: kup nową), **„Odnów”** tworzy polisę
+  na kolejny rok (od dnia po końcu, te same raty – kwoty do poprawy).
+- **Stary termin raty** (kategoria Ubezpieczenie albo w nazwie polisa/OC/AC) ma w „Zrobione” przycisk „Zamień na polisę”;
+  po zapisaniu polisy termin znika.
+- **Czujnik** `sensor.pojazdy_<pojazd>_polisa`: stan = dni do końca ważnej polisy, atrybuty: do kiedy, opis, czy opłacona,
+  lista polis z ratami (np. „1/2”), do zapłaty, następna rata.
+- Zasady z poradników (rankomat.pl, 2026): niezapłacona rata OC nie kończy ochrony (art. 12 ust. 2 ustawy o ubezpieczeniach
+  obowiązkowych), ale grożą odsetki i windykacja; AC po wezwaniu może zostać rozwiązane – zależy od umowy.
+
 ## Zmiany w 1.6.0
 - **Telegram.** W Więcej → Powiadomienia wpisz numer czatu Telegram (zostaje tylko w bazie dodatku, nie w repozytorium). Przypomnienia o terminach idą wtedy także na Telegram (usługa `telegram_bot.send_message` w HA), obok telefonu.
 - **Kotwica przebiegu dla NT1100 Jazdy.** Czujnik `sensor.pojazdy_nt1100_przebieg` ma atrybuty `odczyt_reczny_km` i `odczyt_reczny_data` (ostatni odczyt z tankowania, kosztu albo ręczny, bez telemetrii). NT1100 Jazdy liczy od nich przebieg i dolicza własne jazdy.
@@ -86,7 +106,8 @@ Fuelio, ale ładowania auta z wtyczką wpisują się same.
   od którego HA zapisuje ładowania (ustawienie `dane_pradu_od`, domyślnie 1.11.2026).
   Porównanie z jazdą na samej benzynie używa spalania wpisanego w danych pojazdu.
 - **Koszty**: miesiąc, rok, ostatnie 12 miesięcy, całość; wykres miesięczny paliwo / prąd / inne, zł/km.
-- **Inne koszty** (serwis, OC/AC, przegląd, opony…) i **terminy** z przypomnieniem w telefonie:
+- **Polisy OC/AC** z ratami (okres ważności, co zapłacone, następna rata, przypomnienia) – zob. „Zmiany w 1.7.0”.
+- **Inne koszty** (serwis, przegląd, opony…) i **terminy** z przypomnieniem w telefonie:
   30, 7 i 1 dzień przed datą albo 500 i 100 km przed przebiegiem. „Zrobione” przesuwa termin o okres
   i może od razu zapisać koszt.
 
@@ -107,7 +128,7 @@ net‑meteringu. Każde automatyczne ładowanie można otworzyć, poprawić kosz
 ## Encje w Home Assistant
 
 Dodatek wystawia czujniki (co 10 minut i po każdej zmianie), dla każdego pojazdu:
-`sensor.pojazdy_<pojazd>_spalanie`, `_koszt_100km`, `_koszt_miesiac`, `_przebieg`, `_terminy`
+`sensor.pojazdy_<pojazd>_spalanie`, `_koszt_100km`, `_koszt_miesiac`, `_przebieg`, `_terminy`, `_polisa`
 (stan = liczba pilnych terminów, atrybuty: lista terminów), dla aut z wtyczką także `_zuzycie_pradu`.
 Można je dodać do dowolnego pulpitu.
 

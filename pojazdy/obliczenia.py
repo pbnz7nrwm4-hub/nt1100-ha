@@ -367,3 +367,101 @@ def porownanie_benzyna(odc, l100_bez_pradu, cena_l=None):
     bez = km * float(l100_bez_pradu) / 100 * cena
     return {"km": round(km), "koszt_bez_pradu": round(bez, 2), "koszt": round(kp + kpr, 2),
             "oszczednosc": round(bez - kp - kpr, 2)}
+
+
+# ---------------------------------------------------------------- polisy (OC/AC) i raty
+# Zasady (poradniki rankomat.pl, 2026): niezapłacona rata OC nie kończy ochrony (art. 12 ust. 2 ustawy
+# o ubezpieczeniach obowiązkowych), AC po wezwaniu może zostać rozwiązane (zależy od umowy), a OC wznawia się
+# samo na kolejny rok tylko przy opłaconej całej składce i bez wypowiedzenia (najpóźniej dzień przed końcem).
+PROG_RATY = (14, 7, 1, 0)       # dni przed terminem raty
+CO_ILE_PO_TERMINIE = 3          # przypomnienie co 3 dni po terminie, aż rata zostanie odhaczona
+PROG_KONCA = (30, 14, 1, 0)     # dni przed końcem ważności
+PILNE_DNI = 30                  # od kiedy rata / koniec ważności trafia na Start
+
+
+def rozloz_raty(od, skladka, n):
+    """Raty równe co 12/n miesięcy od początku polisy; zaokrąglenie trafia do ostatniej raty."""
+    n = max(1, int(n or 1))
+    start = d10(od)
+    kw = round(float(skladka) / n, 2) if skladka not in (None, "") else None
+    out = []
+    for i in range(n):
+        k = kw
+        if kw is not None and i == n - 1:
+            k = round(float(skladka) - kw * (n - 1), 2)
+        out.append({"nr": i + 1, "termin": dodaj_miesiace(start, i * 12 // n).isoformat(), "kwota": k})
+    return out
+
+
+def ma_oc(zakres):
+    return "OC" in (zakres or "").upper()
+
+
+def stan_polisy(p, raty, dzis):
+    """Stan polisy na dziś: ważność, ile zapłacono, następna rata, czy wznowi się sama, krótki opis i poziom."""
+    od, do = d10(p["od"]), d10(p["do"])
+    raty = sorted(raty, key=lambda r: (r["nr"], r["termin"]))
+    zapl = [r for r in raty if r.get("zaplacono")]
+    nie = [r for r in raty if not r.get("zaplacono")]
+    suma = round(sum(float(r.get("kwota") or 0) for r in raty), 2)
+    zaplacono = round(sum(float(r.get("kwota") or 0) for r in zapl), 2)
+    nast = None
+    if nie:
+        r = nie[0]
+        nast = {"id": r.get("id"), "nr": r["nr"], "termin": r["termin"], "kwota": r.get("kwota"),
+                "dni": (d10(r["termin"]) - dzis).days}
+    po_terminie = [r for r in nie if d10(r["termin"]) < dzis]
+    dni_do_konca = (do - dzis).days
+    waznosc = "przyszla" if dzis < od else ("wygasla" if dzis > do else "wazna")
+    oplacona = not nie
+    wznowi = ma_oc(p.get("zakres")) and oplacona and not p.get("wypowiedziana")
+    s = {"waznosc": waznosc, "dni_do_konca": dni_do_konca, "liczba_rat": len(raty), "zaplaconych": len(zapl),
+         "suma": suma, "zaplacono": zaplacono, "do_zaplaty": round(suma - zaplacono, 2), "oplacona": oplacona,
+         "nastepna": nast, "po_terminie": len(po_terminie), "wznowi_sie": wznowi,
+         "wypowiedz_do": (do - timedelta(days=1)).isoformat()}
+    # opis i poziom: to, co najpilniejsze
+    if po_terminie:
+        d = (dzis - d10(po_terminie[0]["termin"])).days
+        s.update(opis="rata po terminie %d %s" % (d, "dzień" if d == 1 else "dni"), poziom="bad", pilne=True)
+    elif waznosc == "wygasla":
+        s.update(opis="wygasła %s" % do.strftime("%d.%m.%Y"), poziom="bad", pilne=True)
+    elif nast and nast["dni"] <= PILNE_DNI:
+        s.update(opis=_za("rata", nast["dni"]), poziom="warn", pilne=True)
+    elif dni_do_konca <= PILNE_DNI:
+        s.update(opis=_za("koniec", dni_do_konca), poziom="ok" if wznowi else "warn", pilne=not wznowi)
+    elif oplacona:
+        s.update(opis="opłacona", poziom="ok", pilne=False)
+    else:
+        s.update(opis=_za("rata", nast["dni"]), poziom="", pilne=False)
+    if waznosc == "przyszla":
+        s.update(opis="od %s" % od.strftime("%d.%m.%Y") + (" · " + s["opis"] if s["pilne"] else ""))
+    return s
+
+
+def _za(co, dni):
+    if dni == 0:
+        return co + " dziś"
+    if dni == 1:
+        return co + " jutro"
+    return "%s za %d dni" % (co, dni)
+
+
+def powiadomienie_raty(dni):
+    """Klucz progu przypomnienia o racie (None = nic) – każdy próg idzie raz."""
+    if dni is None:
+        return None
+    if dni < 0:
+        return "po%d" % ((-dni - 1) // CO_ILE_PO_TERMINIE)
+    for p in sorted(PROG_RATY):
+        if dni <= p:
+            return "d%d" % p
+    return None
+
+
+def powiadomienie_konca(dni):
+    if dni is None or dni < 0:
+        return None
+    for p in sorted(PROG_KONCA):
+        if dni <= p:
+            return "k%d" % p
+    return None

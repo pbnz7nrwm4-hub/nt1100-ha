@@ -10,7 +10,7 @@ Instalacja: Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria
   i serwis, powiadomienie po jeździe z rekordami.
 - `pojazdy/` – dodatek **Pojazdy** (jak Fuelio): tankowania (ręcznie), ładowania auta z wtyczką
   (same, z historii Home Assistant: liczniki ładowarek, bilans PV, strefy G13, % baterii), spalanie
-  l/100 km i kWh/100 km, koszty miesięczne i roczne, inne koszty, terminy z przypomnieniem, import
+  l/100 km i kWh/100 km, koszty miesięczne i roczne, inne koszty, terminy z przypomnieniem, polisy OC/AC z ratami, import
   i eksport w formacie Fuelio, nocna kopia. Instrukcja: `pojazdy/DOCS.md`.
 - `silnik-tras/` – silnik tras nawigacji do uruchomienia w kontenerze Proxmox (GraphHopper
   + mapa na kartę ekranu z OpenStreetMap); instrukcja w `silnik-tras/README.md`.

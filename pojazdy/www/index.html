@@ -35,6 +35,14 @@ main{max-width:640px;margin:0 auto;padding:12px 14px;display:flex;flex-direction
 .chip.auto{background:color-mix(in srgb,var(--ev) 18%,transparent);color:var(--ev)}
 .chip.warn{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
 .chip.bad{background:color-mix(in srgb,var(--bad) 20%,transparent);color:var(--bad)}
+.chip.ok{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+.dot.sh{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);font-size:11px}
+.rata{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.rata:last-child{border-bottom:0}
+.ck{width:26px;height:26px;border-radius:7px;border:2px solid var(--line);background:none;display:grid;place-items:center;flex:none;font-weight:900;cursor:pointer;color:var(--bg)}
+.ck.on{background:var(--ok);border-color:var(--ok)}
+.rr{display:grid;grid-template-columns:1.3fr 1fr auto;gap:6px;align-items:end}
+.rr .f input{padding:9px 8px;font-size:15px}
+.pchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .banner{border-color:color-mix(in srgb,var(--warn) 50%,var(--line));cursor:pointer}
 .fab{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));background:var(--acc2);color:#fff;border:0;border-radius:999px;padding:13px 20px;font-weight:800;box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer;z-index:6}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;border-top:1px solid var(--line);background:var(--card);padding-bottom:env(safe-area-inset-bottom,0px);z-index:6}
@@ -129,11 +137,21 @@ async function pokaz(){tabs();$("#fab").hidden=!(S.tab==="start"||S.tab==="histo
 const ikona=p=>p.rodzaj==="motocykl"?ICO.moto:ICO.auto;
 const zPradem=p=>p.rodzaj==="phev"||p.rodzaj==="ev";
 function chipTerm(t){return `<span class="chip ${t.po_terminie?"bad":(t.pilne?"warn":"")}">${esc(t.opis)}</span>`}
+const dataPL=s=>{if(!s)return"";const d=s.slice(0,10).split("-");return d[2]+"."+d[1]+"."+d[0]};
+const chipPol=st=>`<span class="chip ${st.poziom||""}">${esc(st.opis)}</span>`;
+const skrot=z=>z==="AC"?"AC":(z==="OC"?"OC":(z==="OC+AC"?"AC":"P"));
+function kartaPolisy(x){const st=x.stan,n=st.liczba_rat||1,pz=Math.round(100*st.zaplaconych/n);
+ const nast=st.nastepna?`następna: ${zl(st.nastepna.kwota,2)} do ${dataPL(st.nastepna.termin)}`:"wszystkie raty zapłacone";
+ const kon=st.dni_do_konca>=0&&st.dni_do_konca<=120&&st.nastepna?` · koniec za ${st.dni_do_konca} dni`:"";
+ return `<div class="card" data-pol="${x.id}" style="cursor:pointer"><div class="row"><div class="dot sh">${skrot(x.zakres)}</div><div class="sp"><div class="t" style="font-weight:700">${esc(x.pojazd)} · ${esc(x.nazwa)}</div><div class="mut sm">${st.waznosc==="przyszla"?"od "+dataPL(x.od)+" ":""}${st.waznosc==="wygasla"?"wygasła ":"ważna do "}${dataPL(x.do)} · opłacona ${st.zaplaconych} z ${n}</div></div>${chipPol(st)}</div>
+ <div class="prog" style="display:flex"><b style="width:${pz}%;background:var(--ok);border-radius:0"></b></div><div class="mut xs" style="margin-top:4px">${nast}${kon}</div></div>`}
+function podepnijPolisy(root){(root||document).querySelectorAll("[data-pol]").forEach(e=>e.onclick=()=>arkuszPolisaWidok(+e.dataset.pol))}
 
 /* ---------- START */
 async function vStart(){const d=await api("start");$("#tytul").textContent="Pojazdy";
  $("#topx").innerHTML=`<span class="chip">${MIESD[+d.miesiac.slice(5)-1].toLowerCase()}</span>`;
  let h="";
+ for(const x of d.polisy||[])h+=`<div class="card row banner" data-pol="${x.id}">${chipPol(x)}<span class="sp">${esc(x.nastepna&&x.opis.startsWith("rata")?"Rata "+x.nazwa+" "+zl(x.nastepna.kwota,2):x.nazwa)} · ${esc(x.pojazd)}${x.nastepna&&x.opis.startsWith("rata")?" · "+dzien(x.nastepna.termin):" · do "+dzien(x.do)}</span><span class="mut">›</span></div>`;
  for(const t of d.terminy.filter(t=>t.pilne))h+=`<div class="card row banner" data-term="${t.id}">${chipTerm(t)}<span class="sp">${esc(t.nazwa)} · ${esc(t.pojazd)}${t.nastepny_data?" · "+dzien(t.nastepny_data):""}</span><span class="mut">›</span></div>`;
  for(const c of d.pojazdy){const s=c.srednie||{},m=c.miesiac||{},ev=c.rodzaj==="phev"||c.rodzaj==="ev";
   const razem=(m.paliwo||0)+(m.prad||0)+(m.inne||0);const pc=v=>razem?(100*v/razem).toFixed(1):0;
@@ -148,10 +166,12 @@ async function vStart(){const d=await api("start");$("#tytul").textContent="Poja
   ${ev&&c.kwh100_licznik?`<div class="xs mut" style="margin-top:2px">z liczników ładowarek (na sucho): ${nf(c.kwh100_licznik.kwh100)} kWh/100 km · ${nf(c.kwh100_licznik.kwh,1)} kWh na ${nf(c.kwh100_licznik.km,0)} km od ${dzien(c.kwh100_licznik.od)}</div>`:""}
   <div class="row sm" style="margin-top:8px"><span class="mut">W tym miesiącu</span><span class="sp"></span><span class="num">${zl(razem)}</span></div>
   <div class="split"><b style="width:${pc(m.paliwo)}%;background:var(--acc2)"></b><b style="width:${pc(m.prad)}%;background:var(--ev)"></b><b style="width:${pc(m.inne)}%;background:var(--acc)"></b></div>
-  <div class="leg"><span><i style="background:var(--acc2)"></i>paliwo ${zl(m.paliwo)}</span>${ev?`<span><i style="background:var(--ev)"></i>prąd ${zl(m.prad)}</span>`:""}<span><i style="background:var(--acc)"></i>inne ${zl(m.inne)}</span></div></div>`}
+  <div class="leg"><span><i style="background:var(--acc2)"></i>paliwo ${zl(m.paliwo)}</span>${ev?`<span><i style="background:var(--ev)"></i>prąd ${zl(m.prad)}</span>`:""}<span><i style="background:var(--acc)"></i>inne ${zl(m.inne)}</span></div>
+  <div class="pchips">${(c.polisy||[]).map(x=>`<span class="chip ${x.waznosc==="wygasla"||x.poziom==="bad"?"bad":(x.waznosc==="wazna"?"ok":"")}" data-pol="${x.id}" style="cursor:pointer">${esc(x.nazwa)} ${x.waznosc==="przyszla"?"od "+dzien(x.od):"do "+dzien(x.do)}</span><span class="chip ${x.do_zaplaty>0&&x.poziom!=="ok"&&x.pilne?"warn":""}">raty ${x.zaplaconych}/${x.liczba_rat}</span>`).join("")||`<span class="chip warn" data-dodpol="${c.id}" style="cursor:pointer">brak polisy · dodaj</span>`}</div></div>`}
  if(!d.pojazdy.length)h+=`<div class="empty">Brak pojazdów. Dodaj je w zakładce Więcej.</div>`;
  $("#main").innerHTML=h;
- document.querySelectorAll("[data-term]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.term))}
+ document.querySelectorAll("[data-term]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.term));
+ podepnijPolisy();document.querySelectorAll("[data-dodpol]").forEach(e=>e.onclick=()=>arkuszPolisa({pojazd_id:+e.dataset.dodpol}))}
 
 /* ---------- HISTORIA */
 async function vHistoria(){$("#tytul").textContent="Historia";
@@ -165,6 +185,7 @@ async function vHistoria(){$("#tytul").textContent="Historia";
   if(x.typ==="tankowanie")h+=`<div class="it" data-ed="tankowania:${x.id}"><div class="dot f">P</div><div class="sp"><div class="t">${nf(x.litry,2)} l${x.pelny?" · do pełna":" · dolanie"}${x.pominiete?' <span class="chip warn">po przerwie</span>':""}</div><div class="mut sm">${dzien(x.czas)} · ${nf(x.przebieg,0)} km${x.l100?" · "+nf(x.l100)+" l/100 km":""}${x.kwh100?" · "+nf(x.kwh100)+" kWh/100 km":""}${kto}</div>${x.stacja?`<div class="mut xs">${esc(x.stacja)}</div>`:""}</div><div class="r">${zl(x.kwota_razem,2)}<div class="mut xs">${nf(x.cena_l,2)} zł/l</div></div></div>`;
   else if(x.typ==="ladowanie"){const pv=x.kwh&&x.kwh_pv?Math.round(100*x.kwh_pv/x.kwh):0;
    h+=`<div class="it" data-ed="ladowania:${x.id}"><div class="dot ${x.wykluczone?"x":"e"}">⚡</div><div class="sp"><div class="t">${nf(x.kwh,1)} kWh${x.zrodlo==="ekran_auta"?"":" · "+esc(x.miejsce==="obce"?"poza domem":(x.miejsce||""))} ${x.zrodlo==="auto"?'<span class="chip auto">auto</span>':x.zrodlo==="ekran_auta"?'<span class="chip">z auta · szacunek</span>':'<span class="chip">ręcznie</span>'}${x.wykluczone?' <span class="chip">wykluczone</span>':""}</div><div class="mut sm">${x.zrodlo==="ekran_auta"?dzien(x.poczatek)+(x.koniec&&x.koniec.slice(0,10)!==x.poczatek.slice(0,10)?" – "+dzien(x.koniec):"")+" · "+nf(x.kwh_bateria,1)+" kWh do baterii":dzien(x.czas)+" "+godz(x.poczatek)+(x.koniec?"–"+godz(x.koniec):"")}${x.soc_od!=null&&x.soc_do!=null?" · "+nf(x.soc_od,0)+"→"+nf(x.soc_do,0)+" %":""}${pv?" · "+pv+" % z PV":""}${kto}</div></div><div class="r">${zl(x.koszt,2)}</div></div>`}
+  else if(x.zrodlo==="polisa"&&/^polisa:\d+:/.test(x.uid||""))h+=`<div class="it" data-pol="${x.uid.split(":")[1]}"><div class="dot sh">zł</div><div class="sp"><div class="t">${esc(x.tytul||x.kategoria)}</div><div class="mut sm">${dzien(x.czas)} · ${esc(x.kategoria||"")} · z polisy${kto}</div></div><div class="r">${zl(x.kwota,2)}</div></div>`;
   else h+=`<div class="it" data-ed="koszty:${x.id}"><div class="dot c">zł</div><div class="sp"><div class="t">${esc(x.tytul||x.kategoria)}</div><div class="mut sm">${dzien(x.czas)} · ${esc(x.kategoria||"")}${x.przebieg?" · "+nf(x.przebieg,0)+" km":""}${kto}</div></div><div class="r">${zl(x.kwota,2)}</div></div>`;
  return h};
  const dnia=x=>(x.czas||"").slice(0,10);
@@ -183,7 +204,7 @@ async function vHistoria(){$("#tytul").textContent="Historia";
  $("#main").innerHTML=h;
  document.querySelectorAll("[data-g]").forEach(e=>e.onclick=()=>{const k=e.dataset.g;S.rozwin.has(k)?S.rozwin.delete(k):S.rozwin.add(k);vHistoria()});
  document.querySelectorAll("[data-ht]").forEach(b=>b.onclick=()=>{S.hTyp=b.dataset.ht;vHistoria()});
- document.querySelectorAll("[data-ed]").forEach(e=>e.onclick=()=>{const[t,id]=e.dataset.ed.split(":");edytuj(t,+id)});
+ document.querySelectorAll("[data-ed]").forEach(e=>e.onclick=()=>{const[t,id]=e.dataset.ed.split(":");edytuj(t,+id)});podepnijPolisy();
  $("#dodK").onclick=()=>arkuszKoszt();$("#dodL").onclick=()=>arkuszLadowanie()}
 
 /* ---------- STATYSTYKI */
@@ -234,17 +255,21 @@ async function vStat(){$("#tytul").textContent="Statystyki";
  document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{S.sWid=b.dataset.w;zapamietaj();vStat()})}
 
 /* ---------- TERMINY */
-async function vTerminy(){$("#tytul").textContent="Terminy";$("#topx").innerHTML=`<button type="button" class="chip acc" id="tdod" style="border:0;cursor:pointer">+ Dodaj</button>`;
- $("#tdod").onclick=()=>arkuszTermin();
- const lst=await api("terminy");
- let h=`<div class="card list">`;
+async function vTerminy(){$("#tytul").textContent="Terminy";$("#topx").innerHTML=`<button type="button" class="chip acc" id="pdodt" style="border:0;cursor:pointer;margin-right:6px">+ Polisa</button><button type="button" class="chip acc" id="tdod" style="border:0;cursor:pointer">+ Termin</button>`;
+ $("#tdod").onclick=()=>arkuszTermin();$("#pdodt").onclick=()=>arkuszPolisa();
+ const [lst,pol]=await Promise.all([api("terminy"),api("polisy?wszystkie=1")]);
+ const bie=pol.filter(x=>x.biezaca),daw=pol.filter(x=>!x.biezaca);
+ let h=`<div class="mon">Polisy</div>`;
+ h+=bie.map(kartaPolisy).join("")||`<div class="card empty" style="padding:14px">Brak polisy. „+ Polisa” – podaj okres, składkę i raty, a przypomnę o ratach i o końcu ważności.</div>`;
+ if(daw.length)h+=`<details class="card"><summary class="mut sm" style="cursor:pointer">Wcześniejsze polisy (${daw.length})</summary>${daw.map(kartaPolisy).join("")}</details>`;
+ h+=`<div class="mon">Serwis i inne</div><div class="card list">`;
  for(const t of lst){const kol=t.po_terminie?"var(--bad)":(t.pilne?"var(--warn)":"var(--acc)");
   const co=[t.co_km?"co "+nf(t.co_km,0)+" km":"",t.co_mies?(t.co_mies%12===0?"co "+(t.co_mies/12===1?"rok":t.co_mies/12+" lata"):"co "+t.co_mies+" mies."):""].filter(Boolean).join(" lub ");
   const kiedy=[t.nastepny_data?dzien(t.nastepny_data):"",t.nastepny_km!=null?"przy "+nf(t.nastepny_km,0)+" km":""].filter(Boolean).join(" · ");
   h+=`<div class="it" data-tid="${t.id}"><div class="dot c">!</div><div class="sp"><div class="t">${esc(t.nazwa)} · ${esc(t.pojazd)}</div><div class="mut sm">${kiedy||"ustaw datę lub przebieg"}${co?" · "+co:""}</div>${t.postep!=null?`<div class="prog"><b style="width:${Math.round(t.postep*100)}%;background:${kol}"></b></div>`:""}</div>${chipTerm(t)}</div>`}
- if(!lst.length)h+=`<div class="empty">Brak terminów. Dodaj OC, przegląd, serwis albo wymianę oleju – przypomnę o nich w telefonie.</div>`;
- h+=`</div><div class="note">Przypomnienie w telefonie 30, 7 i 1 dzień przed terminem albo ${"500"} i 100 km przed przebiegiem. Po „Zrobione” termin przesuwa się sam o okres, a koszt trafia do historii.</div>`;
- $("#main").innerHTML=h;document.querySelectorAll("[data-tid]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.tid))}
+ if(!lst.length)h+=`<div class="empty">Brak terminów. Dodaj przegląd, serwis albo wymianę oleju – przypomnę o nich w telefonie.</div>`;
+ h+=`</div><div class="note">Polisy: przypomnienie o racie 14, 7 i 1 dzień przed, w dniu terminu i co 3 dni po terminie, aż ją odhaczysz; o końcu ważności 30, 14 i 1 dzień przed. Zapłacona rata trafia do kosztów sama.<br>Terminy: przypomnienie 30, 7 i 1 dzień przed albo 500 i 100 km przed przebiegiem. Po „Zrobione” termin przesuwa się sam o okres, a koszt trafia do historii.</div>`;
+ $("#main").innerHTML=h;document.querySelectorAll("[data-tid]").forEach(e=>e.onclick=()=>arkuszZrobione(+e.dataset.tid));podepnijPolisy()}
 
 /* ---------- WIĘCEJ */
 async function vWiecej(){$("#tytul").textContent="Więcej";const u=await api("ustawienia");
@@ -368,9 +393,72 @@ async function arkuszZrobione(id){const t=await api("terminy/"+id);const st=(awa
  ${pole("zkw","Koszt (zł, trafi do historii)","",{type:"number",im:"decimal"})}
  ${!t.co_mies&&!t.co_km?`<div class="two">${pole("znd","Następny termin",""
  ,{type:"date"})}${pole("znk","albo przy km","",{type:"number",im:"decimal"})}</div>`:""}
- <button type="button" class="btn" id="zrob">Zrobione</button><button type="button" class="btn sec" id="edt">Edytuj termin</button>`,null,(v,zamknij)=>{
+ <button type="button" class="btn" id="zrob">Zrobione</button><button type="button" class="btn sec" id="edt">Edytuj termin</button>${czyPolisa(t)?`<button type="button" class="btn sec" id="napol">Zamień na polisę</button><div class="note">Polisa pokaże okres ważności, raty i co zapłacone. Ten termin zniknie po zapisaniu polisy.</div>`:""}`,null,(v,zamknij)=>{
+ const np=v.querySelector("#napol");if(np)np.onclick=()=>{zamknij();arkuszPolisa({pojazd_id:t.pojazd_id,z_terminu:t.id,rata_termin:st.nastepny_data})};
  v.querySelector("#zrob").onclick=async()=>{await post("terminy/"+id+"/zrobione",{data:val(v,"zd"),przebieg:val(v,"zk"),kwota:val(v,"zkw"),nastepny_data:val(v,"znd")||null,nastepny_km:val(v,"znk")||null});zamknij();toast("Zapisane, termin przesunięty");pokaz()};
  v.querySelector("#edt").onclick=()=>{zamknij();arkuszTermin(t)}})}
+
+/* ---------- POLISY */
+const czyPolisa=t=>t.kategoria==="Ubezpieczenie"||/polis|\bOC\b|\bAC\b|ubezpiecz/i.test(t.nazwa||"");
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const dD=s=>{const[a,b,c]=s.slice(0,10).split("-").map(Number);return new Date(a,b-1,c)};
+function plusMies(s,n){const d=dD(s),y=d.getFullYear(),m=d.getMonth()+n,last=new Date(y,m+1,0).getDate();return iso(new Date(y,m,Math.min(d.getDate(),last)))}
+function plusDni(s,n){const d=dD(s);d.setDate(d.getDate()+n);return iso(d)}
+function rozlozRaty(od,skl,n){n=Math.max(1,+n||1);const kw=skl?Math.round(100*skl/n)/100:null;const out=[];
+ for(let i=0;i<n;i++)out.push({termin:plusMies(od,Math.floor(i*12/n)),kwota:kw==null?null:(i===n-1?Math.round(100*(skl-kw*(n-1)))/100:kw),zaplacono:null});return out}
+
+async function arkuszPolisaWidok(id){const x=await api("polisy/"+id),st=x.stan;
+ const kol={wazna:["ok","ważna"],przyszla:["","jeszcze nie działa"],wygasla:["bad","wygasła"]}[st.waznosc];
+ const oc=/OC/.test(x.zakres||"");
+ const odn=x.odnowiona?`<div class="note">Ta polisa ma już następczynię.</div>`:(oc?`<div class="note">${x.wypowiedziana?"Zaznaczone: zmieniasz ubezpieczyciela – przypomnę, żeby kupić nową przed "+dataPL(x.do)+".":(st.wznowi_sie?"OC wznowi się samo na rok, jeśli nie wypowiesz umowy. Wypowiedzenie najpóźniej "+dataPL(st.wypowiedz_do)+".":"OC wznowi się samo dopiero, gdy wszystkie raty będą zapłacone (i bez wypowiedzenia).")}</div>`:`<div class="note">AC i inne nie wznawiają się z mocy prawa – sprawdź umowę.</div>`);
+ arkusz(`${x.pojazd} · ${x.nazwa}`,`<div class="card"><div class="row"><span class="chip ${kol[0]}">${kol[1]}</span><span class="sp"></span>${st.do_zaplaty>0?`<span class="chip ${st.po_terminie?"bad":"warn"}">do zapłaty ${zl(st.do_zaplaty,2)}</span>`:`<span class="chip ok">opłacona</span>`}</div>
+  <div class="kv" style="margin-top:6px"><span>Okres</span><span>${dataPL(x.od)} – ${dataPL(x.do)}</span></div>
+  <div class="kv"><span>${st.dni_do_konca>=0?"Do końca":"Po końcu"}</span><span>${Math.abs(st.dni_do_konca)} dni</span></div>
+  ${x.ubezpieczyciel||x.numer?`<div class="kv"><span>Ubezpieczyciel · nr</span><span>${esc(x.ubezpieczyciel||"–")}${x.numer?" · "+esc(x.numer):""}</span></div>`:""}
+  <div class="kv"><span>Składka</span><span>${zl(st.suma,2)} · ${st.liczba_rat} ${st.liczba_rat===1?"rata":(st.liczba_rat<5?"raty":"rat")}</span></div>
+  <div class="kv"><span>Zapłacono</span><span>${zl(st.zaplacono,2)} z ${zl(st.suma,2)}</span></div>${x.notatka?`<div class="note">${esc(x.notatka)}</div>`:""}</div>
+ <div class="card"><div class="mon" style="padding-top:0">Raty</div>${x.raty.map(r=>{const dni=Math.round((dD(r.termin)-dD(iso(new Date())))/864e5);
+  return `<div class="rata"><button type="button" class="ck ${r.zaplacono?"on":""}" data-rata="${r.id}" data-z="${r.zaplacono?1:0}" aria-label="${r.zaplacono?"Cofnij zapłatę":"Zapłacona"}">${r.zaplacono?"✓":""}</button><div class="sp"><div style="font-weight:700">${r.nr} rata · ${zl(r.kwota,2)}</div><div class="mut xs">termin ${dataPL(r.termin)}${r.zaplacono?" · zapłacona "+dataPL(r.zaplacono):(dni<0?" · "+(-dni)+" dni po terminie":" · "+(dni===0?"dziś":"za "+dni+" dni"))}</div></div>${r.zaplacono?"":`<button type="button" class="chip ${dni<0?"bad":"warn"}" data-rata="${r.id}" data-z="0" style="border:0;cursor:pointer">Zapłać</button>`}</div>`}).join("")}</div>
+ <div class="note">Odhaczenie raty zapisuje koszt „Ubezpieczenie” w Historii z datą zapłaty. Cofnięcie usuwa ten koszt.</div>
+ <div id="zpl" hidden class="card"><div class="two">${pole("zpld","Data zapłaty",iso(new Date()),{type:"date"})}<div class="f"><label>&nbsp;</label><button type="button" class="btn" id="zplok">Zapisz zapłatę</button></div></div></div>
+ ${odn}
+ <div class="btns">${oc&&!x.odnowiona?`<button type="button" class="btn sec" id="wyp">${x.wypowiedziana?"Jednak zostaję":"Zmieniam ubezpieczyciela"}</button>`:""}${x.odnowiona?"":`<button type="button" class="btn sec" id="odn">Odnów</button>`}</div>
+ <button type="button" class="btn sec" id="edp">Edytuj polisę</button>`,null,(v,zamknij)=>{
+  let rid=null;
+  v.querySelectorAll("[data-rata]").forEach(b=>b.onclick=async()=>{
+   if(b.dataset.z==="1"){await post("raty/"+b.dataset.rata+"/zaplac",{cofnij:true});zamknij();toast("Cofnięto zapłatę");pokaz();arkuszPolisaWidok(id);return}
+   rid=b.dataset.rata;v.querySelector("#zpl").hidden=false;v.querySelector("#zpl").scrollIntoView({block:"nearest"})});
+  v.querySelector("#zplok").onclick=async()=>{if(!rid)return;await post("raty/"+rid+"/zaplac",{data:val(v,"zpld")});zamknij();toast("Rata zapłacona, koszt w Historii");pokaz();arkuszPolisaWidok(id)};
+  const w=v.querySelector("#wyp");if(w)w.onclick=async()=>{await post("polisy/"+id,{wypowiedziana:x.wypowiedziana?0:1});zamknij();toast("Zapisane");pokaz();arkuszPolisaWidok(id)};
+  const o=v.querySelector("#odn");if(o)o.onclick=async()=>{const r=await post("polisy/"+id+"/odnow");zamknij();pokaz();toast("Nowa polisa na kolejny rok – popraw kwoty");arkuszPolisa(await api("polisy/"+r.id))};
+  v.querySelector("#edp").onclick=()=>{zamknij();arkuszPolisa(x)}})}
+
+function arkuszPolisa(x){x=x||{};const nowa=!x.id;
+ let raty=(x.raty||[]).map(r=>({termin:r.termin,kwota:r.kwota,zaplacono:r.zaplacono}));
+ const zak=[["OC","OC"],["OC+AC","OC + AC"],["AC","AC"],["NNW","NNW"],["Assistance","Assistance"],["inne","inne"]];
+ const v=arkusz(nowa?"Nowa polisa":"Edytuj polisę",`${wybor("pojazd_id","Pojazd",pojOpts(),x.pojazd_id)}
+ ${wybor("zakres","Zakres",zak,x.zakres||"OC")}
+ <div class="two">${pole("od","Od",x.od||"",{type:"date"})}${pole("do","Do (włącznie)",x.do||"",{type:"date"})}</div>
+ <div class="two">${pole("skladka","Składka (zł, całość)",x.skladka,{type:"number",im:"decimal"})}${wybor("lr","Liczba rat",[1,2,3,4,6,12].map(n=>[n,n]),raty.length||(x.rata_termin?2:1))}</div>
+ <div class="two">${pole("ubezpieczyciel","Ubezpieczyciel",x.ubezpieczyciel)}${pole("numer","Nr polisy",x.numer)}</div>
+ <div class="card"><div class="row"><b class="sm sp">Raty</b><button type="button" class="chip acc" id="rozl" style="border:0;cursor:pointer">Rozłóż z liczby rat</button></div><div id="rlist"></div></div>
+ <div class="note">Daty i kwoty rat można zmienić (ubezpieczyciel czasem dzieli nierówno). Pierwsza rata przy zakupie zwykle jest od razu zapłacona – zaznacz ją.${x.rata_termin?" Z terminu: rata "+dataPL(x.rata_termin)+" – sprawdź, czy daty się zgadzają.":""}</div>
+ ${pole("notatka","Notatka",x.notatka)}${nowa?"":`<button type="button" class="btn del" data-usunpol="${x.id}">Usuń polisę (i koszty jej rat)</button>`}`,
+ async v=>{czytaj();const d={pojazd_id:val(v,"pojazd_id"),zakres:val(v,"zakres"),od:val(v,"od"),do:val(v,"do"),skladka:val(v,"skladka"),ubezpieczyciel:val(v,"ubezpieczyciel"),numer:val(v,"numer"),notatka:val(v,"notatka"),raty};
+  if(!d.od||!d.do){toast("Podaj daty od i do");return false}if(!raty.length){toast("Dodaj raty");return false}
+  if(x.z_terminu)d.z_terminu=x.z_terminu;
+  const r=await post("polisy"+(nowa?"":"/"+x.id),d);toast("Polisa zapisana");setTimeout(()=>arkuszPolisaWidok(r.id),50)},
+ (v,zamknij)=>{const b=v.querySelector("[data-usunpol]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno? Usunie też koszty zapłaconych rat. Dotknij jeszcze raz";return}await post("polisy/"+x.id+"/usun");zamknij();toast("Usunięte");pokaz()}}});
+ const lista=v.querySelector("#rlist");
+ function rysuj(){lista.innerHTML=raty.map((r,i)=>`<div class="rr" style="margin-top:6px">${pole("rt"+i,(i+1)+" rata – termin",r.termin||"",{type:"date"})}${pole("rk"+i,"Kwota (zł)",r.kwota,{type:"number",im:"decimal"})}<label class="tog" style="padding-bottom:10px"><input type="checkbox" id="rz${i}" ${r.zaplacono?"checked":""}>zapł.</label></div>`).join("")||`<div class="note">Podaj „Od”, składkę i liczbę rat, potem „Rozłóż z liczby rat”.</div>`}
+ function czytaj(){raty=raty.map((r,i)=>{const z=v.querySelector("#rz"+i).checked;return{termin:val(v,"rt"+i),kwota:val(v,"rk"+i),zaplacono:z?(r.zaplacono||(val(v,"rt"+i)<=iso(new Date())?val(v,"rt"+i):iso(new Date()))):null}})}
+ function rozloz(){const od=val(v,"od");if(!od){toast("Najpierw data „Od”");return}const stare=raty;raty=rozlozRaty(od,+val(v,"skladka")||null,val(v,"lr"));
+  raty.forEach((r,i)=>{if(stare[i]&&stare[i].zaplacono)r.zaplacono=stare[i].zaplacono});
+  if(x.rata_termin&&raty.length>1&&!raty.some(r=>r.termin===x.rata_termin))raty[1].termin=x.rata_termin;rysuj()}
+ v.querySelector("#rozl").onclick=()=>{czytaj();rozloz()};
+ v.querySelector("#od").onchange=()=>{const od=val(v,"od");if(od&&!val(v,"do"))v.querySelector("#do").value=plusDni(plusMies(od,12),-1);if(!raty.length&&od)rozloz()};
+ v.querySelector("#lr").onchange=()=>{czytaj();rozloz()};
+ rysuj()}
 
 function arkuszPojazd(x){x=x||{rodzaj:"auto",aktywny:1};
  arkusz(x.id?x.nazwa:"Nowy pojazd",`${pole("nazwa","Nazwa",x.nazwa)}
