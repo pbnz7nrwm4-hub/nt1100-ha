@@ -10,7 +10,10 @@ Ekran jest podłączony kablem USB do serwera, a stacja działa w kontenerze „
 
 ## Instalacja (w kontenerze, jako root)
 
+Na serwerze Proxmox najpierw `pct enter 140` (znak zachęty `root@kronika`), dopiero potem polecenia poniżej.
+
 ```
+apt-get update && apt-get install -y curl   # świeży Debian w kontenerze nie ma curl
 curl -fsSL https://raw.githubusercontent.com/pbnz7nrwm4-hub/nt1100-ha/main/stacja/instaluj.sh -o /root/stacja.sh && bash /root/stacja.sh 8990
 ```
 
