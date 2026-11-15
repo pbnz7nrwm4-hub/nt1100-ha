@@ -101,9 +101,12 @@ class Stacja(unittest.TestCase):
         self.assertTrue(czekaj(lambda: S.ostatnio_wgrana() == "2.15.0"))
         self.assertIsNotNone(S.STAN["nagrywa"])
         time.sleep(0.8)
-        os.write(M, b"ESP-ROM:esp32p4\nNT1100 Ekran 2.15.0, PSRAM 32768 KB, karta ok\n"
-                    b"pamiec 10 s: ram 200 KB blok 100 KB min 115 KB, psram 30000 KB, klatki 120, demo 50.0 km/h\n"
-                    b"pamiec 20 s: ram 190 KB blok 90 KB min 111 KB, psram 30000 KB, klatki 100, demo 50.0 km/h\n")
+        # jeden start = baner ROM z linią rst:0x (tak wygląda na prawdziwym ekranie); pierwsze 10 s nie liczy się do klatek
+        os.write(M, b"ESP-ROM:esp32p4-eco2-20240710\nrst:0x7 (HP_SYS_HP_WDT_RESET),boot:0x20c (SPI_FAST_FLASH_BOOT)\n"
+                    b"NT1100 Ekran 2.15.0, PSRAM 32768 KB, karta ok\n"
+                    b"pamiec 10 s: ram 200 KB blok 100 KB min 115 KB, psram 30000 KB, klatki 6, demo 50.0 km/h\n"
+                    b"pamiec 20 s: ram 190 KB blok 90 KB min 111 KB, psram 30000 KB, klatki 100, demo 50.0 km/h\n"
+                    b"pamiec 30 s: ram 190 KB blok 90 KB min 112 KB, psram 30000 KB, klatki 120, demo 50.0 km/h\n")
         time.sleep(0.8)
         self.post("api/stop")
         dz = S.dzienniki()
