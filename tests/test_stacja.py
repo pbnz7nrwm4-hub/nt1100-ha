@@ -129,6 +129,16 @@ class Stacja(unittest.TestCase):
             f.write(b"x")
         self.assertFalse(S.wgraj())
         self.assertIn("NIE zgadza", S.STAN["komunikat"])
+        # 6. nieudane wgranie: końcówka esptool do pokazania i skopiowania
+        S.wpis_historii(co="wgranie", wersja="2.16.0", port="/dev/ttyACM0", wynik="blad")
+        with open(os.path.join(S.KAT, "wgrywanie-blad-20991231-000000.txt"), "w") as f:
+            f.write("esptool v5\nWriting at 0x10000 (1 %)\rWriting at 0x20000 (2 %)\nA fatal error occurred: Packet content transfer stopped\n")
+        b = S.stan()["blad_wgrania"]
+        self.assertIn("Packet content transfer stopped", b)
+        self.assertIn("Writing at 0x20000", b)
+        self.assertNotIn("0x10000 (1", b)
+        # „Pokaż Claude” mieści się w jednej wiadomości
+        self.assertLess(len(S.dla_claude(dz[0]["plik"])), 9500)
 
 
 if __name__ == "__main__":

@@ -39,25 +39,27 @@ Gałąź z wynikami trzyma tylko ostatnią budowę, dlatego stacja zapisuje każ
 
 ## USB
 
-Ekran przy każdym resecie na chwilę znika z USB, a zwykłe przekazanie urządzenia (`dev0`) wymagałoby wtedy restartu
-kontenera. Dlatego kontener dostaje stały węzeł znakowy z dysku serwera (nie z /dev serwera). Węzeł przeżywa reset
-ekranu i restart serwera. Port ekranu to `ttyACM0` (sterownik cdc_acm, numer 166:0).
+Ekran przy każdym resecie na chwilę znika z USB i może wrócić pod innym numerem (`ttyACM0`, `ttyACM1`…), np. gdy
+ktoś trzymał port otwarty w chwili resetu. Zwykłe przekazanie urządzenia (`dev0`) wymagałoby wtedy restartu kontenera.
+Dlatego kontener dostaje katalog stałych węzłów `ttyACM0`–`ttyACM3` (166:0–3) z dysku serwera, a Stacja wybiera ten,
+za którym jest teraz urządzenie (`/sys/class/tty/ttyACMn`, bez otwierania portu, bo otwarcie resetuje ekran).
 
-Na serwerze Proxmox (jako root, kontener nieuprzywilejowany: root i dialout w kontenerze to 100000 i 100020 na serwerze):
+Na serwerze Proxmox (jako root; kontener nieuprzywilejowany: root i dialout w kontenerze to 100000 i 100020 na serwerze):
 
 ```
-mkdir -p /var/lib/stacja-usb && mknod -m 660 /var/lib/stacja-usb/ttyACM0 c 166 0 && chown 100000:100020 /var/lib/stacja-usb/ttyACM0
+mkdir -p /var/lib/stacja-usb && for i in 0 1 2 3; do [ -e /var/lib/stacja-usb/ttyACM$i ] || mknod -m 660 /var/lib/stacja-usb/ttyACM$i c 166 $i; chown 100000:100020 /var/lib/stacja-usb/ttyACM$i; done
 ```
 
-Do `/etc/pve/lxc/<id>.conf` (przed sekcjami migawek):
+W `/etc/pve/lxc/<id>.conf` (przed sekcjami migawek):
 
 ```
 lxc.cgroup2.devices.allow: c 166:* rwm
-lxc.mount.entry: /var/lib/stacja-usb/ttyACM0 dev/ttyACM0 none bind,create=file 0 0
+lxc.mount.entry: /var/lib/stacja-usb dev/stacja none bind,create=dir 0 0
 ```
 
-Potem `pct reboot <id>` i sprawdzenie: `pct exec <id> -- ls -l /dev/ttyACM0` (ma być `root dialout 166, 0`).
-Stacja szuka portu kolejno w `/dev/serial/by-id/*` i `/dev/ttyACM*` (zmienna `STACJA_PORT`).
+Potem `pct reboot <id>` i sprawdzenie: `pct exec <id> -- ls -l /dev/stacja /sys/class/tty/` (węzły `root dialout 166, n`).
+Stacja szuka portu kolejno w `/dev/stacja/ttyACM*`, `/dev/serial/by-id/*` i `/dev/ttyACM*` (zmienna `STACJA_PORT`).
+Nagranie przy wgrywaniu startuje dopiero po esptool – otwarty port w czasie resetu zmieniał numer ekranu.
 
 ## Bez ekranu
 

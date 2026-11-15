@@ -25,14 +25,14 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.2"
+WERSJA = "1.0.3"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
 HISTORIA = os.path.join(KAT, "historia.jsonl")
 ESPTOOL = os.environ.get("STACJA_ESPTOOL", sys.executable + " -m esptool").split()
 # Najpierw stała nazwa z /dev/serial/by-id (gdy jest), potem zwykły port USB CDC.
-WZORY_PORTU = os.environ.get("STACJA_PORT", "/dev/serial/by-id/*:/dev/ttyACM*").split(":")
+WZORY_PORTU = os.environ.get("STACJA_PORT", "/dev/stacja/ttyACM*:/dev/serial/by-id/*:/dev/ttyACM*").split(":")
 REPO = os.environ.get("STACJA_REPO", "pbnz7nrwm4-hub/nt1100-firmware")
 GALAZ = os.environ.get("STACJA_GALAZ", "wyniki")
 PLIK_KLUCZA = os.environ.get("STACJA_KLUCZ", "/etc/stacja/github_token")
@@ -193,11 +193,23 @@ def petla_budow():
 
 # ---------------------------------------------------------------- port
 
+def obecny(p):
+    """Czy za węzłem jest teraz urządzenie. Kontener dostaje stałe węzły ttyACM0–3 (166:n) – po resecie ekran
+    może dostać inny numer, więc o obecności decyduje /sys/class/tty (bez otwierania portu, które resetuje ekran)."""
+    try:
+        rdev = os.stat(p).st_rdev
+    except OSError:
+        return False
+    if os.major(rdev) != 166 or not os.path.isdir("/sys/class/tty"):
+        return True
+    return os.path.exists("/sys/class/tty/ttyACM%d" % os.minor(rdev))
+
+
 def znajdz_port(czekaj_s=0):
     koniec = time.time() + czekaj_s
     while True:
         for w in WZORY_PORTU:
-            porty = sorted(p for p in glob.glob(w) if os.path.exists(p))
+            porty = sorted(p for p in glob.glob(w) if os.path.exists(p) and obecny(p))
             if porty:
                 return porty[0]
         if time.time() >= koniec:
@@ -325,8 +337,7 @@ def wgraj(wersja=None, ratunek=False):
     if not port:
         komunikat("Nie widzę ekranu na USB. Podłącz kabel USB-C (albo użyj „Ratuj ekran”).")
         return False
-    nagrywaj_start(v)  # zapis od pierwszej sekundy po wgraniu (wpisy startu nie giną)
-    STAN["zadanie"] = "wgrywanie"
+    STAN["zadanie"] = "wgrywanie"  # trwające nagranie zamyka port (esptool potrzebuje go na wyłączność)
     komunikat("Wgrywam ekran %s na %s – nie odłączaj kabla…" % (v, port))
     time.sleep(0.8)
     t0 = time.time()
@@ -338,6 +349,9 @@ def wgraj(wersja=None, ratunek=False):
     except Exception as e:
         out, kod = str(e), -1
     STAN["zadanie"] = None
+    # nagranie startuje dopiero teraz: otwarcie portu przed esptool resetowało ekran, a port trzymany w czasie resetu
+    # sprawiał, że ekran wracał pod innym numerem (ttyACM1) i esptool nie znajdował ttyACM0
+    nagrywaj_start(v)
     sprawdzone = "Hash of data verified" in out
     ok = kod == 0 and (sprawdzone or "Hard resetting" in out)
     if not ok:
@@ -408,7 +422,25 @@ def dzienniki(n=30):
     return out
 
 
-def dla_claude(nazwa, linii=200):
+SZUM = ("wydajnosc: etapy", "wydajnosc: tekst", "uklad:", "poziomo:", "w-tle:", "funkcje-290", "telefon-id: co minute: adres")
+MAX_ZNAKOW = 9000  # tekst „Pokaż Claude” mieści się w jednej wiadomości czatu
+
+
+def blad_wgrania():
+    """Końcówka zapisu esptool z ostatniego wgrania, jeśli nie wyszło (do pokazania i skopiowania)."""
+    ost = next((h for h in historia(50) if h.get("co") == "wgranie"), None)
+    if not ost or ost.get("wynik") != "blad":
+        return None
+    pl = sorted(glob.glob(os.path.join(KAT, "wgrywanie-blad-*.txt")), key=os.path.getmtime)
+    if not pl:
+        return None
+    with open(pl[-1], encoding="utf-8", errors="replace", newline="") as f:
+        lin = [x.split("\r")[-1] for x in f.read().split("\n") if x.strip()]  # postęp esptool nadpisuje linię przez \r
+    return "Wgranie %s nie wyszło (%s, port %s). Ostatnie linie esptool:\n%s" % (
+        ost.get("wersja"), ost.get("ts", "?"), ost.get("port", "?"), "\n".join(lin[-25:]))
+
+
+def dla_claude(nazwa, linii=80):
     """Krótki tekst do wklejenia w czacie: podsumowanie + błędy + ostatnie linie."""
     p = os.path.join(DZIENNIKI, nazwa)
     s = podsumowanie(p)
@@ -418,7 +450,16 @@ def dla_claude(nazwa, linii=200):
     gl = ("Dziennik demo %s: wersja %s, %s min, restarty %d, awarie %d, klatki/min %s, RAM min %s KB."
           % (s["kiedy"], s["wersja"] or "?", s["minut"] if s["minut"] is not None else "?", s["restarty"], s["awarie"],
              "%d–%d" % tuple(s["klatki_min"]) if s["klatki_min"] else "?", s["ram_min_kb"] if s["ram_min_kb"] is not None else "?"))
-    return "\n".join([gl, "", "Starty i błędy:"] + (bledy or ["(brak)"]) + ["", "Ostatnie %d linii:" % linii] + lin[-linii:])
+    kon = [x for x in lin if not x.startswith(SZUM)][-linii:]
+    t = "\n".join([gl, "", "Starty i błędy:"] + (bledy[:15] or ["(brak)"]) + ["", "Ostatnie linie (bez powtarzalnych statystyk):"])
+    zostalo = MAX_ZNAKOW - len(t)
+    ogon = []
+    for x in reversed(kon):
+        zostalo -= len(x) + 1
+        if zostalo < 0:
+            break
+        ogon.append(x)
+    return t + "\n" + "\n".join(reversed(ogon))
 
 
 # ---------------------------------------------------------------- stan dla strony
@@ -436,7 +477,7 @@ def stan():
             "na_ekranie": na_ekranie, "budowy": [{k: v for k, v in b.items() if k != "sciezka"} for b in lst[:8]],
             "najnowsza": ({k: v for k, v in lst[0].items() if k != "sciezka"} if lst else None),
             "dzienniki": dz, "historia": historia(15), "klucz": bool(klucz()), "sprawdzono": STAN["sprawdzono"],
-            "blad_budow": STAN["blad_budow"], "fala2": {"wgran": wgran, "nagran": nagr}}
+            "blad_budow": STAN["blad_budow"], "blad_wgrania": blad_wgrania(), "fala2": {"wgran": wgran, "nagran": nagr}}
 
 
 # ---------------------------------------------------------------- serwer
