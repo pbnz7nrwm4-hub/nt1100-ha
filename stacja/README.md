@@ -39,10 +39,25 @@ Gałąź z wynikami trzyma tylko ostatnią budowę, dlatego stacja zapisuje każ
 
 ## USB
 
-Ekran przy każdym resecie na chwilę znika z USB, więc zwykłe przekazanie urządzenia do kontenera (`dev0`)
-po resecie wymaga restartu kontenera. Ustawienie, które to przeżywa, przygotujemy po odczycie z serwera
-z podłączonym ekranem (`lsusb`, `/dev/serial/by-id`, `dmesg`). Stacja szuka portu kolejno w `/dev/serial/by-id/*`
-i `/dev/ttyACM*` (zmienna `STACJA_PORT`).
+Ekran przy każdym resecie na chwilę znika z USB, a zwykłe przekazanie urządzenia (`dev0`) wymagałoby wtedy restartu
+kontenera. Dlatego kontener dostaje stały węzeł znakowy z dysku serwera (nie z /dev serwera). Węzeł przeżywa reset
+ekranu i restart serwera. Port ekranu to `ttyACM0` (sterownik cdc_acm, numer 166:0).
+
+Na serwerze Proxmox (jako root, kontener nieuprzywilejowany: root i dialout w kontenerze to 100000 i 100020 na serwerze):
+
+```
+mkdir -p /var/lib/stacja-usb && mknod -m 660 /var/lib/stacja-usb/ttyACM0 c 166 0 && chown 100000:100020 /var/lib/stacja-usb/ttyACM0
+```
+
+Do `/etc/pve/lxc/<id>.conf` (przed sekcjami migawek):
+
+```
+lxc.cgroup2.devices.allow: c 166:* rwm
+lxc.mount.entry: /var/lib/stacja-usb/ttyACM0 dev/ttyACM0 none bind,create=file 0 0
+```
+
+Potem `pct reboot <id>` i sprawdzenie: `pct exec <id> -- ls -l /dev/ttyACM0` (ma być `root dialout 166, 0`).
+Stacja szuka portu kolejno w `/dev/serial/by-id/*` i `/dev/ttyACM*` (zmienna `STACJA_PORT`).
 
 ## Bez ekranu
 
