@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.0"
+WERSJA = "1.0.1"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -371,7 +371,7 @@ def w_tle(f, *a):
 
 RE_WERSJA = re.compile(r"NT1100 Ekran (\d+(?:\.\d+)+)")
 RE_PAMIEC = re.compile(r"pamiec (\d+) s: ram \d+ KB blok \d+ KB min (\d+) KB, psram \d+ KB, klatki (\d+)")
-RE_START = re.compile(r"ESP-ROM:|rst:0x")
+RE_START = re.compile(r"^ESP-ROM:", re.M)  # jeden start = jeden baner ROM (linia rst:0x to jego część)
 RE_AWARIA = re.compile(r"Guru Meditation|abort\(\)|task_wdt|assert failed")
 
 
@@ -382,7 +382,8 @@ def podsumowanie(p):
     wer = RE_WERSJA.findall(t)
     pam = RE_PAMIEC.findall(t)
     starty = len(RE_START.findall(t))
-    kl = [int(k) * 6 for _, _, k in pam if int(k) > 0]
+    # pierwsze 10 s po starcie to niepełny odcinek (ekran dopiero rysuje pierwszą klatkę) – nie liczy się do klatek/min
+    kl = [int(k) * 6 for sek, _, k in pam if int(k) > 0 and int(sek) > 10]
     minuty = None
     m = re.search(r"# Stacja: nagranie (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", t)
     st = os.stat(p)
