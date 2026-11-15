@@ -86,7 +86,7 @@ function render(){const se=$("#sel");if(se)WYB=se.value;const d=D,naj=d.najnowsz
  <div class="grid">
  <section class="card" style="order:${window.innerWidth<=640?2:1}"><div class="hd">${IKO.wgraj}<h2>Wgraj</h2></div>
   <div class="kv"><span>Na ekranie</span><span>${esc(d.na_ekranie||"nieznana")}</span><span>Najnowsza</span><span>${naj?esc(naj.wersja)+" · suma zgodna":"brak"}</span></div>
-  <button type="button" class="${aktualna?"":"b-main"}" id="bw" ${!naj||aktualna||zaj?"disabled":""}>${aktualna?"Ekran ma najnowszą wersję":(naj?"Wgraj "+esc(naj.wersja):"Brak budowy")}</button>
+  <button type="button" class="${aktualna?"b-out":"b-main"}" id="bw" ${!naj||zaj?"disabled":""}>${aktualna?"Wgraj ponownie "+esc(naj.wersja):(naj?"Wgraj "+esc(naj.wersja):"Brak budowy")}</button>
   ${poprz.length?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label for="sel" class="note">Inna wersja:</label><select id="sel">${poprz.map(b=>`<option ${b.wersja===WYB?"selected":""}>${esc(b.wersja)}</option>`).join("")}</select><button type="button" class="b-link" id="bwp" ${zaj?"disabled":""}>Wgraj wybraną</button></div>`:""}
   <p class="note">Wgrywa tylko plik ze zgodną sumą. Ustawienia i parowanie telefonu zostają.${d.sprawdzono?" Budowy sprawdzone "+esc(kiedy(d.sprawdzono))+".":""} <button type="button" class="b-link" id="bs" style="min-height:0;font-size:13px">Sprawdź teraz</button></p></section>
  <section class="card" style="order:${window.innerWidth<=640?1:2}"><div class="hd">${IKO.demo}<h2>Demo</h2></div>
