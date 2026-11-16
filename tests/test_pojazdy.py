@@ -684,6 +684,28 @@ class OponyAPI(unittest.TestCase):
             srv.DB.usun("odczyty", o["id"])
         self.assertEqual(srv.DB.lista("koszty", uid="opony:wymiana:%d" % w), [])
 
+    def test_opony_juz_na_pojezdzie(self):
+        """Z1116-210731: komplet dodany jako już założony – wpis założenia z datą, przebiegiem i bieżnikiem, bez kosztu."""
+        nt = srv.pojazd_po_kluczu("nt1100")["id"]
+        srv.DB.dodaj("odczyty", {"pojazd_id": nt, "data": "2026-11-10", "przebieg": 15000})
+        ile = len(srv.DB.lista("opony", pojazd_id=nt))
+        with self.assertRaises(Exception):
+            self.req("api/opony", {"pojazd_id": nt, "os": "przod", "na_pojezdzie": {"data": ""}})
+        self.assertEqual(ile, len(srv.DB.lista("opony", pojazd_id=nt)))  # błąd nie zostawia pustego kompletu
+        z = self.req("api/opony", {"pojazd_id": nt, "os": "przod", "nazwa": "Już założone",
+                                   "na_pojezdzie": {"data": "2026-05-01", "przebieg": "12000", "bieznik": "4,2"}})["id"]
+        w = srv.DB.lista("wymiany_opon", opona_id=z)
+        self.assertEqual(len(w), 1)
+        self.assertEqual((w[0]["data"], w[0]["przebieg"], w[0]["bieznik_zakl"], w[0]["os"]), ("2026-05-01", 12000, 4.2, "przod"))
+        self.assertEqual(srv.DB.lista("koszty", uid="opony:wymiana:%d" % w[0]["id"]), [])
+        n = [x for x in self.req("api/opony") if x["pojazd_id"] == nt][0]
+        k = [x for x in n["komplety"] if x["id"] == z][0]
+        self.assertTrue(k["zalozony"])
+        self.assertEqual(round(k["km"]), 3000)
+        self.req("api/opony/%d/usun" % z, {})
+        for o in srv.DB.lista("odczyty", pojazd_id=nt):
+            srv.DB.usun("odczyty", o["id"])
+
 
 class Kontener(unittest.TestCase):
     """1.8.0: aplikacja samodzielna (kontener) + dodatek-pośrednik w HA – dwa prawdziwe procesy."""

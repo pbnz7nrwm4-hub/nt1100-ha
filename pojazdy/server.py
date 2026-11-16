@@ -29,7 +29,7 @@ import obliczenia as ob  # noqa: E402
 import opony as op  # noqa: E402
 import prognoza as pg  # noqa: E402
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 DATA = os.environ.get("PJ_DATA", "/data")
 SHARE = os.environ.get("PJ_SHARE", "/share/pojazdy")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -820,7 +820,20 @@ def zapisz_komplet(j, id_=None):
     p = DB.jeden("pojazdy", d["pojazd_id"]) or {}
     d.setdefault("os", osie_pojazdu(p)[0] if len(osie_pojazdu(p)) == 1 else "przod")
     d.setdefault("rodzaj", "opony" if p.get("rodzaj") == "motocykl" else "zimowe")
-    return DB.dodaj("opony", d)
+    # Opony, które już są na pojeździe (założone przed zapisem w aplikacji): od razu wpis założenia z datą,
+    # przebiegiem i bieżnikiem – bez udawania wymiany i bez kosztu (zlecenie Z1116-210731, 16.11).
+    zal = j.get("na_pojezdzie") or None
+    if zal:
+        data = str(zal.get("data") or "")[:10]
+        if not data:
+            raise ValueError("podaj datę założenia")
+        ob.d10(data)
+    nid = DB.dodaj("opony", d)
+    if zal:
+        zapisz_wymiane({"pojazd_id": d["pojazd_id"], "opona_id": nid, "os": d.get("os"), "data": data,
+                        "przebieg": zal.get("przebieg"), "bieznik_zakl": zal.get("bieznik"),
+                        "notatka": zal.get("notatka") or "Wpisane ręcznie: opony były już założone"})
+    return nid
 
 
 def zapisz_wymiane(j, id_=None):

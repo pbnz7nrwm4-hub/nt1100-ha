@@ -297,14 +297,14 @@ function sekcjaOpon(lst){let h=`<div class="mon">Opony</div>`;
   h+=kom.map(x=>kartaKompletu(x,moto)).join("");
   if(zuz.length)h+=`<details class="card"><summary class="mut sm" style="cursor:pointer">Zużyte komplety (${zuz.length})</summary>${zuz.map(x=>kartaKompletu(x,moto)).join("")}</details>`;
   h+=`<button type="button" class="btn sec" data-wym="${p.pojazd_id}">Wymiana opon · ${esc(p.pojazd)}</button>`}
- return h+`<div class="note">Wpisujesz tylko datę wymiany. Przebieg każdego kompletu liczy się sam z odczytów licznika (tankowania, przeglądy, telemetria, ręczne odczyty). „≈” znaczy, że w dniu wymiany nie było odczytu i przebieg jest liczony między najbliższymi.</div>`}
+ return h+`<div class="note">Wpisujesz tylko datę wymiany (opony, które już są na pojeździe, dodasz przez „+ Komplet”). Przebieg każdego kompletu liczy się sam z odczytów licznika (tankowania, przeglądy, telemetria, ręczne odczyty). „≈” znaczy, że w dniu wymiany nie było odczytu i przebieg jest liczony między najbliższymi.</div>`}
 function podepnijOpony(){document.querySelectorAll("[data-opo]").forEach(e=>e.onclick=()=>arkuszKompletWidok(+e.dataset.opo));
  document.querySelectorAll("[data-nkom]").forEach(e=>e.onclick=ev=>{ev.stopPropagation();arkuszKomplet({pojazd_id:+e.dataset.nkom})});
  document.querySelectorAll("[data-wym]").forEach(e=>e.onclick=()=>arkuszWymiana({pojazd_id:+e.dataset.wym}))}
 const opPoj=pid=>(S.opony||[]).find(p=>p.pojazd_id===pid)||{komplety:[],wymiany:[],osie:["komplet"]};
 const kompletPo=id=>{for(const p of S.opony||[])for(const x of p.komplety)if(x.id===id)return [x,p];return [null,null]};
 async function arkuszKompletWidok(id){if(!S.opony)S.opony=await api("opony");const [x,p]=kompletPo(id);if(!x)return;const moto=p.rodzaj==="motocykl";
- const sez=x.sezony.map(s=>`<div class="it" style="cursor:default"><div class="sp"><div class="t">${s.do?"sezon":"na pojeździe"} ${dzien(s.od)} – ${s.do?dzien(s.do):"teraz"}</div><div class="mut xs">${esc(s.opis_od)} → ${esc(s.opis_do)}</div></div><div class="r">${s.km==null?"–":(s.dokladny?"":"≈ ")+nf(s.km,0)+" km"}</div></div>`).join("")||`<div class="note">Brak wymian. Dodaj datę założenia przez „Wymiana opon”.</div>`;
+ const sez=x.sezony.map(s=>`<div class="it" style="cursor:default"><div class="sp"><div class="t">${s.do?"sezon":"na pojeździe"} ${dzien(s.od)} – ${s.do?dzien(s.do):"teraz"}</div><div class="mut xs">${esc(s.opis_od)} → ${esc(s.opis_do)}</div></div><div class="r">${s.km==null?"–":(s.dokladny?"":"≈ ")+nf(s.km,0)+" km"}</div></div>`).join("")||`<div class="note">Brak daty założenia.</div><button type="button" class="btn sec" id="zalk">Wpisz, od kiedy jest na pojeździe</button>`;
  const z=x.zuzycie;let bz=x.bieznik.map(b=>`<div class="kv"><span>${dataPL(b[0])}</span><span>${nf(b[1],1)} mm</span></div>`).join("");
  if(z&&z.mm_na_1000)bz+=`<div class="note">Spadek ${nf(z.mm_od-z.mm_do,1)} mm na ok. ${nf(z.km,0)} km (${nf(z.mm_na_1000,2)} mm na 1000 km). Do ${nf(z.minimum,1)} mm (${esc(z.minimum_zrodlo)}) zostało ok. ${nf(z.km_zostalo,0)} km${z.sezonow_zostalo!=null?", czyli ok. "+nf(z.sezonow_zostalo,1)+" sezonu":""} (prognoza liniowa).</div>`;
  else if(x.bieznik.length===1)bz+=`<div class="note">Zużycie policzę po drugim pomiarze (wpisz bieżnik przy następnej wymianie).</div>`;
@@ -313,7 +313,7 @@ async function arkuszKompletWidok(id){if(!S.opony)S.opony=await api("opony");con
  <div class="mon">Bieżnik (opcjonalnie)</div><div class="card">${bz||'<div class="note">Brak pomiarów. Bieżnik wpiszesz przy wymianie, jeśli chcesz.</div>'}</div>
  <div class="note">Dokumenty (faktura za opony) pojawią się tu z bazy dokumentów na Macu, gdy będzie gotowa.</div>
  <button type="button" class="btn sec" id="edk">Edytuj komplet</button>${x.sezony.length?`<div class="mon">Wymiany tego kompletu</div><div class="card list">${x.sezony.map(s=>`<div class="it" data-ew="${s.wymiana_id}"><div class="sp"><div class="t">Założony ${dataPL(s.od)}</div></div><div class="r mut sm">edytuj</div></div>`).join("")}</div>`:""}`,null,(v,zamknij)=>{
- v.querySelector("#edk").onclick=()=>{zamknij();arkuszKomplet(x)};
+ v.querySelector("#edk").onclick=()=>{zamknij();arkuszKomplet(x)};const zk=v.querySelector("#zalk");if(zk)zk.onclick=()=>{zamknij();arkuszWymiana({pojazd_id:p.pojazd_id,opona_id:x.id,os:x.os})};
  v.querySelectorAll("[data-ew]").forEach(e=>e.onclick=()=>{const w=(p.wymiany||[]).find(y=>y.id===+e.dataset.ew);zamknij();arkuszWymiana(w)})})}
 function arkuszKomplet(x){x=x||{};const p=S.pojazdy.find(q=>q.id===x.pojazd_id)||{};const moto=p.rodzaj==="motocykl";
  arkusz(x.id?"Edytuj komplet":"Nowy komplet",`${wybor("pojazd_id","Pojazd",pojOpts(),x.pojazd_id)}
@@ -321,10 +321,14 @@ function arkuszKomplet(x){x=x||{};const p=S.pojazdy.find(q=>q.id===x.pojazd_id)|
  ${pole("nazwa","Marka i model (opcjonalnie)",x.nazwa,{ph:"np. Michelin Alpin 6"})}
  <div class="two">${pole("rozmiar","Rozmiar",x.rozmiar,{ph:"np. 225/55 R18"})}${pole("dot","DOT (rok)",x.dot,{ph:"np. 2023"})}</div>
  <label class="tog"><input type="checkbox" id="zuzyty" ${x.zuzyty?"checked":""}> Zużyty (zostaje w historii)</label>
+ ${x.id?"":`<label class="tog"><input type="checkbox" id="napoj"> Te opony są już na pojeździe</label>
+ <div id="napojb" style="display:none"><div class="two">${pole("zd","Założone dnia",new Date().toISOString().slice(0,10),{type:"date"})}${pole("zk","Przebieg wtedy (km)","",{type:"number",im:"decimal",ph:"puste = wyliczę z odczytów"})}</div>
+ ${pole("zb","Bieżnik (mm)","",{type:"number",im:"decimal",ph:"opcjonalnie"})}<div class="note">Nie znasz dokładnej daty? Wpisz przybliżoną – przebiegi przeliczą się, gdy ją poprawisz.</div></div>`}
  ${pole("notatka","Notatka",x.notatka)}${x.id?`<button type="button" class="btn del" data-usunkom="${x.id}">Usuń komplet (i jego wymiany)</button>`:""}`,
  async v=>{const d={};for(const k of ["pojazd_id","rodzaj","os","nazwa","rozmiar","dot","notatka"])d[k]=val(v,k)||null;d.zuzyty=val(v,"zuzyty");
-  await post("opony"+(x.id?"/"+x.id:""),d);toast("Zapisane")},
- (v,zamknij)=>{const b=v.querySelector("[data-usunkom]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno? Usunie też wymiany i ich koszty. Dotknij jeszcze raz";return}await post("opony/"+x.id+"/usun");zamknij();toast("Usunięte");pokaz()}}})}
+  if(!x.id&&val(v,"napoj")){if(!val(v,"zd")){toast("Podaj datę założenia");return false}d.na_pojezdzie={data:val(v,"zd"),przebieg:val(v,"zk")||null,bieznik:val(v,"zb")||null}}
+  await post("opony"+(x.id?"/"+x.id:""),d);toast(d.na_pojezdzie?"Zapisane, przebieg liczy się od dnia założenia":"Zapisane")},
+ (v,zamknij)=>{const n=v.querySelector("#napoj");if(n)n.onchange=()=>{v.querySelector("#napojb").style.display=n.checked?"":"none"};const b=v.querySelector("[data-usunkom]");if(b){let raz=false;b.onclick=async()=>{if(!raz){raz=true;b.textContent="Na pewno? Usunie też wymiany i ich koszty. Dotknij jeszcze raz";return}await post("opony/"+x.id+"/usun");zamknij();toast("Usunięte");pokaz()}}})}
 async function arkuszWymiana(x){x=x||{};if(!S.opony)S.opony=await api("opony");let pid=x.pojazd_id||(S.pojazdy.find(p=>p.aktywny)||{}).id;
  const v=arkusz(x.id?"Edytuj wymianę":"Wymiana opon",`<div id="wbd"></div>`,async v=>{const d={pojazd_id:val(v,"wp"),os:val(v,"wos"),data:val(v,"wd"),przebieg:val(v,"wk"),koszt:val(v,"wkw"),bieznik_zdjm:val(v,"wbz"),bieznik_zakl:val(v,"wbn"),notatka:val(v,"wn")||null};
   const o=val(v,"wo");if(o==="nowy")d.nowy={rodzaj:val(v,"wnr"),nazwa:val(v,"wnn")||"",rozmiar:val(v,"wns")||null};else d.opona_id=o;
