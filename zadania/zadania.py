@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.7.1"
+WERSJA = "1.8.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -48,7 +48,11 @@ AI_KLUCZ = os.environ.get("ZD_AI_KLUCZ", "/etc/zadania/ai_klucz")  # plik z kluc
 AI_MODEL = os.environ.get("ZD_AI_MODEL", "gemma3:12b")
 AI_TIMEOUT = int(os.environ.get("ZD_AI_TIMEOUT", "240"))
 LOSOWE = float(os.environ.get("ZD_LOSOWE", "0.2"))           # odsetek zadań „na zaufanie” z losowym zdjęciem
-ZDJ_DNI = int(os.environ.get("ZD_ZDJECIA_DNI", "90"))         # po ilu dniach kasować zdjęcia zakończonych zadań
+ZDJ_DNI = int(os.environ.get("ZD_ZDJECIA_DNI", "90"))         # domyślnie: po ilu dniach kasować zdjęcia zakończonych zadań
+# Przechowywanie (Adrian 16.11): okresy do zmiany w Ustawieniach; (domyślnie, najmniej, najwięcej) w dniach.
+# Historia najmniej 120 dni, bo seria dni liczy się z ostatnich 90.
+PRZECHOWYWANIE = {"zdjecia": (ZDJ_DNI, 7, 3650), "nauka": (90, 7, 3650), "historia": (365, 120, 3650)}
+PRZYPOMNIENIA_DNI = 30   # wysłane przypomnienia znikają po tylu dniach
 KLUCZ_PLIK = os.environ.get("ZD_KLUCZ_PLIK", "/etc/zadania/klucz_dodatku")
 AKT_JEDNOSTKA = os.environ.get("ZD_AKT_JEDNOSTKA", "/etc/systemd/system/zadania-aktualizacja.path")
 PODGLAD_MIN = 120       # po tylu minutach „Zobacz jako dziecko” wyłącza się samo
@@ -90,6 +94,8 @@ CREATE TABLE IF NOT EXISTS ustawienia(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS ha_konta(id TEXT PRIMARY KEY, nazwa TEXT, ts TEXT);
 CREATE TABLE IF NOT EXISTS nauka(id INTEGER PRIMARY KEY, dziecko_id INTEGER, temat TEXT, tryb TEXT, material TEXT DEFAULT '',
   strony INTEGER DEFAULT 0, dane TEXT DEFAULT '{}', start TEXT, ruch TEXT, koniec TEXT);
+CREATE TABLE IF NOT EXISTS archiwum(dziecko_id INTEGER, miesiac TEXT, zadan INTEGER DEFAULT 0, zrobionych INTEGER DEFAULT 0,
+  punktow INTEGER DEFAULT 0, nauka INTEGER DEFAULT 0, PRIMARY KEY(dziecko_id, miesiac));
 CREATE TABLE IF NOT EXISTS notatki(id INTEGER PRIMARY KEY, osoba_id INTEGER, tekst TEXT, kiedy TEXT, wyslane INTEGER DEFAULT 0, ts TEXT);
 """
 KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT DEFAULT ''"),
@@ -639,6 +645,7 @@ def stan_dla(ja):
     wynik["nauka"] = [nauka_dla(n, ja) for n in q("SELECT * FROM nauka WHERE dziecko_id IN (" + zn + ") AND start>=? ORDER BY id DESC LIMIT 30",
                                                  *ids, od7)]
     if ja["rola"] != "dziecko":
+        wynik["archiwum"] = q("SELECT * FROM archiwum WHERE dziecko_id IN (" + zn + ") ORDER BY miesiac DESC LIMIT 60", *ids)
         wynik["szablony"] = q("SELECT * FROM szablony WHERE aktywny=1 AND dziecko_id IN (" + zn + ") ORDER BY dziecko_id, pora, tytul",
                               *ids)
     if ja["admin"]:
@@ -653,7 +660,9 @@ def stan_dla(ja):
         wynik["ha"] = bool(HA_URL and ha_token())
         wynik["telefony"] = ha_telefony()
         wynik["ustawienia"] = {"ai_url": AI_URL, "ai_model": AI_MODEL, "ai_klucz": bool(ai_klucz()), "ha_url": HA_URL,
-                               "ha_token": bool(ha_token()), "aktualizacja": aktualizacja_stan()}
+                               "ha_token": bool(ha_token()), "aktualizacja": aktualizacja_stan(),
+                               "przechowywanie": {co: okres(co) for co in PRZECHOWYWANIE},
+                               "sprzatanie": json.loads(ust("sprzatanie_wynik", "null"))}
     return wynik
 
 
@@ -1056,6 +1065,12 @@ def a_ustawienia(ja, b):
                 ustaw("cfg_ai_model", m)
         if "ha_url" in b:
             ustaw("cfg_ha_url", adres_ok(b["ha_url"], "Home Assistanta"))
+        for co, (_, mn, mx) in PRZECHOWYWANIE.items():
+            if b.get("ret_" + co) not in (None, ""):
+                v = int(b["ret_" + co])
+                if not mn <= v <= mx:
+                    raise Blad(400, "Okres „%s” musi mieć od %d do %d dni." % (co, mn, mx))
+                ustaw("ret_" + co, str(v))
         for pole, plik in (("ai_klucz", "ai_klucz"), ("ha_token", "ha_token")):
             v = str(b.get(pole) or "").strip()[:600]
             if v:
@@ -1654,18 +1669,111 @@ def podsumowanie_tygodnia(wymus=False):
     return ile
 
 
+def okres(co):
+    dom, mn, mx = PRZECHOWYWANIE[co]
+    try:
+        return max(mn, min(mx, int(ust("ret_" + co, str(dom)))))
+    except ValueError:
+        return dom
+
+
+def granica_dni(dni):
+    return (teraz().date() - dt.timedelta(days=dni)).isoformat()
+
+
+def usun_zdjecia(lista):
+    for p in lista:
+        try:
+            os.remove(os.path.join(ZDJ, p["plik"]))
+        except OSError:
+            pass
+        ex("DELETE FROM zdjecia WHERE id=?", p["id"])
+
+
 def sprzataj_zdjecia():
-    granica = (teraz().date() - dt.timedelta(days=ZDJ_DNI)).isoformat()
+    granica = granica_dni(okres("zdjecia"))
     with BLOKADA:
         stare = q("SELECT p.* FROM zdjecia p JOIN zadania z ON z.id=p.zadanie_id WHERE z.stan IN ('zatwierdzone','czesciowo') "
                   "AND z.dzien<?", granica)
-        for p in stare:
-            try:
-                os.remove(os.path.join(ZDJ, p["plik"]))
-            except OSError:
-                pass
-            ex("DELETE FROM zdjecia WHERE id=?", p["id"])
+        usun_zdjecia(stare)
     return len(stare)
+
+
+def archiwum_dodaj(dziecko_id, miesiac, **ile):
+    ex("INSERT INTO archiwum(dziecko_id, miesiac) VALUES(?,?) ON CONFLICT DO NOTHING", dziecko_id, miesiac)
+    for k, v in ile.items():
+        if v:
+            ex("UPDATE archiwum SET %s=%s+? WHERE dziecko_id=? AND miesiac=?" % (k, k), v, dziecko_id, miesiac)
+
+
+def zapomnij_nauke():
+    """Po okresie „nauka”: znika przepisany materiał i treść pytań/odpowiedzi; zostają temat, wynik i czas."""
+    granica = granica_dni(okres("nauka"))
+    n = 0
+    with BLOKADA:
+        for w in q("SELECT * FROM nauka WHERE start<? AND (material<>'' OR dane NOT LIKE '%\"zapomniane\"%')", granica):
+            d = json.loads(w["dane"] or "{}")
+            for p in d.get("pytania") or []:
+                for k in ("p", "odp", "moja", "komentarz"):
+                    if k in p:
+                        p[k] = ""
+            for x in d.get("rozmowa") or []:
+                x["p"] = x["o"] = ""
+            d["zapomniane"] = True
+            ex("UPDATE nauka SET material='', dane=? WHERE id=?", json.dumps(d, ensure_ascii=False), w["id"])
+            n += 1
+    return n
+
+
+def zwin_historie():
+    """Po okresie „historia”: zadania, nauka i rozliczone wymiany → podsumowanie miesięczne (archiwum);
+    wpisy punktów z miesiąca → jeden wpis z sumą (saldo bez zmian)."""
+    granica = granica_dni(okres("historia"))
+    w = {"zadania": 0, "punkty": 0, "nauka": 0}
+    with BLOKADA:
+        stare = q("SELECT * FROM zadania WHERE dzien IS NOT NULL AND dzien<>'' AND dzien<? AND stan<>'wyslane'", granica)
+        for z in stare:
+            archiwum_dodaj(z["dziecko_id"], z["dzien"][:7], zadan=1, zrobionych=int(z["stan"] in KONCOWE))
+            usun_zdjecia(q("SELECT * FROM zdjecia WHERE zadanie_id=?", z["id"]))
+            ex("DELETE FROM zadania WHERE id=?", z["id"])
+        w["zadania"] = len(stare)
+        for g in q("SELECT dziecko_id, substr(ts,1,7) m, COUNT(*) n, SUM(ile) s, "
+                   "SUM(CASE WHEN ile>0 AND powod NOT LIKE 'Suma za %' THEN ile ELSE 0 END) plus "
+                   "FROM punkty WHERE ts<? GROUP BY dziecko_id, substr(ts,1,7)", granica):
+            sumy = q1("SELECT COUNT(*) n FROM punkty WHERE dziecko_id=? AND substr(ts,1,7)=? AND ts<? AND powod LIKE 'Suma za %'",
+                      g["dziecko_id"], g["m"], granica)["n"]
+            if g["n"] - sumy == 0:
+                continue
+            archiwum_dodaj(g["dziecko_id"], g["m"], punktow=g["plus"])
+            if g["n"] > 1:
+                ex("DELETE FROM punkty WHERE dziecko_id=? AND substr(ts,1,7)=? AND ts<?", g["dziecko_id"], g["m"], granica)
+                ex("INSERT INTO punkty(dziecko_id, ile, powod, ts) VALUES(?,?,?,?)", g["dziecko_id"], g["s"],
+                   "Suma za %s (%d wpisów)" % (g["m"], g["n"]), g["m"] + "-01T00:00:00")
+                w["punkty"] += g["n"]
+            elif not sumy:
+                ex("UPDATE punkty SET powod='Suma za ' || ? || ' (' || powod || ')' WHERE dziecko_id=? AND substr(ts,1,7)=? AND ts<?",
+                   g["m"], g["dziecko_id"], g["m"], granica)
+        for n in q("SELECT id, dziecko_id, start FROM nauka WHERE start<?", granica):
+            archiwum_dodaj(n["dziecko_id"], n["start"][:7], nauka=1)
+            ex("DELETE FROM nauka WHERE id=?", n["id"])
+            w["nauka"] += 1
+        ex("DELETE FROM wymiany WHERE stan<>'czeka' AND ts<?", granica)
+        ex("DELETE FROM notatki WHERE kiedy<?", granica_dni(PRZYPOMNIENIA_DNI))
+        ex("DELETE FROM sesje WHERE ts<?", iso(teraz() - dt.timedelta(days=SESJA_DNI)))
+    return w
+
+
+def sprzataj(wymus=False):
+    """Raz na dobę (o 3:00): zdjęcia, treść nauki, zwinięcie starej historii. Wynik w Ustawieniach."""
+    if not wymus and ust("sprzatanie_dzien") == dzis():
+        return None
+    w = zwin_historie()
+    w["zdjecia"] = sprzataj_zdjecia()
+    w["nauka_tresc"] = zapomnij_nauke()
+    with BLOKADA:
+        ustaw("sprzatanie_dzien", dzis())
+        ustaw("sprzatanie_wynik", json.dumps(dict(w, ts=iso(teraz())), ensure_ascii=False))
+    return w
 
 
 def petla_tla():
@@ -1677,7 +1785,7 @@ def petla_tla():
             ponaglenia()
             podsumowanie_tygodnia()
             if teraz().hour == 3:
-                sprzataj_zdjecia()
+                sprzataj()
         except Exception:  # noqa: BLE001
             traceback.print_exc()
         time.sleep(300)

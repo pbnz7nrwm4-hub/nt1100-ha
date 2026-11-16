@@ -492,7 +492,7 @@ function widokDzieci(){
      + (d.prawa.zatwierdza && d.grosze && d.saldo-d.zarezerwowane > 0 ? '<div style="margin-top:10px"><button data-wyplata="'+d.id+'" style="width:100%">Wypłaciłem kieszonkowe '+zl(d.saldo-d.zarezerwowane, d.grosze)+' – wyzeruj punkty</button></div>' : "")
      + (d.prawa.zatwierdza ? '<div style="margin-top:10px"><button data-pinreset="'+d.id+'" style="min-height:36px">Skasuj PIN '+esc(d.imie)+'</button></div>' : "")
      + (d.prawa.zatwierdza ? '<h3>Dodaj albo odejmij punkty</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="np. 10" aria-label="Ile punktów (z minusem odejmuje)" style="flex:2"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:3"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
-     + '</div>' + historia(d);
+     + '</div>' + historia(d) + archiwum(d);
   }).join("");
 }
 const zl = (pkt, gr) => (pkt*gr/100).toFixed(2).replace(".",",") + " zł";
@@ -508,6 +508,13 @@ function historia(d){
   if (!r.length) return "";
   return '<details class="karta" '+det("h"+d.id)+'><summary style="min-height:36px;font-weight:600">Historia punktów'+(dziecko()?"":" – "+esc(d.imie))+'</summary>'
     + r.slice(0,30).map(p => '<div class="wiersz" style="min-height:40px;border-top:1px solid var(--linia2)"><span>'+esc(p.powod||"punkty")+'<div class="mal">'+kiedy(p.ts)+'</div></span><b class="'+(p.ile<0?"uw-ic":"ok-ic")+'">'+(p.ile>0?"+":"")+p.ile+'</b></div>').join("") + '</details>';
+}
+const MIES = ["styczeń","luty","marzec","kwiecień","maj","czerwiec","lipiec","sierpień","wrzesień","październik","listopad","grudzień"];
+function archiwum(d){
+  const r = (S.archiwum||[]).filter(a => a.dziecko_id===d.id);
+  if (!r.length) return "";
+  return '<details class="karta" '+det("a"+d.id)+'><summary style="min-height:36px;font-weight:600">Starsze miesiące – '+esc(d.imie)+'</summary><div class="mal">Szczegóły po okresie z Ustawień są zwinięte do podsumowań.</div>'
+    + r.map(a => '<div class="wiersz" style="min-height:40px;border-top:1px solid var(--linia2)"><span>'+MIES[+a.miesiac.slice(5,7)-1]+' '+a.miesiac.slice(0,4)+'<div class="mal">zadań '+a.zrobionych+' z '+a.zadan+(a.nauka?' · nauka '+a.nauka+'×':"")+'</div></span><b>+'+a.punktow+' pkt</b></div>').join("") + '</details>';
 }
 function widokNagrody(){
   let h = '<h1>'+(dziecko()?"Moje nagrody":"Nagrody")+'</h1>';
@@ -555,6 +562,15 @@ function widokUstawienia(){
   const a = u.aktualizacja;
   h += '<div class="karta"><div class="wiersz"><b>Aktualizacja</b><span class="mal">wersja '+esc(S.wersja)+'</span></div><div class="mal">Aplikacja sprawdza nowe wersje sama co godzinę.'+(a.sprawdzono?" Ostatnio: "+esc(a.sprawdzono)+".":"")+'</div>'
     + (a.przycisk ? '<button id="uakt" style="width:100%;margin-top:10px">Sprawdź i zaktualizuj teraz</button>' : '<div class="mal" style="margin-top:8px">Przycisk „zaktualizuj teraz” pojawi się po jednorazowym odświeżeniu instalacji w kontenerze.</div>') + '</div>';
+  const pr = u.przechowywanie, sp = u.sprzatanie;
+  const pole = (k, t, op) => '<label class="pole" for="ret'+k+'">'+t+'</label><div style="display:flex;gap:8px;align-items:center"><input type="number" id="ret'+k+'" value="'+pr[k]+'" inputmode="numeric" style="max-width:110px"><span class="mal">dni. '+op+'</span></div>';
+  h += '<div class="karta"><b>Przechowywanie danych</b><div class="mal">Wszystko leży w domu, w kontenerze aplikacji. Sprząta się samo, codziennie o 3:00.</div>'
+    + pole("zdjecia", "Zdjęcia zadań", "Liczone od dnia zadania, tylko zakończone.")
+    + pole("nauka", "Treść nauki", "Potem znika przepisany materiał i treść pytań; temat, wynik i czas zostają.")
+    + pole("historia", "Szczegółowa historia", "Starsze zadania, nauka i punkty zwijają się do podsumowania miesięcznego. Saldo punktów się nie zmienia.")
+    + '<div class="mal" style="margin-top:10px">Zrzuty ekranu i zdjęcia stron do nauki nie są zapisywane: komputer je czyta i obraz przepada. Kopia bazy: co noc, 30 ostatnich.'
+    + (sp ? ' Ostatnie sprzątanie '+esc(kiedy(sp.ts))+': zdjęć '+sp.zdjecia+', zadań zwiniętych '+sp.zadania+', wpisów punktów '+sp.punkty+', nauki '+(sp.nauka+sp.nauka_tresc)+'.' : "")+'</div>'
+    + '<button class="glowny" id="retzapisz" style="margin-top:12px">Zapisz okresy</button></div>';
   h += '<a class="karta" href="#osoby" style="display:block;color:inherit;text-decoration:none"><b>Osoby, PIN-y i telefony</b><div class="mal">Dodawanie osób, kto komu zleca, linki do wejścia, kieszonkowe.</div></a>';
   return h;
 }
@@ -730,6 +746,7 @@ function podepnij(){
   const zapiszUst = async (dane, co) => { try { toast("Sprawdzam połączenie…"); const w = await api("api/ustawienia", dane); UT = w; await odswiez(); toast(w[co].ok ? "Zapisane, działa." : "Zapisane, ale połączenie nie działa."); } catch(e) { toast(e.message); } };
   if ($("#uaizapisz")) $("#uaizapisz").onclick = () => zapiszUst({ai_url:$("#uaiurl").value, ai_model:$("#uaimodel").value, ai_klucz:$("#uaiklucz").value}, "ai");
   if ($("#uhazapisz")) $("#uhazapisz").onclick = () => zapiszUst({ha_url:$("#uhaurl").value, ha_token:$("#uhatok").value}, "ha");
+  if ($("#retzapisz")) $("#retzapisz").onclick = async () => { try { await api("api/ustawienia", {ret_zdjecia:$("#retzdjecia").value, ret_nauka:$("#retnauka").value, ret_historia:$("#rethistoria").value}); toast("Zapisane"); await odswiez(); } catch(e) { toast(e.message, true); } };
   if ($("#uakt")) $("#uakt").onclick = async () => { try { await api("api/aktualizuj", {}); toast("Sprawdzam. Jeśli jest nowa wersja, strona odświeży się za chwilę."); const stara = S.wersja; let n = 0; const t = setInterval(async () => { n++; try { await odswiez(); } catch(e) {} if ((S && S.wersja !== stara) || n > 12) { clearInterval(t); if (S && S.wersja !== stara) location.reload(); else toast("Masz najnowszą wersję."); } }, 5000); } catch(e) { toast(e.message); } };
   if ($("#wyloguj")) $("#wyloguj").onclick = async ev => { ev.preventDefault(); await api("api/wyloguj", {}); S = null; $("#nav").innerHTML = ""; location.hash = ""; logowanie(); };
   if ($("#pzap")) $("#pzap").onclick = async () => {

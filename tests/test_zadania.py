@@ -651,6 +651,61 @@ class TestZadania(unittest.TestCase):
             Z.ex("UPDATE osoby SET podglad=? WHERE id=1", "%d|2020-01-01T00:00:00" % self.a_id)
         self.assertEqual(zapytaj(self.adm, "/api/stan")[1]["ja"]["admin"], True)
 
+    def test_k_przechowywanie(self):
+        """Okresy przechowywania w Ustawieniach; nocne sprzątanie zwija starą historię, saldo się nie zmienia."""
+        self.assertEqual(zapytaj(self.adm, "/api/ustawienia", {"ret_historia": 30})[0], 400)
+        self.assertEqual(zapytaj(self.m, "/api/ustawienia", {"ret_nauka": 30})[0], 403)
+        s, r = zapytaj(self.adm, "/api/ustawienia", {"ret_zdjecia": 30, "ret_nauka": 14, "ret_historia": 200})
+        self.assertEqual(s, 200, r)
+        u = zapytaj(self.adm, "/api/stan")[1]["ustawienia"]["przechowywanie"]
+        self.assertEqual(u, {"zdjecia": 30, "nauka": 14, "historia": 200})
+        dz = self.b_id
+        stare, sr = "2025-01-10", "2025-03-05"
+        with Z.BLOKADA:
+            saldo = Z.saldo(dz)
+            z1 = Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan,punkty) VALUES(?,?,?,?,?)", dz, "Stare 1", stare, "zatwierdzone", 5)
+            Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan,punkty) VALUES(?,?,?,?,?)", dz, "Stare 2", stare, "do_zrobienia", 5)
+            Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan,punkty) VALUES(?,?,?,?,?)", dz, "Czeka", stare, "wyslane", 5)
+            plik = "test_stare.jpg"
+            os.makedirs(Z.ZDJ, exist_ok=True)
+            with open(os.path.join(Z.ZDJ, plik), "wb") as f:
+                f.write(JPG)
+            Z.ex("INSERT INTO zdjecia(zadanie_id,rodzaj,plik,ts) VALUES(?,?,?,?)", z1, "po", plik, stare + "T10:00:00")
+            for ile, ts in ((5, stare + "T10:00:00"), (7, stare + "T12:00:00"), (-4, "2025-01-20T09:00:00"), (3, sr + "T09:00:00")):
+                Z.ex("INSERT INTO punkty(dziecko_id,ile,powod,ts) VALUES(?,?,?,?)", dz, ile, "x", ts)
+            Z.ex("INSERT INTO nauka(dziecko_id,temat,tryb,material,dane,start) VALUES(?,?,?,?,?,?)", dz, "Stara nauka", "test", "", "{}",
+                 stare + "T10:00:00")
+            sw = (Z.teraz() - Z.dt.timedelta(days=20)).isoformat(timespec="seconds")
+            nid = Z.ex("INSERT INTO nauka(dziecko_id,temat,tryb,material,dane,start) VALUES(?,?,?,?,?,?)", dz, "Ułamki", "przepytaj",
+                       "Tekst z zeszytu", json.dumps({"pytania": [{"p": "Pyt", "odp": "Odp", "moja": "Moja", "ocena": "dobrze",
+                                                                  "komentarz": "K"}], "rozmowa": [{"p": "a", "o": "b", "poza": True}]}), sw)
+            saldo_przed = Z.saldo(dz) - saldo
+        self.assertEqual(saldo_przed, 11)
+        w = Z.sprzataj(wymus=True)
+        self.assertEqual((w["zadania"], w["punkty"], w["nauka"], w["nauka_tresc"]), (2, 3, 1, 1), w)
+        self.assertIsNone(Z.sprzataj())                       # drugi raz tego dnia nic nie robi
+        with Z.BLOKADA:
+            self.assertEqual(Z.saldo(dz) - saldo, 11)
+            self.assertFalse(os.path.exists(os.path.join(Z.ZDJ, plik)))
+            self.assertEqual(Z.q1("SELECT COUNT(*) n FROM zadania WHERE dziecko_id=? AND dzien=?", dz, stare)["n"], 1)   # „wyslane” zostaje
+            arch = {a["miesiac"]: a for a in Z.q("SELECT * FROM archiwum WHERE dziecko_id=?", dz)}
+            self.assertEqual((arch["2025-01"]["zadan"], arch["2025-01"]["zrobionych"], arch["2025-01"]["punktow"], arch["2025-01"]["nauka"]),
+                             (2, 1, 12, 1))
+            self.assertEqual(arch["2025-03"]["punktow"], 3)
+            pk = Z.q("SELECT * FROM punkty WHERE dziecko_id=? AND ts<'2025-12-01' ORDER BY ts", dz)
+            self.assertEqual([(p["ile"], p["powod"][:16]) for p in pk], [(8, "Suma za 2025-01 "), (3, "Suma za 2025-03 ")])
+            n = Z.q1("SELECT * FROM nauka WHERE id=?", nid)
+            self.assertEqual(n["material"], "")
+            self.assertNotIn("Odp", n["dane"])
+        w = Z.sprzataj(wymus=True)                              # ponownie: nic do zwinięcia, archiwum bez zmian
+        self.assertEqual((w["zadania"], w["punkty"], w["nauka"], w["nauka_tresc"]), (0, 0, 0, 0), w)
+        with Z.BLOKADA:
+            self.assertEqual(Z.q1("SELECT punktow FROM archiwum WHERE dziecko_id=? AND miesiac='2025-01'", dz)["punktow"], 12)
+        r = zapytaj(self.i, "/api/stan")[1]
+        self.assertTrue(any(a["miesiac"] == "2025-01" for a in r["archiwum"]))
+        self.assertNotIn("archiwum", zapytaj(self.b, "/api/stan")[1])
+        self.assertEqual(zapytaj(self.adm, "/api/stan")[1]["ustawienia"]["sprzatanie"]["zadania"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
