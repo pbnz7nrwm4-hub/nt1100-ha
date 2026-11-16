@@ -706,6 +706,46 @@ class TestZadania(unittest.TestCase):
         self.assertNotIn("archiwum", zapytaj(self.b, "/api/stan")[1])
         self.assertEqual(zapytaj(self.adm, "/api/stan")[1]["ustawienia"]["sprzatanie"]["zadania"], 0)
 
+    def test_l_dlugi_material(self):
+        """Dowolnie dużo stron: materiał dzielony na kawałki, pytania z każdej części, sprawdzanie na właściwym kawałku."""
+        self.assertEqual(Z.kawalki(""), [])
+        mat = "".join((Z.STRONA % (i + 1)) + ("Strona %d. " % (i + 1)) + "x" * 2400 for i in range(6)).strip()
+        k = Z.kawalki(mat)
+        self.assertEqual(len(k), 3)
+        self.assertTrue(all(len(x) <= Z.KAWALEK for x in k))
+        self.assertEqual(sum(Z.podzial_pytan([5000, 5000, 2000], 5).values()), 5)
+        self.assertEqual(Z.podzial_pytan([1, 1, 1, 1, 1, 1], 3), {0: 1, 2: 1, 4: 1})
+        self.assertEqual(sum(Z.podzial_pytan([100], 10).values()), 10)
+        self.assertEqual(len(Z.kawalki("a" * 12000)), 3)                   # jedna bardzo długa strona też się dzieli
+        wyb = Z.material_do_pytania(mat + Z.STRONA % 7 + "Mianownik ułamka jest pod kreską. " + "y" * 4000, "Co to jest mianownik?")
+        self.assertTrue(wyb.startswith("Mianownik") and "Strona 1." not in wyb, wyb[:80])
+        s, r = zapytaj(self.a, "/api/nauka", {"temat": "Długi rozdział", "tryb": "przepytaj"})
+        nid = r["id"]
+        for i in range(5):                                                  # więcej niż dawne 3 strony
+            s, r = zapytaj(self.a, "/api/nauka/%d/strona" % nid, JPG, "image/jpeg")
+            self.assertEqual((s, r["strony"]), (200, i + 1), r)
+        self.assertEqual(zapytaj(self.a, "/api/nauka/%d/strona_usun" % nid, {})[1]["strony"], 4)
+        with Z.BLOKADA:
+            m = Z.q1("SELECT material FROM nauka WHERE id=?", nid)["material"]
+        self.assertIn("=== strona 4 ===", m)
+        self.assertNotIn("=== strona 5 ===", m)
+        self.assertEqual(zapytaj(self.b, "/api/nauka/%d/strona_usun" % nid, {})[0], 404)
+        with Z.BLOKADA:
+            Z.ex("UPDATE nauka SET material=? WHERE id=?", mat, nid)
+        przed = len(AI["pytania"])
+        s, r = zapytaj(self.a, "/api/nauka/%d/pytania" % nid, {})
+        self.assertEqual(s, 200, r)
+        prompty = [x["prompt"] for x in AI["pytania"][przed:] if "korepetytorem" in x["prompt"]]
+        self.assertEqual(len(prompty), 3)
+        self.assertIn("część 1 z 3", prompty[0])
+        self.assertTrue(all(len(x) < Z.KAWALEK + 1500 for x in prompty))
+        st = zapytaj(self.a, "/api/stan")[1]
+        n = [x for x in st["nauka"] if x["id"] == nid][0]
+        self.assertTrue(n["ostatnia"].startswith("Strona 6"))
+        przed = len(AI["pytania"])
+        zapytaj(self.a, "/api/nauka/%d/odpowiedz" % nid, {"i": 0, "tekst": "nad kreską"})
+        self.assertNotIn("Strona 6", AI["pytania"][przed]["prompt"])          # sprawdzanie na kawałku pytania, nie całości
+
 
 if __name__ == "__main__":
     unittest.main()

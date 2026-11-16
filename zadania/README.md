@@ -31,6 +31,9 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
   „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
 - **Od 1.4/1.5**: „Pomóż mi zacząć” (AI podpowiada dziecku pierwszy krok), licznik prób, „Dziś nie dam rady” z decyzją rodzica,
   zgłoszenie własnego zadania, własne przypomnienia dziecka, ponaglenie rodzica po 2 h, punkty jako kieszonkowe (opcja).
+- **Od 1.8.1**: do nauki można dodać dowolnie dużo stron. Długi materiał komputer czyta po kawałkach (~5000 znaków):
+  pytania układa z każdej części, odpowiedź sprawdza na części pytania, a przy „Wytłumacz mi” bierze fragmenty pasujące do pytania.
+  Po każdej stronie: „Masz jeszcze strony?” i podgląd, co komputer odczytał.
 - **Od 1.8**: przechowywanie danych do ustawienia w aplikacji (Ustawienia → Przechowywanie danych): zdjęcia zadań (domyślnie 90 dni),
   treść nauki (90 dni; temat, wynik i czas zostają), szczegółowa historia (365 dni; potem podsumowania miesięczne,
   saldo bez zmian). Sprzątanie raz na dobę o 3:00, wynik widać w Ustawieniach.
