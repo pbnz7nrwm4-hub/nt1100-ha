@@ -142,11 +142,16 @@ cat > /usr/local/sbin/zadania-aktualizuj <<EOT
 set -euo pipefail
 cd $KOD
 PRZED=\$(git rev-parse HEAD:zadania)
+INST=\$(git rev-parse HEAD:zadania/instaluj.sh)
 git fetch -q --depth 1 origin main
 git reset -q --hard origin/main
 PO=\$(git rev-parse HEAD:zadania)
+rm -f $DANE/aktualizuj
+date '+%Y-%m-%d %H:%M' > $DANE/aktualizacja; chown zadania:zadania $DANE/aktualizacja
 if [ "\$PRZED" != "\$PO" ]; then
   python3 -m py_compile zadania/zadania.py
+  # Zmienił się instalator (nowe usługi, uprawnienia): uruchamiam go ponownie, żeby nie trzeba było konsoli.
+  if [ "\$INST" != "\$(git rev-parse HEAD:zadania/instaluj.sh)" ]; then exec bash $KOD/zadania/instaluj.sh; fi
   systemctl restart zadania
   echo "Zadania zaktualizowane"
 fi
@@ -159,6 +164,18 @@ Description=Zadania dzieci – aktualizacja z repozytorium
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/zadania-aktualizuj
+EOT
+# Przycisk „Aktualizuj teraz” w aplikacji: aplikacja zapisuje plik-znacznik, a ta jednostka uruchamia aktualizację.
+cat > /etc/systemd/system/zadania-aktualizacja.path <<EOT
+[Unit]
+Description=Zadania dzieci – aktualizacja na prośbę z aplikacji
+
+[Path]
+PathExists=$DANE/aktualizuj
+Unit=zadania-aktualizacja.service
+
+[Install]
+WantedBy=multi-user.target
 EOT
 cat > /etc/systemd/system/zadania-aktualizacja.timer <<EOT
 [Unit]
@@ -174,7 +191,8 @@ WantedBy=timers.target
 EOT
 
 systemctl daemon-reload
-systemctl enable -q --now zadania.service zadania-aktualizacja.timer
+rm -f "$DANE/aktualizuj"
+systemctl enable -q --now zadania.service zadania-aktualizacja.timer zadania-aktualizacja.path
 systemctl restart zadania.service
 sleep 2
 systemctl is-active --quiet zadania || { journalctl -u zadania -n 30 --no-pager; exit 1; }
@@ -189,4 +207,4 @@ if [ "$ILE" = "0" ]; then
     runuser -u zadania -- /usr/bin/python3 "$KOD/zadania/zadania.py" --nowy-admin "$ADMIN"
   fi
 fi
-[ -s /etc/zadania/ha_token ] || echo "Powiadomienia: wpisz token Home Assistanta poleceniem zadania-ha-token"
+[ -s /etc/zadania/ha_token ] || [ -s "$DANE/ha_token" ] || echo "Powiadomienia: wpisz token Home Assistanta w aplikacji (Ustawienia)"

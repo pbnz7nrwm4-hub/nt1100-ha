@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.6.0"
+WERSJA = "1.7.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -50,6 +50,8 @@ AI_TIMEOUT = int(os.environ.get("ZD_AI_TIMEOUT", "240"))
 LOSOWE = float(os.environ.get("ZD_LOSOWE", "0.2"))           # odsetek zadań „na zaufanie” z losowym zdjęciem
 ZDJ_DNI = int(os.environ.get("ZD_ZDJECIA_DNI", "90"))         # po ilu dniach kasować zdjęcia zakończonych zadań
 KLUCZ_PLIK = os.environ.get("ZD_KLUCZ_PLIK", "/etc/zadania/klucz_dodatku")
+AKT_JEDNOSTKA = os.environ.get("ZD_AKT_JEDNOSTKA", "/etc/systemd/system/zadania-aktualizacja.path")
+PODGLAD_MIN = 120       # po tylu minutach „Zobacz jako dziecko” wyłącza się samo
 MAX_ZDJ = 8 * 1024 * 1024
 PIN_PROB = 5            # tyle błędnych PIN-ów pod rząd …
 PIN_BLOKADA_MIN = 15    # … blokuje logowanie tej osoby na tyle minut
@@ -95,7 +97,7 @@ KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT 
            ("osoby", "pin_blokada", "TEXT DEFAULT ''"), ("osoby", "rok_ur", "INTEGER DEFAULT 0"),
            ("zadania", "pomoc", "TEXT DEFAULT ''"), ("zadania", "proby", "INTEGER DEFAULT 0"),
            ("zadania", "ponaglono", "INTEGER DEFAULT 0"), ("zadania", "prosba", "TEXT DEFAULT ''"),
-           ("zadania", "wlasne", "INTEGER DEFAULT 0"), ("osoby", "grosze", "INTEGER DEFAULT 0"))
+           ("zadania", "wlasne", "INTEGER DEFAULT 0"), ("osoby", "grosze", "INTEGER DEFAULT 0"), ("osoby", "podglad", "TEXT DEFAULT ''"))
 
 
 class Blad(Exception):
@@ -150,7 +152,20 @@ def db():
         for tab, kol, typ in KOLUMNY:
             if kol not in [r[1] for r in DB.execute("PRAGMA table_info(%s)" % tab)]:
                 DB.execute("ALTER TABLE %s ADD COLUMN %s %s" % (tab, kol, typ))
+        konfig_zastosuj()
     return DB
+
+
+def konfig_zastosuj():
+    """Ustawienia zapisane w aplikacji (ekran „Ustawienia”) mają pierwszeństwo przed plikiem instalatora."""
+    global AI_URL, AI_MODEL, HA_URL
+    u = {w["k"]: w["v"] for w in DB.execute("SELECT k, v FROM ustawienia WHERE k IN ('cfg_ai_url','cfg_ai_model','cfg_ha_url')")}
+    if "cfg_ai_url" in u:
+        AI_URL = u["cfg_ai_url"]
+    if u.get("cfg_ai_model"):
+        AI_MODEL = u["cfg_ai_model"]
+    if "cfg_ha_url" in u:
+        HA_URL = u["cfg_ha_url"]
 
 
 def q(sql, *a):
@@ -322,7 +337,7 @@ def seria(dziecko_id):
 # ---------- powiadomienia (Home Assistant) ----------
 def ha_token():
     """Token HA: plik z instalatora albo przekazany przez dodatek (opcja „token_ha”) i zapisany w katalogu danych."""
-    for p in (HA_TOKEN_PLIK, os.path.join(KAT, "ha_token")):
+    for p in (os.path.join(KAT, "ha_token"), HA_TOKEN_PLIK):   # najpierw wpisany w aplikacji albo przez dodatek
         try:
             with open(p, encoding="utf-8") as f:
                 t = f.read().strip()
@@ -397,11 +412,15 @@ def ai_wlaczone():
 
 
 def ai_klucz():
-    try:
-        with open(AI_KLUCZ, encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+    for p in (os.path.join(KAT, "ai_klucz"), AI_KLUCZ):   # najpierw wpisany w aplikacji
+        try:
+            with open(p, encoding="utf-8") as f:
+                k = f.read().strip()
+                if k:
+                    return k
+        except OSError:
+            pass
+    return ""
 
 
 def ai_json(tekst):
@@ -611,7 +630,8 @@ def stan_dla(ja):
             "AND (w.stan='czeka' OR w.ts>=?) ORDER BY w.id DESC", *ids, od7)
     wynik = {"wersja": WERSJA, "teraz": iso(teraz()), "dzis": d, "ai": ai_wlaczone(),
              "ja": {"id": ja["id"], "imie": ja["imie"], "rola": ja["rola"], "admin": bool(ja["admin"]),
-                    "ma_pin": bool(ja["pin_hash"]), "przez_ha": bool(ja.get("_przez_ha"))},
+                    "ma_pin": bool(ja["pin_hash"]) or bool(ja.get("_podglad")), "przez_ha": bool(ja.get("_przez_ha")),
+                    "podglad": bool(ja.get("_podglad"))},
              "dzieci": dzieci, "zadania": [zadanie_dla(z, ja) for z in zad], "nagrody": nagr, "wymiany": wym}
     wynik["punkty"] = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 60", *ids)
     wynik["przypomnienia"] = q("SELECT id, osoba_id, tekst, kiedy, wyslane FROM notatki WHERE osoba_id IN (" + zn + ") AND kiedy>=? "
@@ -632,6 +652,8 @@ def stan_dla(ja):
         wynik["opieka"] = q("SELECT * FROM opieka")
         wynik["ha"] = bool(HA_URL and ha_token())
         wynik["telefony"] = ha_telefony()
+        wynik["ustawienia"] = {"ai_url": AI_URL, "ai_model": AI_MODEL, "ai_klucz": bool(ai_klucz()), "ha_url": HA_URL,
+                               "ha_token": bool(ha_token()), "aktualizacja": aktualizacja_stan()}
     return wynik
 
 
@@ -951,6 +973,144 @@ def a_punkty(ja, b):
 def tylko_admin(ja):
     if not ja["admin"]:
         raise Blad(403, "Tylko administrator.")
+
+
+# ---------- ustawienia w aplikacji (zamiast poleceń w konsoli) ----------
+def zapisz_tajne(nazwa, wartosc):
+    """Klucz albo token do pliku w katalogu danych (poza bazą, żeby nie trafiał do nocnych kopii bazy)."""
+    sc = os.path.join(KAT, nazwa)
+    if not wartosc:
+        try:
+            os.remove(sc)
+        except OSError:
+            pass
+        return
+    fd = os.open(sc, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(wartosc)
+    os.chmod(sc, 0o600)
+
+
+def adres_ok(v, co):
+    v = str(v or "").strip().rstrip("/")[:200]
+    if v and not re.match(r"^https?://[A-Za-z0-9._\-\[\]:]+(/[A-Za-z0-9._~/\-]*)?$", v):
+        raise Blad(400, "Adres %s ma zaczynać się od http:// i nie mieć spacji." % co)
+    return v
+
+
+def aktualizacja_stan():
+    info = ""
+    try:
+        with open(os.path.join(KAT, "aktualizacja"), encoding="utf-8") as f:
+            info = f.read().strip()[:40]
+    except OSError:
+        pass
+    return {"przycisk": os.path.exists(AKT_JEDNOSTKA), "sprawdzono": info}
+
+
+def sprawdz_polaczenia():
+    """Próba połączenia z AI i Home Assistantem – to samo, co robiło polecenie zadania-ai."""
+    w = {"ai": {"ok": False, "tekst": "AI jest wyłączone (brak adresu)."}, "ha": {"ok": False, "tekst": "Brak adresu Home Assistanta."}}
+    if AI_URL:
+        try:
+            h, k = {}, ai_klucz()
+            if k:
+                h["Authorization"] = "Bearer " + k
+            req = urllib.request.Request(AI_URL + ("/models" if AI_URL.endswith("/v1") else "/api/tags"), headers=h)
+            odp = urllib.request.urlopen(req, timeout=10).read().decode()
+            if AI_MODEL in odp:
+                w["ai"] = {"ok": True, "tekst": "AI odpowiada, model %s jest dostępny." % AI_MODEL}
+            else:
+                w["ai"]["tekst"] = "Serwer AI odpowiada, ale nie ma modelu %s. Sprawdź nazwę." % AI_MODEL
+        except urllib.error.HTTPError as e:
+            w["ai"]["tekst"] = "Serwer AI odmówił (kod %d). Sprawdź klucz." % e.code
+        except Exception:  # noqa: BLE001
+            w["ai"]["tekst"] = "Serwer AI nie odpowiada. Sprawdź adres i czy komputer z AI jest włączony."
+    if HA_URL:
+        tok = ha_token()
+        if not tok:
+            w["ha"]["tekst"] = "Brak tokenu Home Assistanta."
+        else:
+            try:
+                req = urllib.request.Request(HA_URL + "/api/", headers={"Authorization": "Bearer " + tok})
+                urllib.request.urlopen(req, timeout=10).read()
+                w["ha"] = {"ok": True, "tekst": "Home Assistant odpowiada, powiadomienia będą działać."}
+            except urllib.error.HTTPError as e:
+                w["ha"]["tekst"] = "Home Assistant odrzucił token." if e.code in (401, 403) else "Home Assistant zwrócił błąd %d." % e.code
+            except Exception:  # noqa: BLE001
+                w["ha"]["tekst"] = "Home Assistant nie odpowiada pod tym adresem."
+    return w
+
+
+def a_ustawienia(ja, b):
+    global AI_URL, AI_MODEL, HA_URL
+    tylko_admin(ja)
+    with BLOKADA:
+        if "ai_url" in b:
+            ustaw("cfg_ai_url", adres_ok(b["ai_url"], "AI"))
+        if "ai_model" in b:
+            m = str(b["ai_model"] or "").strip()[:80]
+            if not re.match(r"^[A-Za-z0-9._:/\-]*$", m):
+                raise Blad(400, "Nazwa modelu ma niedozwolone znaki.")
+            if m:
+                ustaw("cfg_ai_model", m)
+        if "ha_url" in b:
+            ustaw("cfg_ha_url", adres_ok(b["ha_url"], "Home Assistanta"))
+        for pole, plik in (("ai_klucz", "ai_klucz"), ("ha_token", "ha_token")):
+            v = str(b.get(pole) or "").strip()[:600]
+            if v:
+                zapisz_tajne(plik, v)
+            elif b.get(pole + "_usun"):
+                zapisz_tajne(plik, "")
+        konfig_zastosuj()
+        _NOTIFY["ts"] = 0.0
+    return dict(sprawdz_polaczenia(), ok=True)
+
+
+def a_ustawienia_test(ja):
+    tylko_admin(ja)
+    return dict(sprawdz_polaczenia(), ok=True)
+
+
+def a_aktualizuj(ja):
+    """Prośba o aktualizację teraz: plik-znacznik, na który czeka usługa systemowa (uprawnienia roota ma tylko ona)."""
+    tylko_admin(ja)
+    if not os.path.exists(AKT_JEDNOSTKA):
+        raise Blad(409, "Ta instalacja aktualizuje się sama co godzinę. Przycisk zadziała po jednorazowym odświeżeniu instalacji.")
+    with open(os.path.join(KAT, "aktualizuj"), "w", encoding="utf-8") as f:
+        f.write(iso(teraz()))
+    return {"ok": True, "wersja": WERSJA}
+
+
+def a_podglad(ja, b):
+    """Administrator ogląda i klika aplikację jako wybrane dziecko (do prób). Działania są prawdziwe."""
+    tylko_admin(ja)
+    with BLOKADA:
+        c = osoba(int(b.get("dziecko_id") or 0))
+        if c["rola"] != "dziecko":
+            raise Blad(400, "Podgląd działa tylko dla dziecka.")
+        ex("UPDATE osoby SET podglad=? WHERE id=?", "%d|%s" % (c["id"], iso(teraz() + dt.timedelta(minutes=PODGLAD_MIN))), ja["id"])
+    return {"ok": True}
+
+
+def a_podglad_koniec(ja):
+    with BLOKADA:
+        ex("UPDATE osoby SET podglad='' WHERE id=?", ja["id"])
+    return {"ok": True}
+
+
+def w_podgladzie(o):
+    """Osoba, jako którą działa administrator w trybie podglądu, albo on sam."""
+    if not (o and o["admin"] and o.get("podglad")):
+        return o
+    cid, _, do = o["podglad"].partition("|")
+    c = q1("SELECT * FROM osoby WHERE id=? AND aktywna=1 AND rola='dziecko'", int(cid or 0)) if do > iso(teraz()) else None
+    if not c:
+        ex("UPDATE osoby SET podglad='' WHERE id=?", o["id"])
+        return o
+    c["_podglad"] = o["id"]
+    c["_przez_ha"] = o.get("_przez_ha", False)
+    return c
 
 
 def a_osoba(ja, b):
@@ -1411,6 +1571,8 @@ def a_pomoc(ja, zid):
 
 
 def a_pin(ja, b):
+    if ja.get("_podglad"):
+        raise Blad(403, "W podglądzie nie zmienia się PIN-u dziecka.")
     pin = pin_poprawny_format(b.get("pin"))
     with BLOKADA:
         o = osoba(ja["id"])
@@ -1523,6 +1685,11 @@ def petla_tla():
 
 # ---------- HTTP ----------
 TRASY_POST = [
+    (r"^/api/ustawienia$", lambda ja, m, b, raw: a_ustawienia(ja, b)),
+    (r"^/api/ustawienia/test$", lambda ja, m, b, raw: a_ustawienia_test(ja)),
+    (r"^/api/aktualizuj$", lambda ja, m, b, raw: a_aktualizuj(ja)),
+    (r"^/api/podglad$", lambda ja, m, b, raw: a_podglad(ja, b)),
+    (r"^/api/podglad/koniec$", lambda ja, m, b, raw: a_podglad_koniec(ja)),
     (r"^/api/zadanie$", lambda ja, m, b, raw: a_zadanie(ja, b)),
     (r"^/api/zadanie/(\d+)/kroki$", lambda ja, m, b, raw: a_kroki(ja, int(m[1]), b)),
     (r"^/api/zadanie/(\d+)/niedamrady$", lambda ja, m, b, raw: a_nie_dam_rady(ja, int(m[1]), b)),
@@ -1600,7 +1767,12 @@ class H(BaseHTTPRequestHandler):
                 tok = v
         return tok
 
-    def kto(self):
+    def kto(self, prawdziwy=False):
+        with BLOKADA:
+            o = self.kto_naprawde()
+            return o if prawdziwy else w_podgladzie(o)
+
+    def kto_naprawde(self):
         ha = self.dodatek_ha()
         with BLOKADA:
             if ha:
@@ -1718,7 +1890,7 @@ class H(BaseHTTPRequestHandler):
             if sc in ("/api/zaloguj", "/api/wyloguj"):
                 b = json.loads(raw.decode() or "{}") if raw else {}
                 return self.logowanie(sc, b)
-            ja = self.kto()
+            ja = self.kto(prawdziwy=sc.startswith("/api/podglad"))
             if not ja:
                 raise Blad(401, "Zaloguj się.", logowanie=True)
             for wzor, f in TRASY_POST:
