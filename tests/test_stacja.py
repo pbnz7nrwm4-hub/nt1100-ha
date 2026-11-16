@@ -17,7 +17,7 @@ M, SL = os.openpty()
 os.symlink(os.ttyname(SL), os.path.join(T, "ttyACM0"))
 ATR = os.path.join(T, "esptool_atrapa.py")
 with open(ATR, "w") as f:
-    f.write("import sys,time; time.sleep(0.5); print('Writing...'); print('Hash of data verified.'); print('Hard resetting via RTS pin...')\n")
+    f.write("import sys,time; open(sys.argv[0]+'.arg','w').write(' '.join(sys.argv[1:])); time.sleep(0.5); print('Writing...'); print('Hash of data verified.'); print('Hard resetting via RTS pin...')\n")
 with open(os.path.join(T, "klucz"), "w") as f:
     f.write("testowy")
 BIN = {"2.15.0": b"A" * 3000, "2.16.0": b"B" * 3000}
@@ -99,6 +99,9 @@ class Stacja(unittest.TestCase):
         # 3. wgranie poprzedniej wersji z nagrywaniem od startu
         self.post("api/wgraj", {"wersja": "2.15.0"})
         self.assertTrue(czekaj(lambda: S.ostatnio_wgrana() == "2.15.0"))
+        arg = open(ATR + ".arg").read()
+        self.assertIn("--before usb-reset", arg)
+        self.assertIn("write-flash 0x10000", arg)
         self.assertIsNotNone(S.STAN["nagrywa"])
         time.sleep(0.8)
         # jeden start = baner ROM z linią rst:0x (tak wygląda na prawdziwym ekranie); pierwsze 10 s nie liczy się do klatek

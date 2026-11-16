@@ -25,13 +25,14 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.3"
+WERSJA = "1.0.4"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
 HISTORIA = os.path.join(KAT, "historia.jsonl")
 ESPTOOL = os.environ.get("STACJA_ESPTOOL", sys.executable + " -m esptool").split()
 # Najpierw stała nazwa z /dev/serial/by-id (gdy jest), potem zwykły port USB CDC.
+PRZED = os.environ.get("STACJA_PRZED", "usb-reset")  # sposób wejścia w tryb pobierania (esptool --before)
 WZORY_PORTU = os.environ.get("STACJA_PORT", "/dev/stacja/ttyACM*:/dev/serial/by-id/*:/dev/ttyACM*").split(":")
 REPO = os.environ.get("STACJA_REPO", "pbnz7nrwm4-hub/nt1100-firmware")
 GALAZ = os.environ.get("STACJA_GALAZ", "wyniki")
@@ -342,7 +343,11 @@ def wgraj(wersja=None, ratunek=False):
     time.sleep(0.8)
     t0 = time.time()
     try:
-        r = subprocess.run(ESPTOOL + ["--chip", "esp32p4", "-p", port, "--no-stub", "write_flash", "0x10000", p],
+        # Tab5 (ESP32-P4) łączy się przez wbudowany USB-Serial/JTAG. esptool wybiera właściwy reset („usb-reset”) tylko,
+        # gdy rozpozna VID/PID portu – a stałego węzła /dev/stacja/ttyACMn pyserial nie rozpoznaje, więc esptool brał
+        # zwykły reset DTR/RTS i chip nie wchodził w tryb pobierania („Wrong boot mode 0x20c”, 16.11). Dlatego wprost:
+        r = subprocess.run(ESPTOOL + ["--chip", "esp32p4", "-p", port, "--before", PRZED, "--no-stub",
+                                      "write-flash", "0x10000", p],
                            capture_output=True, text=True, timeout=600)
         out = r.stdout + r.stderr
         kod = r.returncode
