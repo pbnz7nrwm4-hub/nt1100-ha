@@ -31,6 +31,9 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
   „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
 - **Od 1.4/1.5**: „Pomóż mi zacząć” (AI podpowiada dziecku pierwszy krok), licznik prób, „Dziś nie dam rady” z decyzją rodzica,
   zgłoszenie własnego zadania, własne przypomnienia dziecka, ponaglenie rodzica po 2 h, punkty jako kieszonkowe (opcja).
+- **Od 1.8**: przechowywanie danych do ustawienia w aplikacji (Ustawienia → Przechowywanie danych): zdjęcia zadań (domyślnie 90 dni),
+  treść nauki (90 dni; temat, wynik i czas zostają), szczegółowa historia (365 dni; potem podsumowania miesięczne,
+  saldo bez zmian). Sprzątanie raz na dobę o 3:00, wynik widać w Ustawieniach.
 - **Od 1.7.1**: zdjęcie najpierw zapisuje się w telefonie, potem idzie na serwer (3 próby). Gdy się nie uda, zostaje na karcie
   „Zdjęcie czeka na wysłanie” i aplikacja ponawia sama (także po zamknięciu strony). Strona nie przerysowuje się, gdy
   otwarty jest aparat albo galeria.
