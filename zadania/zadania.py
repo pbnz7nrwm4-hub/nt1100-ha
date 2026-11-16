@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.5.0"
+WERSJA = "1.6.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -86,6 +86,8 @@ CREATE INDEX IF NOT EXISTS zad_dz ON zadania(dziecko_id, dzien);
 CREATE TABLE IF NOT EXISTS sesje(token TEXT PRIMARY KEY, osoba_id INTEGER, ts TEXT);
 CREATE TABLE IF NOT EXISTS ustawienia(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS ha_konta(id TEXT PRIMARY KEY, nazwa TEXT, ts TEXT);
+CREATE TABLE IF NOT EXISTS nauka(id INTEGER PRIMARY KEY, dziecko_id INTEGER, temat TEXT, tryb TEXT, material TEXT DEFAULT '',
+  strony INTEGER DEFAULT 0, dane TEXT DEFAULT '{}', start TEXT, ruch TEXT, koniec TEXT);
 CREATE TABLE IF NOT EXISTS notatki(id INTEGER PRIMARY KEY, osoba_id INTEGER, tekst TEXT, kiedy TEXT, wyslane INTEGER DEFAULT 0, ts TEXT);
 """
 KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT DEFAULT ''"),
@@ -614,6 +616,8 @@ def stan_dla(ja):
     wynik["punkty"] = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 60", *ids)
     wynik["przypomnienia"] = q("SELECT id, osoba_id, tekst, kiedy, wyslane FROM notatki WHERE osoba_id IN (" + zn + ") AND kiedy>=? "
                                "ORDER BY kiedy", *ids, d)
+    wynik["nauka"] = [nauka_dla(n, ja) for n in q("SELECT * FROM nauka WHERE dziecko_id IN (" + zn + ") AND start>=? ORDER BY id DESC LIMIT 30",
+                                                 *ids, od7)]
     if ja["rola"] != "dziecko":
         wynik["szablony"] = q("SELECT * FROM szablony WHERE aktywny=1 AND dziecko_id IN (" + zn + ") ORDER BY dziecko_id, pora, tytul",
                               *ids)
@@ -1180,6 +1184,190 @@ def ponaglenia():
     return len(lista)
 
 
+# ---------- nauka z AI (1.6): przepytaj mnie, wytłumacz, test ----------
+TRYBY_NAUKI = {"przepytaj": 5, "test": 10, "wytlumacz": 0}
+MAT_MAX = 6000      # znaków materiału (kontekst modelu 16k)
+POZA = "To nie wynika z Twoich materiałów – sprawdź w podręczniku albo zapytaj nauczyciela."
+
+
+def nauka_dla(n, ja):
+    """Sesja nauki do pokazania: dziecko dostaje pytania bez wzorcowych odpowiedzi, rodzic sam wynik."""
+    d = json.loads(n["dane"] or "{}")
+    pyt = d.get("pytania") or []
+    odp = [p for p in pyt if p.get("ocena")]
+    koniec = n["koniec"] or n["ruch"] or n["start"]
+    minuty = max(0, int((dt.datetime.fromisoformat(koniec) - dt.datetime.fromisoformat(n["start"])).total_seconds() // 60))
+    w = {"id": n["id"], "dziecko_id": n["dziecko_id"], "temat": n["temat"], "tryb": n["tryb"], "start": n["start"],
+         "koniec": n["koniec"], "strony": n["strony"], "ma_material": bool(n["material"]), "minuty": minuty,
+         "ile": len(pyt), "odpowiedzi": len(odp), "dobrze": sum(1 for p in odp if p["ocena"] == "dobrze"),
+         "czesciowo": sum(1 for p in odp if p["ocena"] == "czesciowo"),
+         "poza": sum(1 for p in pyt if p.get("poza")) + sum(1 for r in d.get("rozmowa") or [] if r.get("poza")),
+         "pytan_dziecka": len(d.get("rozmowa") or [])}
+    if ja["rola"] == "dziecko":
+        w["pytania"] = [{"p": p["p"], "poza": bool(p.get("poza")), "moja": p.get("moja", ""), "ocena": p.get("ocena", ""),
+                         "komentarz": p.get("komentarz", ""), "wzor": p.get("odp", "") if p.get("ocena") else ""} for p in pyt]
+        w["rozmowa"] = d.get("rozmowa") or []
+    return w
+
+
+def nauka_moja(ja, nid):
+    n = q1("SELECT * FROM nauka WHERE id=?", nid)
+    if not n or ja["rola"] != "dziecko" or n["dziecko_id"] != ja["id"]:
+        raise Blad(404, "Nie ma takiej nauki.")
+    return n
+
+
+def ai_nauka(prompt, obrazy=()):
+    if not ai_wlaczone():
+        raise Blad(409, "Komputer w domu jest teraz wyłączony. Spróbuj później.")
+    try:
+        o = ai_zapytaj(prompt, obrazy)
+    except Exception as e:  # noqa: BLE001
+        raise Blad(502, "Komputer w domu nie odpowiedział. Spróbuj za chwilę. (%s)" % str(e)[:80])
+    if not isinstance(o, dict):
+        raise Blad(502, "Nie udało się. Spróbuj jeszcze raz.")
+    return o
+
+
+def wiek_tekst(c):
+    return (" w wieku %d lat" % (teraz().year - c["rok_ur"])) if c and c["rok_ur"] else ""
+
+
+def a_nauka(ja, b):
+    """Start nauki: temat, forma i ewentualnie wpisany materiał. Zdjęcia stron dochodzą osobno."""
+    if ja["rola"] != "dziecko":
+        raise Blad(403, "Naukę zaczyna dziecko.")
+    temat = tekst(b.get("temat"), 120)
+    tryb = b.get("tryb")
+    if not temat:
+        raise Blad(400, "Napisz, czego się uczysz.")
+    if tryb not in TRYBY_NAUKI:
+        raise Blad(400, "Wybierz formę: przepytaj, test albo wytłumacz.")
+    with BLOKADA:
+        nid = ex("INSERT INTO nauka(dziecko_id,temat,tryb,material,start,ruch) VALUES(?,?,?,?,?,?)", ja["id"], temat, tryb,
+                 tekst(b.get("material"), MAT_MAX), iso(teraz()), iso(teraz()))
+    return {"id": nid}
+
+
+def a_nauka_strona(ja, nid, dane):
+    """Zdjęcie notatek albo strony podręcznika → model przepisuje treść (najwyżej 3 strony na naukę)."""
+    if not dane or len(dane) > MAX_ZDJ or dane[:3] != b"\xff\xd8\xff":
+        raise Blad(415, "To nie wygląda na zdjęcie.")
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        if n["strony"] >= 3:
+            raise Blad(409, "Najwyżej 3 strony na jedną naukę.")
+        if json.loads(n["dane"] or "{}").get("pytania"):
+            raise Blad(409, "Pytania są już ułożone. Zacznij nową naukę z nowym materiałem.")
+    o = ai_nauka("Na zdjęciu jest strona podręcznika albo notatki ucznia. Przepisz wiernie całą treść po polsku (tekst, wzory, "
+                 "podpisy), niczego nie dodawaj od siebie i niczego nie streszczaj. Odpowiedz wyłącznie JSON: "
+                 "{\"tresc\": \"przepisana treść\", \"czytelne\": true albo false}", [base64.b64encode(dane).decode()])
+    tresc = str(o.get("tresc") or "").strip()
+    if len(tresc) < 20:
+        raise Blad(422, "Nie umiem odczytać tej strony. Zrób zdjęcie z bliska, przy dobrym świetle.")
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        mat = (n["material"] + "\n\n" + tresc).strip()[:MAT_MAX]
+        ex("UPDATE nauka SET material=?, strony=strony+1, ruch=? WHERE id=?", mat, iso(teraz()), nid)
+    return {"strony": n["strony"] + 1, "znakow": len(mat), "czytelne": bool(o.get("czytelne", True))}
+
+
+def a_nauka_pytania(ja, nid):
+    """Model układa pytania z materiału; bez materiału – z własnej wiedzy, każde oznaczone „poza materiałem”."""
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        d = json.loads(n["dane"] or "{}")
+        ile = TRYBY_NAUKI[n["tryb"]]
+        if not ile:
+            raise Blad(409, "W tej formie to Ty zadajesz pytania.")
+        if d.get("pytania"):
+            return nauka_dla(n, ja)
+        c = osoba(ja["id"])
+    if n["material"]:
+        zrodlo = ("Układaj pytania WYŁĄCZNIE z poniższego materiału ucznia. Jeśli materiału jest za mało na %d pytań, ułóż mniej. "
+                  "MATERIAŁ:\n%s\nKONIEC MATERIAŁU. " % (ile, n["material"]))
+    else:
+        zrodlo = "Uczeń nie dał materiału, więc układasz pytania z własnej wiedzy o temacie (poziom szkoły podstawowej). "
+    o = ai_nauka("Jesteś cierpliwym korepetytorem ucznia" + wiek_tekst(c) + ". Temat: " + n["temat"] + ". " + zrodlo
+                 + "Ułóż %d krótkich pytań sprawdzających zrozumienie (nie tylko daty i definicje), od łatwiejszych do trudniejszych. "
+                 "Odpowiedz wyłącznie JSON po polsku: {\"pytania\": [{\"p\": \"pytanie\", \"odp\": \"wzorcowa krótka odpowiedź\"}]}" % ile)
+    pyt = [{"p": tekst(x.get("p"), 300), "odp": tekst(x.get("odp"), 500), "poza": not n["material"]}
+           for x in (o.get("pytania") or [])[:ile] if isinstance(x, dict) and str(x.get("p") or "").strip()]
+    if not pyt:
+        raise Blad(502, "Nie udało się ułożyć pytań. Spróbuj jeszcze raz.")
+    with BLOKADA:
+        d["pytania"] = pyt
+        ex("UPDATE nauka SET dane=?, ruch=? WHERE id=?", json.dumps(d, ensure_ascii=False), iso(teraz()), nid)
+        return nauka_dla(q1("SELECT * FROM nauka WHERE id=?", nid), ja)
+
+
+def a_nauka_odpowiedz(ja, nid, b):
+    """Dziecko odpowiada na pytanie; model porównuje z odpowiedzią wzorcową i materiałem."""
+    moja = tekst(b.get("tekst"), 600)
+    if not moja:
+        raise Blad(400, "Napisz odpowiedź (albo „nie wiem”).")
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        d = json.loads(n["dane"] or "{}")
+        pyt = d.get("pytania") or []
+        i = int(b.get("i") or 0)
+        if not 0 <= i < len(pyt):
+            raise Blad(404, "Nie ma takiego pytania.")
+        if pyt[i].get("ocena"):
+            raise Blad(409, "Na to pytanie już odpowiedziałaś/eś.")
+        c = osoba(ja["id"])
+    o = ai_nauka("Jesteś życzliwym korepetytorem ucznia" + wiek_tekst(c) + ". Sprawdź odpowiedź ucznia. Pytanie: " + pyt[i]["p"]
+                 + " Odpowiedź wzorcowa: " + pyt[i]["odp"] + " Odpowiedź ucznia: " + moja + " "
+                 + ("Fragment materiału ucznia:\n" + n["material"][:3000] + "\n" if n["material"] else "")
+                 + "Oceniaj sens, nie dosłowne brzmienie ani literówki. Odpowiedz wyłącznie JSON po polsku: "
+                 "{\"ocena\": \"dobrze|czesciowo|zle\", \"komentarz\": \"1–2 zdania: co dobrze, czego zabrakło, bez wyśmiewania\"}")
+    ocena = o.get("ocena") if o.get("ocena") in ("dobrze", "czesciowo", "zle") else "czesciowo"
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        d = json.loads(n["dane"] or "{}")
+        d["pytania"][i].update({"moja": moja, "ocena": ocena, "komentarz": tekst(o.get("komentarz"), 400)})
+        gotowe = all(p.get("ocena") for p in d["pytania"])
+        ex("UPDATE nauka SET dane=?, ruch=?, koniec=? WHERE id=?", json.dumps(d, ensure_ascii=False), iso(teraz()),
+           iso(teraz()) if gotowe else None, nid)
+        return nauka_dla(q1("SELECT * FROM nauka WHERE id=?", nid), ja)
+
+
+def a_nauka_pytanie(ja, nid, b):
+    """„Wytłumacz”: dziecko pyta; model odpowiada z materiału, a gdy tam tego nie ma – z własnej wiedzy z wyraźnym oznaczeniem."""
+    pyt = tekst(b.get("tekst"), 400)
+    if not pyt:
+        raise Blad(400, "Napisz, czego nie rozumiesz.")
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        d = json.loads(n["dane"] or "{}")
+        if len(d.get("rozmowa") or []) >= 15:
+            raise Blad(409, "To już 15 pytań w tej nauce. Zacznij nową.")
+        c = osoba(ja["id"])
+    o = ai_nauka("Jesteś cierpliwym korepetytorem ucznia" + wiek_tekst(c) + ". Temat: " + n["temat"] + ". "
+                 + ("MATERIAŁ UCZNIA:\n" + n["material"] + "\nKONIEC MATERIAŁU. Najpierw szukaj odpowiedzi w materiale. "
+                    if n["material"] else "Uczeń nie dał materiału. ")
+                 + "Pytanie ucznia: " + pyt + " Wytłumacz prostymi słowami, krok po kroku, z jednym przykładem. Jeśli to zadanie "
+                 "do rozwiązania, pokaż sposób na PODOBNYM przykładzie, nie podawaj gotowego wyniku. Odpowiedz wyłącznie JSON po polsku: "
+                 "{\"odpowiedz\": \"wyjaśnienie, najwyżej 6 zdań\", \"z_materialu\": true jeśli odpowiedź wynika z materiału ucznia, inaczej false}")
+    odp = tekst(o.get("odpowiedz"), 1500)
+    if not odp:
+        raise Blad(502, "Nie udało się. Zapytaj inaczej.")
+    poza = not (n["material"] and o.get("z_materialu") is True)
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        d = json.loads(n["dane"] or "{}")
+        d.setdefault("rozmowa", []).append({"p": pyt, "o": odp, "poza": poza})
+        ex("UPDATE nauka SET dane=?, ruch=? WHERE id=?", json.dumps(d, ensure_ascii=False), iso(teraz()), nid)
+        return nauka_dla(q1("SELECT * FROM nauka WHERE id=?", nid), ja)
+
+
+def a_nauka_koniec(ja, nid):
+    with BLOKADA:
+        nauka_moja(ja, nid)
+        ex("UPDATE nauka SET koniec=COALESCE(koniec,?) WHERE id=?", iso(teraz()), nid)
+    return {"ok": True}
+
+
 def a_pomoc(ja, zid):
     """„Pomóż mi zacząć”: AI podpowiada dziecku pierwszy krok. Nie robi zadania za dziecko. Najwyżej 3 razy na zadanie."""
     with BLOKADA:
@@ -1339,6 +1527,12 @@ TRASY_POST = [
     (r"^/api/zadanie/(\d+)/kroki$", lambda ja, m, b, raw: a_kroki(ja, int(m[1]), b)),
     (r"^/api/zadanie/(\d+)/niedamrady$", lambda ja, m, b, raw: a_nie_dam_rady(ja, int(m[1]), b)),
     (r"^/api/zadanie/(\d+)/prosba$", lambda ja, m, b, raw: a_prosba(ja, int(m[1]), b)),
+    (r"^/api/nauka$", lambda ja, m, b, raw: a_nauka(ja, b)),
+    (r"^/api/nauka/(\d+)/strona$", lambda ja, m, b, raw: a_nauka_strona(ja, int(m[1]), raw)),
+    (r"^/api/nauka/(\d+)/pytania$", lambda ja, m, b, raw: a_nauka_pytania(ja, int(m[1]))),
+    (r"^/api/nauka/(\d+)/odpowiedz$", lambda ja, m, b, raw: a_nauka_odpowiedz(ja, int(m[1]), b)),
+    (r"^/api/nauka/(\d+)/pytanie$", lambda ja, m, b, raw: a_nauka_pytanie(ja, int(m[1]), b)),
+    (r"^/api/nauka/(\d+)/koniec$", lambda ja, m, b, raw: a_nauka_koniec(ja, int(m[1]))),
     (r"^/api/zgloszenie$", lambda ja, m, b, raw: a_zgloszenie(ja, b)),
     (r"^/api/przypomnienie$", lambda ja, m, b, raw: a_przypomnienie(ja, b)),
     (r"^/api/przypomnienie/(\d+)/usun$", lambda ja, m, b, raw: a_przypomnienie_usun(ja, int(m[1]))),

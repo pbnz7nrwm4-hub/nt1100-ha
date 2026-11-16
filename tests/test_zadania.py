@@ -56,6 +56,15 @@ class Atrapa(BaseHTTPRequestHandler):
                 r = {"tytul": "Posprzątać biurko", "opis": "Pusty blat do 18:00.", "brakuje": ["termin", "co znaczy porządek"],
                      "kroki": ["Książki", "Kable"], "punkty": "12", "weryfikacja": "zdjecie", "dlaczego": "efekt widać",
                      "minuty": 0, "uwaga": "Pasuje do wieku."}
+            elif "Przepisz wiernie" in d["prompt"]:
+                r = {"tresc": "Ułamek to część całości. Licznik jest nad kreską, mianownik pod kreską.", "czytelne": True}
+            elif "Ułóż" in d["prompt"] and "korepetytorem" in d["prompt"]:
+                r = {"pytania": [{"p": "Co to jest licznik?", "odp": "Liczba nad kreską ułamkową."},
+                                 {"p": "Co to jest mianownik?", "odp": "Liczba pod kreską."}, {"p": ""}]}
+            elif "Sprawdź odpowiedź ucznia" in d["prompt"]:
+                r = {"ocena": "dobrze" if "nad" in d["prompt"].split("Odpowiedź ucznia:")[1].split("Fragment materiału")[0] else "zle", "komentarz": "Komentarz."}
+            elif "Pytanie ucznia:" in d["prompt"]:
+                r = {"odpowiedz": "Mianownik mówi, na ile części dzielimy.", "z_materialu": "mianownik" in d["prompt"].split("Pytanie ucznia:")[1]}
             elif "pomocnikiem dziecka" in d["prompt"]:
                 r = {"pierwszy_krok": "Zdejmij wszystko z blatu na łóżko", "wskazowki": ["Najpierw książki", "Potem kable", "a", "b"],
                      "minuty": "15", "otucha": "Dasz radę."}
@@ -552,6 +561,44 @@ class TestZadania(unittest.TestCase):
         self.assertEqual(Z.wyslij_przypomnienia(), 1)
         self.assertTrue(czekaj(lambda: any(d["message"] == "Kartkówka z matematyki" for _, d in POWIADOMIENIA)))
         self.assertEqual(Z.wyslij_przypomnienia(), 0)
+
+    def test_i_nauka(self):
+        """Uczę się: materiał ze zdjęcia, przepytywanie z oceną, wytłumacz z oznaczeniem „poza materiałem”, podgląd rodzica."""
+        self.assertEqual(zapytaj(self.m, "/api/nauka", {"temat": "Ułamki", "tryb": "przepytaj"})[0], 403)
+        self.assertEqual(zapytaj(self.a, "/api/nauka", {"temat": "Ułamki", "tryb": "zly"})[0], 400)
+        s, r = zapytaj(self.a, "/api/nauka", {"temat": "Ułamki", "tryb": "przepytaj"})
+        self.assertEqual(s, 200, r)
+        nid = r["id"]
+        self.assertEqual(zapytaj(self.b, "/api/nauka/%d/pytania" % nid, {})[0], 404)
+        s, r = zapytaj(self.a, "/api/nauka/%d/strona" % nid, JPG, "image/jpeg")
+        self.assertEqual((s, r["strony"]), (200, 1), r)
+        s, r = zapytaj(self.a, "/api/nauka/%d/pytania" % nid, {})
+        self.assertEqual((s, r["ile"], r["pytania"][0]["poza"], r["pytania"][0]["wzor"]), (200, 2, False, ""), r)
+        self.assertIn("WYŁĄCZNIE z poniższego materiału", AI["pytania"][-1]["prompt"])
+        self.assertIn("Licznik jest nad kreską", AI["pytania"][-1]["prompt"])
+        self.assertEqual(zapytaj(self.a, "/api/nauka/%d/strona" % nid, JPG, "image/jpeg")[0], 409)
+        s, r = zapytaj(self.a, "/api/nauka/%d/odpowiedz" % nid, {"i": 0, "tekst": "to ta liczba nad kreską"})
+        self.assertEqual((r["pytania"][0]["ocena"], r["pytania"][0]["wzor"], r["koniec"]), ("dobrze", "Liczba nad kreską ułamkową.", None))
+        self.assertEqual(zapytaj(self.a, "/api/nauka/%d/odpowiedz" % nid, {"i": 0, "tekst": "x"})[0], 409)
+        s, r = zapytaj(self.a, "/api/nauka/%d/odpowiedz" % nid, {"i": 1, "tekst": "nie wiem"})
+        self.assertEqual((r["dobrze"], r["odpowiedzi"], bool(r["koniec"])), (1, 2, True))
+        # wytłumacz: bez materiału zawsze „poza”; z materiałem zależnie od odpowiedzi modelu
+        _, r = zapytaj(self.a, "/api/nauka", {"temat": "Ułamki", "tryb": "wytlumacz", "material": "Mianownik jest pod kreską."})
+        w = r["id"]
+        self.assertEqual(zapytaj(self.a, "/api/nauka/%d/pytania" % w, {})[0], 409)
+        _, r = zapytaj(self.a, "/api/nauka/%d/pytanie" % w, {"tekst": "co robi mianownik?"})
+        self.assertEqual(r["rozmowa"][-1]["poza"], False)
+        _, r = zapytaj(self.a, "/api/nauka/%d/pytanie" % w, {"tekst": "a kto wymyślił ułamki?"})
+        self.assertEqual((r["rozmowa"][-1]["poza"], r["poza"]), (True, 1))
+        _, r = zapytaj(self.a, "/api/nauka", {"temat": "Bez materiału", "tryb": "test"})
+        _, r = zapytaj(self.a, "/api/nauka/%d/pytania" % r["id"], {})
+        self.assertTrue(all(p["poza"] for p in r["pytania"]))
+        # rodzic widzi wynik, nie treść
+        _, sm = zapytaj(self.m, "/api/stan")
+        n = [x for x in sm["nauka"] if x["id"] == nid][0]
+        self.assertEqual((n["dobrze"], n["ile"], "pytania" in n), (1, 2, False))
+        _, si = zapytaj(self.i, "/api/stan")
+        self.assertEqual(si["nauka"], [])
 
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})
