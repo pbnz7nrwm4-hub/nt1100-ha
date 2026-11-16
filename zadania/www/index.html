@@ -145,7 +145,7 @@ function zostalo(s){
   const h = Math.floor(m/60);
   return h < 24 ? "jeszcze " + h + " h " + (m%60) + " min" : "do " + kiedy(s);
 }
-const doZatw = () => S.zadania.filter(z => z.stan==="wyslane" && dz(z.dziecko_id).prawa?.zatwierdza).length
+const doZatw = () => S.zadania.filter(z => (z.stan==="wyslane" || z.prosba) && dz(z.dziecko_id).prawa?.zatwierdza).length
   + S.wymiany.filter(w => w.stan==="czeka" && dz(w.dziecko_id).prawa?.zatwierdza).length
   + S.nagrody.filter(n => n.stan==="propozycja" && dz(n.dziecko_id).prawa?.zatwierdza).length;
 
@@ -190,11 +190,15 @@ function widokDzis(){
   h += '<h3>Na dziś</h3>';
   if (!reszta.length) h += '<div class="karta mal">Nic więcej na dziś. Możesz wziąć coś z puli.</div>';
   h += '<div class="lista">' + reszta.map((z,i) => kartaDziecka(z, i===0 && ["do_zrobienia","do_poprawki"].includes(z.stan))).join("") + '</div>';
+  const jutro = new Date(Date.parse(S.dzis+"T12:00:00") + 86400000).toISOString().slice(0,10) + "T07:00";
+  h += '<h3>Moje przypomnienia</h3><div class="karta">' + (przypomnieniaLista(S.ja.id, true) || '<div class="mal">Nic nie masz zapisane. Dodaj np. kartkówkę albo strój na WF.</div>')
+    + '<details '+det("nprz")+' style="margin-top:8px"><summary style="min-height:36px;font-weight:600">Dodaj przypomnienie</summary><label class="pole" for="przt">O czym przypomnieć</label><input type="text" id="przt" maxlength="160" placeholder="np. Kartkówka z matematyki"><label class="pole" for="przk">Kiedy</label><input type="datetime-local" id="przk" value="'+jutro+'"><button class="glowny" id="przdodaj" style="margin-top:10px">Zapisz przypomnienie</button></details></div>';
+  h += '<details class="karta" '+det("ekstra")+'><summary style="min-height:36px;font-weight:600">Zrobiłam / zrobiłem coś ekstra</summary><div class="mal">Coś, o co nikt nie prosił. Rodzic zobaczy i przyzna punkty.</div><label class="pole" for="ekst">Co to było</label><input type="text" id="ekst" maxlength="120" placeholder="np. Umyłam okno w pokoju"><button class="glowny" id="eksdodaj" style="margin-top:10px">Wyślij do rodzica</button></details>';
   return h;
 }
 function kartaDziecka(z, rozwin){
   const otw = ["do_zrobienia","do_poprawki"].includes(z.stan);
-  let h = '<div class="karta '+(rozwin?"wazna":"")+'"><div class="wiersz" style="align-items:flex-start"><div><a href="#z'+z.id+'" style="font-size:18px;font-weight:700;color:inherit;text-decoration:none">'+esc(z.tytul)+'</a><div class="mal">'+(z.zleca?"od: "+esc(z.zleca)+" · ":"")+z.punkty+' pkt · '+WER[z.weryfikacja].toLowerCase()+'</div></div>'
+  let h = '<div class="karta '+(rozwin?"wazna":"")+'"><div class="wiersz" style="align-items:flex-start"><div><a href="#z'+z.id+'" style="font-size:18px;font-weight:700;color:inherit;text-decoration:none">'+esc(z.tytul)+'</a><div class="mal">'+(z.wlasne ? "z własnej inicjatywy"+(z.przyznane?" · +"+z.przyznane+" pkt":"") : (z.zleca?"od: "+esc(z.zleca)+" · ":"")+z.punkty+' pkt · '+WER[z.weryfikacja].toLowerCase())+'</div></div>'
     + (otw ? '<span class="pigu '+(z.po_terminie?"zle":"")+'">'+zostalo(z.termin)+'</span>' : '<span class="pigu ok">'+STAN[z.stan]+'</span>') + '</div>';
   if (z.stan==="do_poprawki" && z.slowo) h += '<div class="wpis uw-ic">'+IK.uw+'<span style="color:var(--tekst)">'+esc(z.slowo)+'</span></div>';
   if (rozwin) h += kroki(z) + '<div style="margin-top:10px"><a class="btn glowny" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;background:var(--akcent);color:#fff;border-radius:12px;min-height:50px" href="#z'+z.id+'">'+(z.weryfikacja==="minutnik"?"Otwórz minutnik":z.weryfikacja==="zaufanie"?"Zrobione":IK.aparat+" Zrobione – zrób zdjęcie")+'</a></div>';
@@ -202,7 +206,7 @@ function kartaDziecka(z, rozwin){
   return h + '</div>';
 }
 function kroki(z, tylkoOdczyt){
-  if (!z.kroki.length) return S.ai && z.stan==="do_zrobienia" ? '<div class="mal" style="margin-top:6px">Kroki pojawią się za chwilę.</div>' : "";
+  if (!z.kroki.length) return "";
   return '<div style="margin-top:8px">' + z.kroki.map((k,i) => '<label class="krok"><input type="checkbox" data-krok="'+z.id+':'+i+'" '+(k.z?"checked":"")+' '+(tylkoOdczyt?"disabled":"")+'>'+esc(k.t)+'</label>').join("") + '</div>';
 }
 function widokPula(){
@@ -254,12 +258,16 @@ function widokZadania(id){
     h += '<label class="pole" for="kom">Chcesz coś dopisać?</label><input type="text" id="kom" maxlength="300" value="">'
       + '<div class="mal" style="text-align:center;margin:12px 0 8px">Zdjęcie zostaje w domu. Decyduje rodzic.</div><button class="glowny" data-wyslij="'+z.id+'">Wyślij</button>';
   }
+  if (ja && otw && !z.pula) h += z.prosba ? '<div class="karta mal" style="margin-top:12px">Prośba o przesunięcie wysłana („'+esc(z.prosba)+'”). Czekasz na odpowiedź rodzica.</div>'
+    : '<details class="karta" '+det("ndr"+z.id)+' style="margin-top:12px"><summary style="min-height:36px;font-weight:600">Dziś nie dam rady</summary><div class="mal">Napisz dlaczego. Rodzic zdecyduje, czy przesunąć na jutro.</div><input type="text" id="ndrp" maxlength="200" placeholder="np. Mam trening do 20:00" style="margin-top:8px"><button data-ndr="'+z.id+'" style="width:100%;margin-top:8px">Poproś o przesunięcie</button></details>';
+  if (!ja && z.prosba) h += '<div class="karta wazna"><div class="mal" style="font-weight:600">'+esc(d.imie)+' prosi o przesunięcie</div><div style="margin:6px 0">„'+esc(z.prosba)+'”</div>'+(d.prawa?.zatwierdza?'<div class="rzad"><button data-prosba="'+z.id+':zostaje">Zostaje na dziś</button><button class="wyb" data-prosba="'+z.id+':jutro">Przesuń na jutro</button></div>':"")+'</div>';
   if (z.pula && ja) h += '<button class="glowny" data-wez="'+z.id+'">Biorę to zadanie</button>';
   // akcje rodzica
   if (!ja && z.stan==="wyslane" && d.prawa?.zatwierdza) {
     h += '<label class="pole" for="slowo">Słowo do dziecka (zobaczy je przy zadaniu)</label><input type="text" id="slowo" maxlength="300" placeholder="np. Super, dziękuję!">'
-      + '<div style="margin-top:12px"><button class="glowny" data-dec="'+z.id+':zatwierdz">Zatwierdź · +'+z.punkty+' pkt</button></div>'
-      + '<div class="rzad" style="margin-top:8px"><button data-dec="'+z.id+':poprawka">Do poprawki</button><button data-dec="'+z.id+':czesciowo">Częściowo · +'+Math.floor(z.punkty/2)+'</button></div>';
+      + (z.wlasne ? '<label class="pole" for="pktwl">Ile punktów za to przyznać</label><input type="number" id="pktwl" min="0" max="1000" value="5"><div style="margin-top:12px"><button class="glowny" data-dec="'+z.id+':zatwierdz">Przyznaj punkty</button></div><div style="margin-top:8px"><button data-dec="'+z.id+':poprawka" style="width:100%">Nie tym razem</button></div>'
+        : '<div style="margin-top:12px"><button class="glowny" data-dec="'+z.id+':zatwierdz">Zatwierdź · +'+z.punkty+' pkt</button></div>'
+      + '<div class="rzad" style="margin-top:8px"><button data-dec="'+z.id+':poprawka">Do poprawki</button><button data-dec="'+z.id+':czesciowo">Częściowo · +'+Math.floor(z.punkty/2)+'</button></div>');
   }
   if (!ja && d.prawa?.zleca && !["zatwierdzone","czesciowo"].includes(z.stan)) h += '<div style="margin-top:20px"><button data-usunzad="'+z.id+'" style="width:100%;color:var(--zle)">Usuń zadanie</button></div>';
   return h;
@@ -271,14 +279,16 @@ function widokZatwierdz(){
   const w = S.wymiany.filter(x => x.stan==="czeka" && dz(x.dziecko_id).prawa?.zatwierdza);
   const n = S.nagrody.filter(x => x.stan==="propozycja" && dz(x.dziecko_id).prawa?.zatwierdza);
   let h = '<h1>Do zatwierdzenia</h1><p class="mal">Cześć, '+esc(S.ja.imie)+'.</p>' + pierwszeKroki();
-  if (!z.length && !w.length && !n.length) h += '<div class="karta mal">Nic nie czeka. Tu pojawi się zadanie, gdy dziecko je wyśle.</div>';
+  if (!z.length && !w.length && !n.length && !S.zadania.some(x => x.prosba && dz(x.dziecko_id).prawa?.zatwierdza)) h += '<div class="karta mal">Nic nie czeka. Tu pojawi się zadanie, gdy dziecko je wyśle.</div>';
   h += z.map(x => {
     const po = x.zdjecia.filter(p => p.rodzaj==="po").slice(-1)[0];
     const wd = x.ocena && x.ocena.werdykt ? WERD[x.ocena.werdykt] : null;
-    const szybko = !po && x.weryfikacja!=="zdjecie" && x.weryfikacja!=="zeszyt";
-    return '<div class="karta"><a href="#z'+x.id+'" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>'
-      + (szybko ? '<div class="rzad" style="margin-top:10px"><button data-dec="'+x.id+':poprawka">Do poprawki</button><button class="wyb" data-dec="'+x.id+':zatwierdz">Zatwierdź · +'+x.punkty+' pkt</button></div>' : '<div class="mal" style="margin-top:6px">Dotknij, żeby obejrzeć zdjęcie i zatwierdzić.</div>') + '</div>';
+    const szybko = !po && !x.wlasne && x.weryfikacja!=="zdjecie" && x.weryfikacja!=="zeszyt";
+    return '<div class="karta"><a href="#z'+x.id+'" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">'+(x.wlasne?"z własnej inicjatywy · ":"")+'wysłane '+kiedy(x.wyslane)+(x.wlasne?"":' · '+x.punkty+' pkt')+'</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>'
+      + (szybko ? '<div class="rzad" style="margin-top:10px"><button data-dec="'+x.id+':poprawka">Do poprawki</button><button class="wyb" data-dec="'+x.id+':zatwierdz">Zatwierdź · +'+x.punkty+' pkt</button></div>' : '<div class="mal" style="margin-top:6px">'+(x.wlasne?"Dotknij, żeby przyznać punkty.":"Dotknij, żeby obejrzeć zdjęcie i zatwierdzić.")+'</div>') + '</div>';
   }).join("");
+  const pr = S.zadania.filter(x => x.prosba && dz(x.dziecko_id).prawa?.zatwierdza);
+  if (pr.length) h += '<h3>Prośby o przesunięcie</h3>' + pr.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">„'+esc(x.prosba)+'”</div><div class="rzad" style="margin-top:8px"><button data-prosba="'+x.id+':zostaje">Zostaje na dziś</button><button class="wyb" data-prosba="'+x.id+':jutro">Przesuń na jutro</button></div></div>').join("");
   if (w.length) h += '<h3>Wymiana punktów</h3>' + w.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">'+x.koszt+' pkt · ma '+dz(x.dziecko_id).saldo+'</div><div class="rzad" style="margin-top:8px"><button data-wym="'+x.id+':nie">Jeszcze nie</button><button class="wyb" data-wym="'+x.id+':tak">Zgoda</button></div></div>').join("");
   if (n.length) h += '<h3>Propozycje nagród</h3>' + n.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">proponuje '+x.koszt+' pkt'+(x.cel?" · jako duży cel":"")+'</div><div class="rzad" style="margin-top:8px"><button data-nagr="'+x.id+':nie">Nie</button><button class="wyb" data-nagr="'+x.id+':tak">Dodaj</button></div></div>').join("");
   const dzis = S.zadania.filter(x => x.dzien===S.dzis && !x.pula);
@@ -377,14 +387,22 @@ function widokDzieci(){
     const sz = (S.szablony||[]).filter(s => s.dziecko_id===d.id);
     const otw = S.zadania.filter(z => z.dziecko_id===d.id && ["do_zrobienia","do_poprawki"].includes(z.stan) && !z.pula);
     const pula = S.zadania.filter(z => z.dziecko_id===d.id && z.pula);
-    return '<div class="karta"><div class="wiersz"><h2>'+esc(d.imie)+'</h2><span class="pigu">'+IK.gw+' '+d.saldo+' pkt</span></div><div class="mal">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?' · '+d.seria+' dni z rzędu':"")+(d.prawa.zatwierdza?"":" · tylko podgląd")+'</div>'
+    return '<div class="karta"><div class="wiersz"><h2>'+esc(d.imie)+'</h2><span class="pigu">'+IK.gw+' '+d.saldo+' pkt'+(d.grosze?' = '+zl(d.saldo-d.zarezerwowane, d.grosze):"")+'</span></div><div class="mal">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?' · '+d.seria+' dni z rzędu':"")+(d.prawa.zatwierdza?"":" · tylko podgląd")+'</div>'
      + (otw.length ? '<h3>Otwarte</h3>' + otw.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.po_terminie?"po terminie":kiedy(z.termin))+'</span></div>').join("") : "")
      + (pula.length ? '<h3>W puli</h3>' + pula.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+z.punkty+' pkt</span></div>').join("") : "")
      + (sz.length ? '<h3>Powtarzane</h3>' + sz.map(s => '<div class="wiersz" style="min-height:40px"><span>'+esc(s.tytul)+' <span class="mal">· '+s.dni.split("").map(i=>DNI[i-1]).join(" ")+' do '+s.godzina+(s.pora?" · "+PORA[s.pora].toLowerCase():"")+'</span></span>'+(d.prawa.zleca?'<button data-wyl="'+s.id+'" style="min-height:36px">Wyłącz</button>':"")+'</div>').join("") : "")
+     + (przypomnieniaLista(d.id, false) ? '<h3>Przypomnienia dziecka</h3>' + przypomnieniaLista(d.id, false) : "")
+     + (d.prawa.zatwierdza && d.grosze && d.saldo-d.zarezerwowane > 0 ? '<div style="margin-top:10px"><button data-wyplata="'+d.id+'" style="width:100%">Wypłaciłem kieszonkowe '+zl(d.saldo-d.zarezerwowane, d.grosze)+' – wyzeruj punkty</button></div>' : "")
      + (d.prawa.zatwierdza ? '<div style="margin-top:10px"><button data-pinreset="'+d.id+'" style="min-height:36px">Skasuj PIN '+esc(d.imie)+'</button></div>' : "")
-     + (d.prawa.zatwierdza ? '<h3>Dodaj albo odejmij punkty</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="np. 10 albo -5" aria-label="Ile punktów" style="flex:2"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:3"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
+     + (d.prawa.zatwierdza ? '<h3>Dodaj albo odejmij punkty</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="np. 10" aria-label="Ile punktów (z minusem odejmuje)" style="flex:2"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:3"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
      + '</div>' + historia(d);
   }).join("");
+}
+const zl = (pkt, gr) => (pkt*gr/100).toFixed(2).replace(".",",") + " zł";
+function przypomnieniaLista(osobaId, moje){
+  const r = (S.przypomnienia||[]).filter(p => p.osoba_id===osobaId);
+  if (!r.length) return "";
+  return r.map(p => '<div class="wiersz" style="min-height:40px;border-top:1px solid var(--linia2)"><span>'+esc(p.tekst)+'<div class="mal">'+kiedy(p.kiedy)+'</div></span>'+(moje?'<button data-usunprz="'+p.id+'" aria-label="Usuń przypomnienie" style="min-height:36px">Usuń</button>':"")+'</div>').join("");
 }
 const OTW = new Set();
 const det = k => 'data-det="'+k+'" '+(OTW.has(k)?"open":"");
@@ -401,7 +419,7 @@ function widokNagrody(){
     const wolne = d.saldo - d.zarezerwowane;
     const cel = n.find(x => x.cel), male = n.filter(x => !x.cel);
     if (!dziecko()) h += '<h3>'+esc(d.imie)+'</h3>';
-    h += '<div class="karta wiersz"><div><div class="mal">Masz</div><div style="font-size:32px;font-weight:700;color:var(--pom)">'+wolne+' pkt</div>'+(d.zarezerwowane?'<div class="mal">'+d.zarezerwowane+' czeka na zgodę</div>':"")+'</div><div class="mal" style="text-align:right">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?'<br>'+d.seria+' dni z rzędu':"")+'</div></div>';
+    h += '<div class="karta wiersz"><div><div class="mal">Masz</div><div style="font-size:32px;font-weight:700;color:var(--pom)">'+wolne+' pkt</div>'+(d.grosze?'<div class="mal">to '+zl(wolne, d.grosze)+' kieszonkowego</div>':"")+''+(d.zarezerwowane?'<div class="mal">'+d.zarezerwowane+' czeka na zgodę</div>':"")+'</div><div class="mal" style="text-align:right">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?'<br>'+d.seria+' dni z rzędu':"")+'</div></div>';
     if (cel) {
       const proc = Math.min(100, Math.round(100*wolne/cel.koszt));
       const tempo = d.tydzien > 0 ? Math.ceil(Math.max(0, cel.koszt-wolne)/d.tydzien) : null;
@@ -435,6 +453,7 @@ function widokOsoby(){
   h += '<h3>Ustawienia osób</h3>' + S.osoby.map(o => '<details class="karta" '+det("o"+o.id)+'><summary style="min-height:40px"><b>'+esc(o.imie)+'</b> <span class="mal">· '+(o.rola==="dziecko"?"dziecko":"dorosły")+(o.admin?", administrator":"")+' · '+(o.ha?"wchodzi przez Home Assistant":o.ma_pin?"ma PIN":"jeszcze nie wchodził(a)")+'</span></summary>'
       + '<div style="margin-top:8px"><button data-link="'+o.id+'" style="width:100%">Pokaż link do wejścia'+(o.ma_pin?"":" (wyślij tej osobie)")+'</button></div>'
       + (o.rola==="dziecko" ? '<label class="pole" for="ru'+o.id+'">Rok urodzenia (dobiera zadania z katalogu do wieku)</label><div class="rzad"><input type="number" id="ru'+o.id+'" value="'+(o.rok_ur||"")+'" placeholder="np. 2013" style="flex:3"><button data-ru="'+o.id+'" style="flex:1">Zapisz</button></div>' : "")
+      + (o.rola==="dziecko" ? '<label class="pole" for="gr'+o.id+'">Kieszonkowe: ile groszy za 1 punkt (0 = wyłączone)</label><div class="rzad"><input type="number" id="gr'+o.id+'" min="0" max="1000" value="'+(o.grosze||0)+'" style="flex:3"><button data-gr="'+o.id+'" style="flex:1">Zapisz</button></div>' : "")
       + '<label class="pole" for="pw'+o.id+'">Telefon do powiadomień</label>'
       + (tel.length ? '<select id="pw'+o.id+'" data-pws="'+o.id+'"><option value="">– bez powiadomień –</option>'+tel.map(t => '<option value="'+esc(t)+'" '+((o.powiadom||"").replace("notify.","")===t?"selected":"")+'>'+esc(nazwaTel(t))+'</option>').join("")+(o.powiadom && !tel.includes(o.powiadom.replace("notify.","")) ? '<option selected value="'+esc(o.powiadom)+'">'+esc(o.powiadom)+'</option>' : "")+'</select><div class="mal" style="margin-top:4px">Lista telefonów z aplikacją Home Assistant.</div>'
          : '<div class="rzad"><input type="text" id="pw'+o.id+'" value="'+esc(o.powiadom)+'" placeholder="np. mobile_app_iphone_zosi" style="flex:3"><button data-pw="'+o.id+'" style="flex:1">Zapisz</button></div><div class="mal" style="margin-top:4px">Po połączeniu z Home Assistantem pojawi się tu lista telefonów do wyboru.</div>')
@@ -478,6 +497,15 @@ function podepnij(){
     try { await api("api/zadanie/"+e.dataset.pomoc+"/pomoc", {}); } catch(er) { toast(er.message); }
     POMOC_CZEKA = 0; await odswiez();
   });
+  A.querySelectorAll("[data-ndr]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.ndr+"/niedamrady", {powod:($("#ndrp")||{}).value||""}, "Prośba wysłana do rodzica"));
+  A.querySelectorAll("[data-prosba]").forEach(e => e.onclick = () => { const [z,d] = e.dataset.prosba.split(":"); akcja("api/zadanie/"+z+"/prosba", {decyzja:d}, d==="jutro"?"Przesunięte na jutro":"Zostaje na dziś"); });
+  A.querySelectorAll("[data-usunprz]").forEach(e => e.onclick = () => akcja("api/przypomnienie/"+e.dataset.usunprz+"/usun", {}, "Usunięte"));
+  if ($("#przdodaj")) $("#przdodaj").onclick = async () => { const b = {tekst:$("#przt").value, kiedy:$("#przk").value}; if (b.tekst.trim()) OTW.delete("nprz"); try { await akcja("api/przypomnienie", b, "Zapisane – przypomnę"); } catch(er) {} };
+  if ($("#eksdodaj")) $("#eksdodaj").onclick = async () => { const b = {tytul:$("#ekst").value}; if (b.tytul.trim()) OTW.delete("ekstra"); try { await akcja("api/zgloszenie", b, "Wysłane do rodzica"); } catch(er) {} };
+  A.querySelectorAll("[data-gr]").forEach(e => e.onclick = () => akcja("api/osoba/"+e.dataset.gr, {grosze:+$("#gr"+e.dataset.gr).value||0}, "Zapisane"));
+  A.querySelectorAll("[data-wyplata]").forEach(e => e.onclick = () => { const d = S.dzieci.find(x => x.id===+e.dataset.wyplata); const w = d.saldo-d.zarezerwowane;
+    if (!e.dataset.pewne) { e.dataset.pewne = 1; e.textContent = "Na pewno wyzerować "+w+" pkt? Dotknij jeszcze raz"; return; }
+    akcja("api/punkty", {dziecko_id:d.id, ile:-w, powod:"Kieszonkowe wypłacone: "+zl(w, d.grosze)}, "Zapisane"); });
   A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
   A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
   A.querySelectorAll("[data-foto]").forEach(e => e.onchange = async () => {
@@ -489,7 +517,7 @@ function podepnij(){
   A.querySelectorAll("[data-wyslij]").forEach(e => e.onclick = async () => {
     try { await akcja("api/zadanie/"+e.dataset.wyslij+"/wyslij", {komentarz: ($("#kom")||{}).value || ""}, "Wysłane – brawo!"); idz(""); } catch(er) {}
   });
-  A.querySelectorAll("[data-dec]").forEach(e => e.onclick = async () => { const [z,d] = e.dataset.dec.split(":"); await akcja("api/zadanie/"+z+"/decyzja", {decyzja:d, slowo:($("#slowo")||{}).value||""}, d==="poprawka"?"Odesłane do poprawki":"Zatwierdzone"); idz(""); });
+  A.querySelectorAll("[data-dec]").forEach(e => e.onclick = async () => { const [z,d] = e.dataset.dec.split(":"); await akcja("api/zadanie/"+z+"/decyzja", Object.assign({decyzja:d, slowo:($("#slowo")||{}).value||""}, $("#pktwl") && d==="zatwierdz" ? {punkty:+$("#pktwl").value} : {}), d==="poprawka"?"Odesłane do poprawki":"Zatwierdzone"); idz(""); });
   A.querySelectorAll("[data-usunzad]").forEach(e => e.onclick = async () => { if (e.dataset.pewne) { await akcja("api/zadanie/"+e.dataset.usunzad+"/usun", {}, "Usunięte"); idz(""); } else { e.dataset.pewne = 1; e.textContent = "Na pewno usunąć? Dotknij jeszcze raz"; } });
   A.querySelectorAll("[data-wym]").forEach(e => e.onclick = () => { const [w,d] = e.dataset.wym.split(":"); akcja("api/wymiana/"+w+"/decyzja", {decyzja:d}, d==="tak"?"Zgoda – punkty odjęte":"Odrzucone"); });
   A.querySelectorAll("[data-nagr]").forEach(e => e.onclick = () => { const [n,d] = e.dataset.nagr.split(":"); akcja("api/nagroda/"+n+"/decyzja", {decyzja:d}, d==="tak"?"Nagroda dodana":"Odrzucona"); });

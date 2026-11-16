@@ -487,6 +487,72 @@ class TestZadania(unittest.TestCase):
         z = [x for x in st["zadania"] if x["id"] == zid][0]
         self.assertEqual((z["proby"], z["pomoc"]["ile"]), (2, 3))
 
+    def test_h_wersja_1_5(self):
+        """Nie dam rady → jutro; własne zgłoszenie z punktami od rodzica; ponaglenie po 2 h; kieszonkowe; przypomnienia."""
+        with open(os.path.join(T, "ha_token"), "w") as f:
+            f.write("tok")
+        termin = (Z.teraz() + dt.timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M")
+        _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Odkurzyć", "weryfikacja": "zaufanie",
+                                                 "termin": termin})
+        zid = r["zadanie_id"]
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/niedamrady" % zid, {"powod": ""})[0], 400)
+        self.assertEqual(zapytaj(self.b, "/api/zadanie/%d/niedamrady" % zid, {"powod": "x"})[0], 403)
+        POWIADOMIENIA.clear()
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/niedamrady" % zid, {"powod": "Mam trening do 20"})[0], 200)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/niedamrady" % zid, {"powod": "znowu"})[0], 409)
+        self.assertTrue(czekaj(lambda: any("trening" in d["message"] for _, d in POWIADOMIENIA)))
+        self.assertEqual(zapytaj(self.d, "/api/zadanie/%d/prosba" % zid, {"decyzja": "jutro"})[0], 403)   # dziadek tylko podgląd
+        self.assertEqual(zapytaj(self.m, "/api/zadanie/%d/prosba" % zid, {"decyzja": "jutro"})[0], 200)
+        z = Z.q1("SELECT * FROM zadania WHERE id=?", zid)
+        jutro = (Z.teraz().date() + dt.timedelta(days=1)).isoformat()
+        self.assertEqual((z["prosba"], z["dzien"], z["termin"][:16]), ("", jutro, jutro + "T" + z["termin"][11:16]))
+        # własne zgłoszenie
+        self.assertEqual(zapytaj(self.m, "/api/zgloszenie", {"tytul": "x"})[0], 403)
+        s, r = zapytaj(self.a, "/api/zgloszenie", {"tytul": "Umyłam okno"})
+        self.assertEqual(s, 200, r)
+        przed = Z.saldo(self.a_id)
+        s, r = zapytaj(self.m, "/api/zadanie/%d/decyzja" % r["zadanie_id"], {"decyzja": "zatwierdz", "punkty": 7})
+        self.assertEqual((s, r["punkty"], Z.saldo(self.a_id) - przed), (200, 7, 7))
+        zapytaj(self.a, "/api/zgloszenie", {"tytul": "2"})
+        _, r3 = zapytaj(self.a, "/api/zgloszenie", {"tytul": "3"})
+        self.assertEqual(zapytaj(self.a, "/api/zgloszenie", {"tytul": "4"})[0], 409)
+        # ponaglenie: zgłoszenie nr 3 „wysłane” 3 h temu
+        with Z.BLOKADA:
+            Z.ex("UPDATE zadania SET ponaglono=1 WHERE stan='wyslane'")
+            Z.ex("UPDATE zadania SET ponaglono=0, wyslane=? WHERE id=?", Z.iso(Z.teraz() - dt.timedelta(hours=3)), r3["zadanie_id"])
+        POWIADOMIENIA.clear()
+        ile = Z.ponaglenia()
+        if 7 <= Z.teraz().hour < 22:
+            self.assertEqual(ile, 1)
+            self.assertTrue(czekaj(lambda: any("od ponad 2 godzin" in d["message"] for _, d in POWIADOMIENIA)))
+            self.assertEqual(Z.ponaglenia(), 0)
+        else:
+            self.assertEqual(ile, 0)
+        # kieszonkowe
+        self.assertEqual(zapytaj(self.m, "/api/osoba/%d" % self.a_id, {"grosze": 10})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/osoba/%d" % self.a_id, {"grosze": 10})[0], 200)
+        _, st = zapytaj(self.a, "/api/stan")
+        self.assertEqual(st["dzieci"][0]["grosze"], 10)
+        # własne przypomnienia dziecka
+        self.assertEqual(zapytaj(self.a, "/api/przypomnienie", {"tekst": "Kartkówka", "kiedy": ""})[0], 400)
+        za_chwile = (Z.teraz() + dt.timedelta(days=2)).strftime("%Y-%m-%dT07:00")
+        s, r = zapytaj(self.a, "/api/przypomnienie", {"tekst": "Kartkówka z matematyki", "kiedy": za_chwile})
+        self.assertEqual(s, 200, r)
+        _, st = zapytaj(self.a, "/api/stan")
+        self.assertEqual([p["tekst"] for p in st["przypomnienia"]], ["Kartkówka z matematyki"])
+        _, sm = zapytaj(self.m, "/api/stan")
+        self.assertEqual(len(sm["przypomnienia"]), 1)                       # mama widzi przypomnienia swojego dziecka
+        _, si = zapytaj(self.i, "/api/stan")
+        self.assertEqual(si["przypomnienia"], [])                           # inny rodzic nie
+        self.assertEqual(zapytaj(self.b, "/api/przypomnienie/%d/usun" % r["id"], {})[0], 404)
+        self.assertEqual(Z.wyslij_przypomnienia(), 0)
+        with Z.BLOKADA:
+            Z.ex("UPDATE notatki SET kiedy=? WHERE id=?", Z.iso(Z.teraz() - dt.timedelta(minutes=1)), r["id"])
+        POWIADOMIENIA.clear()
+        self.assertEqual(Z.wyslij_przypomnienia(), 1)
+        self.assertTrue(czekaj(lambda: any(d["message"] == "Kartkówka z matematyki" for _, d in POWIADOMIENIA)))
+        self.assertEqual(Z.wyslij_przypomnienia(), 0)
+
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})
         self.assertEqual(o["werdykt"], "niepewne")
