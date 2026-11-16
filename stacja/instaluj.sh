@@ -81,8 +81,8 @@ systemctl restart stacja
 echo "Zapisane. Stacja sprawdzi budowy za kilka sekund."
 EOT
 chmod 750 /usr/local/sbin/stacja-klucz
-# pct enter daje PATH bez /usr/local/sbin – skrót w /usr/local/bin, żeby działało samo „stacja-klucz”
-ln -sf /usr/local/sbin/stacja-klucz /usr/local/bin/stacja-klucz
+# pct enter daje PATH bez /usr/local (tylko /sbin:/bin:/usr/sbin:/usr/bin) – skrót w /usr/sbin
+ln -sf /usr/local/sbin/stacja-klucz /usr/local/bin/stacja-klucz; ln -sf /usr/local/sbin/stacja-klucz /usr/sbin/stacja-klucz
 
 # Aktualizacja kodu: co godzinę z main; restart tylko, gdy zmienił się katalog stacja/ i nic się nie wgrywa.
 cat > /usr/local/sbin/stacja-aktualizuj <<EOT

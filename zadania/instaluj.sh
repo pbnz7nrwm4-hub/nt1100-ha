@@ -86,7 +86,7 @@ systemctl restart zadania
 echo "Zapisane. Powiadomienia pójdą przez Home Assistanta."
 EOT
 chmod 750 /usr/local/sbin/zadania-ha-token
-ln -sf /usr/local/sbin/zadania-ha-token /usr/local/bin/zadania-ha-token
+ln -sf /usr/local/sbin/zadania-ha-token /usr/local/bin/zadania-ha-token; ln -sf /usr/local/sbin/zadania-ha-token /usr/sbin/zadania-ha-token   # pct enter: PATH bez /usr/local
 
 # Podłączenie lokalnego AI (adres, model, klucz API – klucz wpisywany bez pokazywania): zadania-ai
 cat > /usr/local/sbin/zadania-ai <<EOT
@@ -110,7 +110,7 @@ systemctl restart zadania
 echo "Zapisane."
 EOT
 chmod 750 /usr/local/sbin/zadania-ai
-ln -sf /usr/local/sbin/zadania-ai /usr/local/bin/zadania-ai
+ln -sf /usr/local/sbin/zadania-ai /usr/local/bin/zadania-ai; ln -sf /usr/local/sbin/zadania-ai /usr/sbin/zadania-ai   # pct enter: PATH bez /usr/local
 
 # Przypomnienie linku osoby (np. gdy ktoś zgubił): zadania-link "Imię"
 cat > /usr/local/sbin/zadania-link <<EOT
@@ -119,7 +119,7 @@ set -a; . $ENV; set +a
 exec runuser -u zadania -- /usr/bin/python3 $KOD/zadania/zadania.py --link "\$1"
 EOT
 chmod 750 /usr/local/sbin/zadania-link
-ln -sf /usr/local/sbin/zadania-link /usr/local/bin/zadania-link
+ln -sf /usr/local/sbin/zadania-link /usr/local/bin/zadania-link; ln -sf /usr/local/sbin/zadania-link /usr/sbin/zadania-link   # pct enter: PATH bez /usr/local
 
 # Awaryjne skasowanie PIN-u (gdy nikt z administratorów nie może wejść): zadania-pin "Imię"
 cat > /usr/local/sbin/zadania-pin <<EOT
@@ -128,7 +128,7 @@ set -a; . $ENV; set +a
 exec runuser -u zadania -- /usr/bin/python3 $KOD/zadania/zadania.py --pin-reset "\$1"
 EOT
 chmod 750 /usr/local/sbin/zadania-pin
-ln -sf /usr/local/sbin/zadania-pin /usr/local/bin/zadania-pin
+ln -sf /usr/local/sbin/zadania-pin /usr/local/bin/zadania-pin; ln -sf /usr/local/sbin/zadania-pin /usr/sbin/zadania-pin   # pct enter: PATH bez /usr/local
 
 # Kopia bazy co noc (30 ostatnich) – zdjęć nie kopiuję, zostają w katalogu danych.
 cat > /etc/cron.d/zadania-kopia <<EOT
