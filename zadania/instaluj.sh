@@ -95,6 +95,7 @@ set -euo pipefail
 ENV=$ENV
 grep -q '^ZD_AI_KLUCZ=' "\$ENV" || echo 'ZD_AI_KLUCZ=/etc/zadania/ai_klucz' >> "\$ENV"
 . "\$ENV"
+[ "\$ZD_AI_MODEL" = "gemma3:12b" ] && ZD_AI_MODEL=gemma4-12b   # stara domyślna nazwa z wersji 1.0
 read -rp "Adres serwera AI (np. http://<adres Maca>:8080/v1, puste = wyłącz AI) [\${ZD_AI_URL}]: " U; U=\${U:-\$ZD_AI_URL}
 read -rp "Model [\${ZD_AI_MODEL}]: " M; M=\${M:-\$ZD_AI_MODEL}
 read -rsp "Klucz API (Enter = bez zmian): " K; echo

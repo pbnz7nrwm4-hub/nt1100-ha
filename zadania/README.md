@@ -16,7 +16,7 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
 - **Role**: każde dziecko ma swoich opiekunów; każdy opiekun: zleca, zatwierdza albo tylko podgląda.
   Administrator dodaje osoby i daje każdej osobisty link.
 - **Powiadomienia** przez Home Assistanta (nowe zadanie, do zatwierdzenia, decyzja, godzina przed terminem).
-- **AI (opcjonalnie)**: lokalny serwer z modelem widzącym zdjęcia (Ollama albo API zgodne z OpenAI, np. llama-swap). Rozpisuje zadanie na kroki i ocenia zdjęcie.
+- **AI (opcjonalnie)**: lokalny serwer z modelem widzącym zdjęcia (Ollama albo API zgodne z OpenAI, np. llama-swap). Ocenia zdjęcie; kroki rozpisuje tylko na życzenie (pole w „Więcej”).
   AI tylko podpowiada, decyduje rodzic. Bez AI wszystko działa, rodzic ocenia sam.
 
 ## Wersja 1.1
@@ -27,6 +27,8 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
   Konto HA przypisuje administrator w Osobach – wtedy bez PIN-u.
 - **Katalog**: 60 gotowych zadań w trzech poziomach (6–9, 10–12, 13+); poziom podpowiada rok urodzenia dziecka.
 - **Ze zrzutu ekranu**: zrzut z dziennika szkolnego albo zdjęcie kartki – AI wypisuje zadania i terminy, rodzic wybiera.
+- **Od 1.3**: krótki formularz zlecania (reszta pod „Więcej”), szybkie zatwierdzanie zadań bez zdjęcia z listy, historia punktów,
+  „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
 - **Popraw z AI**: czego brakuje w poleceniu, lepszy opis, kroki, punkty i forma potwierdzenia z uzasadnieniem.
 
 ## Instalacja w kontenerze

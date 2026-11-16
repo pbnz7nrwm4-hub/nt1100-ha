@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.2.0"
+WERSJA = "1.3.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -327,6 +327,27 @@ def ha_token():
     return ""
 
 
+_NOTIFY = {"ts": 0.0, "lista": []}
+
+
+def ha_telefony():
+    """Usługi notify.mobile_app_* z Home Assistanta (lista do wyboru w Osobach); pamięć 5 min, błąd = pusta lista."""
+    if time.time() - _NOTIFY["ts"] < 300:
+        return _NOTIFY["lista"]
+    lista = []
+    tok = ha_token()
+    if HA_URL and tok:
+        try:
+            req = urllib.request.Request(HA_URL + "/api/services", headers={"Authorization": "Bearer " + tok})
+            for d in json.loads(urllib.request.urlopen(req, timeout=5).read().decode()):
+                if d.get("domain") == "notify":
+                    lista = sorted(k for k in (d.get("services") or {}) if k.startswith("mobile_app_"))
+        except Exception as e:  # noqa: BLE001
+            print("lista telefonów z HA nieudana:", e, file=sys.stderr)
+    _NOTIFY["ts"], _NOTIFY["lista"] = time.time(), lista
+    return lista
+
+
 def powiadom(osoba, tytul, tresc, sciezka="/"):
     """Wysyła powiadomienie przez usługę notify w HA (np. mobile_app_telefon). Bez HA – tylko zapis w dzienniku."""
     usl = (osoba or {}).get("powiadom") or ""
@@ -532,7 +553,7 @@ def dodaj_zadanie(z):
              z["dziecko_id"], z["tytul"], z.get("opis", ""), kroki, z.get("termin"), int(z.get("punkty") or 0),
              z.get("weryfikacja", "zdjecie"), int(z.get("minuty") or 0), z.get("pora", ""), int(z.get("pula") or 0),
              z.get("zleca_id"), z.get("szablon_id"), z.get("dzien"), wymaga, iso(teraz()))
-    if kroki == "[]":
+    if kroki == "[]" and z.get("ai_kroki"):   # tylko na życzenie zlecającego (1.3)
         w_tle(rozpisz_kroki, zid)
     return zid
 
@@ -582,11 +603,10 @@ def stan_dla(ja):
              "ja": {"id": ja["id"], "imie": ja["imie"], "rola": ja["rola"], "admin": bool(ja["admin"]),
                     "ma_pin": bool(ja["pin_hash"]), "przez_ha": bool(ja.get("_przez_ha"))},
              "dzieci": dzieci, "zadania": [zadanie_dla(z, ja) for z in zad], "nagrody": nagr, "wymiany": wym}
+    wynik["punkty"] = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 60", *ids)
     if ja["rola"] != "dziecko":
         wynik["szablony"] = q("SELECT * FROM szablony WHERE aktywny=1 AND dziecko_id IN (" + zn + ") ORDER BY dziecko_id, pora, tytul",
                               *ids)
-        hist = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 40", *ids)
-        wynik["punkty"] = hist
     if ja["admin"]:
         wynik["osoby"] = [{"id": o["id"], "imie": o["imie"], "rola": o["rola"], "admin": o["admin"], "powiadom": o["powiadom"],
                            "rok_ur": o["rok_ur"] or None, "ha_user": o["ha_user"],
@@ -597,6 +617,7 @@ def stan_dla(ja):
         wynik["adres"] = ADRES
         wynik["opieka"] = q("SELECT * FROM opieka")
         wynik["ha"] = bool(HA_URL and ha_token())
+        wynik["telefony"] = ha_telefony()
     return wynik
 
 
@@ -640,7 +661,8 @@ def a_zadanie(ja, b):
     kroki = [k for k in (b.get("kroki") or []) if str(k).strip()][:8]
     z = {"dziecko_id": dz, "tytul": tyt, "opis": tekst(b.get("opis"), 600), "kroki": kroki,
          "punkty": max(0, min(1000, int(b.get("punkty") or 0))), "weryfikacja": wer,
-         "minuty": max(0, min(240, int(b.get("minuty") or 0))), "pora": pora, "zleca_id": ja["id"]}
+         "minuty": max(0, min(240, int(b.get("minuty") or 0))), "pora": pora, "zleca_id": ja["id"],
+         "ai_kroki": bool(b.get("ai_kroki"))}
     dni = "".join(sorted(set(re.sub(r"[^1-7]", "", str(b.get("dni") or "")))))
     with BLOKADA:
         if dni:
@@ -1090,6 +1112,34 @@ def przypomnienia():
     return len(lista)
 
 
+def podsumowanie_tygodnia(wymus=False):
+    """Niedziela od 18:00, raz w tygodniu: każdy zatwierdzający dostaje jedno powiadomienie o swoich dzieciach."""
+    t = teraz()
+    znak = "%d-%02d" % t.isocalendar()[:2]
+    if not wymus and not (t.isoweekday() == 7 and t.hour >= 18 and ust("tydzien_wyslany") != znak):
+        return 0
+    od = (t.date() - dt.timedelta(days=6)).isoformat()
+    ile = 0
+    with BLOKADA:
+        ustaw("tydzien_wyslany", znak)
+        dorosli = q("SELECT * FROM osoby WHERE rola='dorosly' AND aktywna=1")
+        paczki = []
+        for o in dorosli:
+            linie = []
+            for c in moje_dzieci(o):
+                if not opieka(o, c["id"])["zatwierdza"]:
+                    continue
+                r = q1("SELECT COUNT(*) AS n, SUM(stan IN ('zatwierdzone','czesciowo')) AS ok FROM zadania "
+                       "WHERE dziecko_id=? AND pula=0 AND dzien>=? AND dzien<=?", c["id"], od, t.date().isoformat())
+                pk = q1("SELECT COALESCE(SUM(ile),0) AS s FROM punkty WHERE dziecko_id=? AND ile>0 AND ts>=?", c["id"], od)["s"]
+                linie.append("%s: %d z %d zadań, +%d pkt" % (c["imie"], r["ok"] or 0, r["n"] or 0, pk))
+            if linie:
+                paczki.append((o, "; ".join(linie)))
+    for o, tresc in paczki:
+        ile += 1 if powiadom(o, "Zadania – podsumowanie tygodnia", tresc, "/#dzieci") else 0
+    return ile
+
+
 def sprzataj_zdjecia():
     granica = (teraz().date() - dt.timedelta(days=ZDJ_DNI)).isoformat()
     with BLOKADA:
@@ -1109,6 +1159,7 @@ def petla_tla():
         try:
             wygeneruj()
             przypomnienia()
+            podsumowanie_tygodnia()
             if teraz().hour == 3:
                 sprzataj_zdjecia()
         except Exception:  # noqa: BLE001

@@ -22,6 +22,15 @@ class Atrapa(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def do_GET(self):
+        odp = json.dumps([{"domain": "light", "services": {"turn_on": {}}},
+                          {"domain": "notify", "services": {"mobile_app_mama": {}, "persistent_notification": {},
+                                                            "mobile_app_a": {}}}]).encode()
+        self.send_response(200 if self.path == "/api/services" else 404)
+        self.send_header("Content-Length", str(len(odp)))
+        self.end_headers()
+        self.wfile.write(odp)
+
     def do_POST(self):
         d = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if self.path.startswith("/api/services/notify/"):
@@ -164,7 +173,7 @@ class TestZadania(unittest.TestCase):
         POWIADOMIENIA.clear()
         termin = (dt.datetime.now() + dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M")
         s, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Posprzątać biurko",
-                                                "opis": "Pusty blat", "termin": termin, "punkty": 20})
+                                                "opis": "Pusty blat", "termin": termin, "punkty": 20, "ai_kroki": True})
         self.assertEqual(s, 200, r)
         zid = r["zadanie_id"]
         self.assertTrue(czekaj(lambda: POWIADOMIENIA))
@@ -429,6 +438,31 @@ class TestZadania(unittest.TestCase):
             self.assertEqual(Z.ai_zapytaj("Rozpisz")["kroki"][0], "Książki na półkę")
         finally:
             Z.AI_URL, Z.AI_KLUCZ = stare
+
+    def test_f_wersja_1_3(self):
+        """Kroki AI tylko na życzenie, lista telefonów z HA, historia punktów dla dziecka, podsumowanie tygodnia."""
+        with open(os.path.join(T, "ha_token"), "w") as f:   # test dodatku podmienił token
+            f.write("tok")
+        Z._NOTIFY["ts"] = 0.0
+        n = len(AI["pytania"])
+        s, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Bez kroków", "weryfikacja": "zaufanie"})
+        self.assertEqual(s, 200, r)
+        time.sleep(0.4)
+        self.assertEqual(Z.q1("SELECT kroki FROM zadania WHERE id=?", r["zadanie_id"])["kroki"], "[]")
+        self.assertEqual(len(AI["pytania"]), n)
+        _, st = zapytaj(self.adm, "/api/stan")
+        self.assertEqual(st["telefony"], ["mobile_app_a", "mobile_app_mama"])
+        _, sd = zapytaj(self.a, "/api/stan")
+        self.assertIn("punkty", sd)
+        self.assertNotIn("telefony", sd)
+        self.assertTrue(all(p["dziecko_id"] == self.a_id for p in sd["punkty"]))
+        POWIADOMIENIA.clear()
+        self.assertEqual(Z.podsumowanie_tygodnia(), 0 if not (Z.teraz().isoweekday() == 7 and Z.teraz().hour >= 18) else 1)
+        self.assertEqual(Z.podsumowanie_tygodnia(wymus=True), 1)      # tylko Mama ma telefon i zatwierdza
+        self.assertTrue(czekaj(lambda: POWIADOMIENIA))
+        usl, d = POWIADOMIENIA[-1]
+        self.assertEqual(usl, "mobile_app_mama")
+        self.assertRegex(d["message"], r"Dziecko A: \d+ z \d+ zadań, \+\d+ pkt")
 
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})

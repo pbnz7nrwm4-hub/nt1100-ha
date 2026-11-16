@@ -237,7 +237,7 @@ function widokZadania(id){
       + (ja && z.ocena.dla_dziecka ? '<div class="mal">'+esc(z.ocena.dla_dziecka)+'</div>' : "")
       + (ja ? '<div class="mal">Możesz poprawić i zrobić zdjęcie jeszcze raz albo wysłać tak.</div>' : '<div class="mal">AI tylko podpowiada. Decyzja należy do Ciebie.</div>') + '</div>';
   } else if (z.ocena_stan==="blad" && !ja) h += '<div class="karta mal">Ocena AI się nie udała – oceń sam.</div>';
-  if (z.komentarz) h += '<div class="karta"><div class="mal">'+(ja?"Twój dopisek":esc(d.imie)+" dopisała/dopisał")+'</div>„'+esc(z.komentarz)+'”</div>';
+  if (z.komentarz) h += '<div class="karta"><div class="mal">'+(ja?"Twój komentarz":"Komentarz: "+esc(d.imie))+'</div>„'+esc(z.komentarz)+'”</div>';
   // akcje dziecka
   if (ja && otw) {
     if (z.weryfikacja==="minutnik" && z.minuty) {
@@ -263,12 +263,14 @@ function widokZatwierdz(){
   const z = S.zadania.filter(x => x.stan==="wyslane" && dz(x.dziecko_id).prawa?.zatwierdza);
   const w = S.wymiany.filter(x => x.stan==="czeka" && dz(x.dziecko_id).prawa?.zatwierdza);
   const n = S.nagrody.filter(x => x.stan==="propozycja" && dz(x.dziecko_id).prawa?.zatwierdza);
-  let h = '<h1>Do zatwierdzenia</h1><p class="mal">Cześć, '+esc(S.ja.imie)+'.</p>';
+  let h = '<h1>Do zatwierdzenia</h1><p class="mal">Cześć, '+esc(S.ja.imie)+'.</p>' + pierwszeKroki();
   if (!z.length && !w.length && !n.length) h += '<div class="karta mal">Nic nie czeka. Tu pojawi się zadanie, gdy dziecko je wyśle.</div>';
   h += z.map(x => {
     const po = x.zdjecia.filter(p => p.rodzaj==="po").slice(-1)[0];
     const wd = x.ocena && x.ocena.werdykt ? WERD[x.ocena.werdykt] : null;
-    return '<a href="#z'+x.id+'" class="karta" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>';
+    const szybko = !po && x.weryfikacja!=="zdjecie" && x.weryfikacja!=="zeszyt";
+    return '<div class="karta"><a href="#z'+x.id+'" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>'
+      + (szybko ? '<div class="rzad" style="margin-top:10px"><button data-dec="'+x.id+':poprawka">Do poprawki</button><button class="wyb" data-dec="'+x.id+':zatwierdz">Zatwierdź · +'+x.punkty+' pkt</button></div>' : '<div class="mal" style="margin-top:6px">Dotknij, żeby obejrzeć zdjęcie i zatwierdzić.</div>') + '</div>';
   }).join("");
   if (w.length) h += '<h3>Wymiana punktów</h3>' + w.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">'+x.koszt+' pkt · ma '+dz(x.dziecko_id).saldo+'</div><div class="rzad" style="margin-top:8px"><button data-wym="'+x.id+':nie">Jeszcze nie</button><button class="wyb" data-wym="'+x.id+':tak">Zgoda</button></div></div>').join("");
   if (n.length) h += '<h3>Propozycje nagród</h3>' + n.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">proponuje '+x.koszt+' pkt'+(x.cel?" · jako duży cel":"")+'</div><div class="rzad" style="margin-top:8px"><button data-nagr="'+x.id+':nie">Nie</button><button class="wyb" data-nagr="'+x.id+':tak">Dodaj</button></div></div>').join("");
@@ -276,7 +278,18 @@ function widokZatwierdz(){
   if (dzis.length) h += '<h3>Dziś u dzieci</h3>' + S.dzieci.map(d => { const r = dzis.filter(x => x.dziecko_id===d.id); if (!r.length) return ""; const zr = r.filter(x => !["do_zrobienia","do_poprawki"].includes(x.stan)).length; return '<div class="karta"><div class="wiersz"><b>'+esc(d.imie)+'</b><span class="mal">'+zr+' z '+r.length+'</span></div><div class="pasek" style="margin-top:8px"><div style="width:'+Math.round(100*zr/r.length)+'%"></div></div>'+r.filter(x=>x.po_terminie).map(x=>'<div class="mal uw-ic" style="margin-top:6px">po terminie: <a href="#z'+x.id+'">'+esc(x.tytul)+'</a></div>').join("")+'</div>'; }).join("");
   return h;
 }
-let F = {dziecko:null, wer:"zdjecie", pora:"", dni:"", pula:false};
+function pierwszeKroki(){
+  if (!S.ja.admin || !S.osoby) return "";
+  const kroki = [
+    [S.osoby.some(o => o.rola==="dziecko"), "Dodaj dzieci i opiekunów", "osoby"],
+    [S.dzieci.length > 0 && S.dzieci.some(d => d.prawa.zleca), "Zaznacz, kto komu zleca i zatwierdza", "osoby"],
+    [S.zadania.length > 0 || (S.szablony||[]).length > 0, "Zleć pierwsze zadanie", "zlec"],
+    [S.nagrody.length > 0, "Dodaj nagrodę albo duży cel", "nagrody"],
+    [S.ha, "Włącz powiadomienia (dodatek w Home Assistant)", "osoby"]];
+  if (kroki.every(k => k[0])) return "";
+  return '<div class="karta wazna"><b>Pierwsze kroki</b>' + kroki.map(([ok,t,h]) => '<div class="wiersz" style="min-height:40px"><span>'+(ok?IK.ok:"○")+' '+(ok?'<span class="mal">'+t+'</span>':'<a href="#'+h+'">'+t+'</a>')+'</span></div>').join("") + '</div>';
+}
+let F = {dziecko:null, wer:"zdjecie", pora:"", dni:"", pula:false, wiecej:false, aikroki:false};
 function widokZlec(){
   const moje = S.dzieci.filter(d => d.prawa.zleca);
   if (!moje.length) return '<h1>Nowe zadanie</h1><div class="karta mal">Nie zlecasz zadań żadnemu dziecku. Uprawnienia ustawia administrator.</div>';
@@ -289,19 +302,22 @@ function widokZlec(){
    + '<div class="rzad" style="margin-top:10px"><button data-tryb="katalog" class="'+(KS.tryb==="katalog"?"wyb":"")+'">Z katalogu</button><button data-tryb="zrzut" class="'+(KS.tryb==="zrzut"?"wyb":"")+'">Ze zrzutu ekranu</button></div>'
    + (KS.tryb==="katalog" ? widokKatalog(dzW) : KS.tryb==="zrzut" ? widokZrzut() : "")
    + '<label class="pole" for="tyt">Co trzeba zrobić</label><input type="text" id="tyt" maxlength="120" placeholder="np. Posprzątać biurko">'
+   + '<div class="rzad">'
+   + (F.dni ? '<div><label class="pole" for="godz">Do godziny</label><input type="time" id="godz" value="20:00"></div>' : '<div style="flex:2"><label class="pole" for="term">Na kiedy</label><input type="datetime-local" id="term" value="'+domTerm+'"></div>')
+   + '<div><label class="pole" for="pkt">Punkty</label><input type="number" id="pkt" min="0" max="1000" value="10"></div></div>'
+   + '<details class="karta" id="wiecej" style="margin-top:12px" '+(F.wiecej||DP?"open":"")+'><summary style="min-height:36px"><b>Więcej</b> <span class="mal">· '+WER[F.wer].toLowerCase()+' · '+(F.dni ? (F.dni==="1234567"?"codziennie":F.dni==="12345"?"dni szkolne":F.dni.split("").map(i=>DNI[i-1]).join(" ")) : "raz")+(F.pula?" · do puli":"")+'</span></summary>'
    + '<label class="pole" for="opis">Czego oczekuję</label><textarea id="opis" maxlength="600" placeholder="np. Pusty blat, książki na półce."></textarea>'
-   + '<div style="margin-top:8px"><button id="dopr" style="width:100%">Popraw z AI – czego brakuje w poleceniu?</button></div>' + widokDopr()
-   + '<label class="pole" for="kroki">Kroki (każdy w nowej linii'+(S.ai?"; puste – AI rozpisze samo":", można pominąć")+')</label><textarea id="kroki"></textarea>'
+   + (S.ai ? '<div style="margin-top:8px"><button id="dopr" style="width:100%">Popraw z AI – czego brakuje w poleceniu?</button></div>' + widokDopr() : "")
+   + '<label class="pole" for="kroki">Kroki (każdy w nowej linii, można pominąć)</label><textarea id="kroki"></textarea>'
+   + (S.ai ? '<label class="krok"><input type="checkbox" id="aikroki" '+(F.aikroki?"checked":"")+'>Niech AI rozpisze kroki, jeśli nie wpiszę</label>' : "")
    + '<label class="pole">Jak potwierdzi, że zrobione</label><div class="siatka">'+Object.keys(WER).map(k => '<button data-f="wer:'+k+'" class="'+(F.wer===k?"wyb":"")+'">'+WER[k]+'</button>').join("")+'</div>'
    + (F.wer==="minutnik" ? '<label class="pole" for="min">Ile minut</label><input type="number" id="min" min="1" max="240" value="20">' : "")
    + (F.wer==="zaufanie" ? '<div class="mal" style="margin-top:6px">Co piąte takie zadanie losowo poprosi o zdjęcie.</div>' : "")
    + '<label class="pole">Powtarzanie</label><div class="rzad">'+[["","Raz"],["12345","Dni szkolne"],["1234567","Codziennie"]].map(([v,t]) => '<button data-f="dni:'+v+'" class="'+(F.dni===v?"wyb":"")+'">'+t+'</button>').join("")+'</div>'
    + '<div class="rzad" style="margin-top:8px">'+DNI.map((t,i) => '<button data-dzien="'+(i+1)+'" class="'+(F.dni.includes(String(i+1))?"wyb":"")+'" style="min-width:0;padding:0">'+t+'</button>').join("")+'</div>'
-   + '<div class="rzad">'
-   + (F.dni ? '<div><label class="pole" for="godz">Do godziny</label><input type="time" id="godz" value="20:00"></div>' : '<div style="flex:2"><label class="pole" for="term">Termin</label><input type="datetime-local" id="term" value="'+domTerm+'"></div>')
-   + '<div><label class="pole" for="pkt">Punkty</label><input type="number" id="pkt" min="0" max="1000" value="10"></div></div>'
-   + '<label class="pole">Pora dnia (rutyna)</label><div class="siatka">'+Object.keys(PORA).map(k => '<button data-f="pora:'+k+'" class="'+(F.pora===k?"wyb":"")+'">'+PORA[k]+'</button>').join("")+'</div>'
+   + '<label class="pole">Pora dnia (do rutyny porannej albo wieczornej)</label><div class="siatka">'+Object.keys(PORA).map(k => '<button data-f="pora:'+k+'" class="'+(F.pora===k?"wyb":"")+'">'+PORA[k]+'</button>').join("")+'</div>'
    + (F.dni ? "" : '<label class="krok" style="margin-top:10px"><input type="checkbox" id="pula" '+(F.pula?"checked":"")+'>Do puli – dziecko samo zdecyduje, czy weźmie</label>')
+   + '</details>'
    + '<div style="margin-top:16px"><button class="glowny" id="zlec">Zleć zadanie</button></div>';
 }
 /* ---------- katalog, zrzut ekranu, poprawki AI ---------- */
@@ -354,14 +370,22 @@ function widokDzieci(){
     const sz = (S.szablony||[]).filter(s => s.dziecko_id===d.id);
     const otw = S.zadania.filter(z => z.dziecko_id===d.id && ["do_zrobienia","do_poprawki"].includes(z.stan) && !z.pula);
     const pula = S.zadania.filter(z => z.dziecko_id===d.id && z.pula);
-    return '<div class="karta"><div class="wiersz"><h2>'+esc(d.imie)+'</h2><span class="pigu">'+IK.gw+' '+d.saldo+' pkt</span></div><div class="mal">w tygodniu +'+d.tydzien+' · seria '+d.seria+' dni · '+(d.prawa.zatwierdza?"zatwierdzasz":"tylko podgląd")+'</div>'
+    return '<div class="karta"><div class="wiersz"><h2>'+esc(d.imie)+'</h2><span class="pigu">'+IK.gw+' '+d.saldo+' pkt</span></div><div class="mal">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?' · '+d.seria+' dni z rzędu':"")+(d.prawa.zatwierdza?"":" · tylko podgląd")+'</div>'
      + (otw.length ? '<h3>Otwarte</h3>' + otw.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.po_terminie?"po terminie":kiedy(z.termin))+'</span></div>').join("") : "")
      + (pula.length ? '<h3>W puli</h3>' + pula.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+z.punkty+' pkt</span></div>').join("") : "")
      + (sz.length ? '<h3>Powtarzane</h3>' + sz.map(s => '<div class="wiersz" style="min-height:40px"><span>'+esc(s.tytul)+' <span class="mal">· '+s.dni.split("").map(i=>DNI[i-1]).join(" ")+' do '+s.godzina+(s.pora?" · "+PORA[s.pora].toLowerCase():"")+'</span></span>'+(d.prawa.zleca?'<button data-wyl="'+s.id+'" style="min-height:36px">Wyłącz</button>':"")+'</div>').join("") : "")
      + (d.prawa.zatwierdza ? '<div style="margin-top:10px"><button data-pinreset="'+d.id+'" style="min-height:36px">Skasuj PIN '+esc(d.imie)+'</button></div>' : "")
-     + (d.prawa.zatwierdza ? '<h3>Premia albo odjęcie punktów</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="+10 / -10" style="flex:1"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:2"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
-     + '</div>';
+     + (d.prawa.zatwierdza ? '<h3>Dodaj albo odejmij punkty</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="np. 10 albo -5" aria-label="Ile punktów" style="flex:2"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:3"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
+     + '</div>' + historia(d);
   }).join("");
+}
+const OTW = new Set();
+const det = k => 'data-det="'+k+'" '+(OTW.has(k)?"open":"");
+function historia(d){
+  const r = (S.punkty||[]).filter(p => p.dziecko_id===d.id);
+  if (!r.length) return "";
+  return '<details class="karta" '+det("h"+d.id)+'><summary style="min-height:36px;font-weight:600">Historia punktów'+(dziecko()?"":" – "+esc(d.imie))+'</summary>'
+    + r.slice(0,30).map(p => '<div class="wiersz" style="min-height:40px;border-top:1px solid var(--linia2)"><span>'+esc(p.powod||"punkty")+'<div class="mal">'+kiedy(p.ts)+'</div></span><b class="'+(p.ile<0?"uw-ic":"ok-ic")+'">'+(p.ile>0?"+":"")+p.ile+'</b></div>').join("") + '</details>';
 }
 function widokNagrody(){
   let h = '<h1>'+(dziecko()?"Moje nagrody":"Nagrody")+'</h1>';
@@ -370,7 +394,7 @@ function widokNagrody(){
     const wolne = d.saldo - d.zarezerwowane;
     const cel = n.find(x => x.cel), male = n.filter(x => !x.cel);
     if (!dziecko()) h += '<h3>'+esc(d.imie)+'</h3>';
-    h += '<div class="karta wiersz"><div><div class="mal">Masz</div><div style="font-size:32px;font-weight:700;color:var(--pom)">'+wolne+' pkt</div>'+(d.zarezerwowane?'<div class="mal">'+d.zarezerwowane+' czeka na zgodę</div>':"")+'</div><div class="mal" style="text-align:right">w tym tygodniu +'+d.tydzien+'<br>seria '+d.seria+' dni</div></div>';
+    h += '<div class="karta wiersz"><div><div class="mal">Masz</div><div style="font-size:32px;font-weight:700;color:var(--pom)">'+wolne+' pkt</div>'+(d.zarezerwowane?'<div class="mal">'+d.zarezerwowane+' czeka na zgodę</div>':"")+'</div><div class="mal" style="text-align:right">w tym tygodniu +'+d.tydzien+' pkt'+(d.seria>1?'<br>'+d.seria+' dni z rzędu':"")+'</div></div>';
     if (cel) {
       const proc = Math.min(100, Math.round(100*wolne/cel.koszt));
       const tempo = d.tydzien > 0 ? Math.ceil(Math.max(0, cel.koszt-wolne)/d.tydzien) : null;
@@ -382,6 +406,7 @@ function widokNagrody(){
     h += '<div class="karta">' + (male.length ? male.map(x => '<div class="wiersz" style="min-height:56px;border-bottom:1px solid var(--linia2)"><span>'+esc(x.nazwa)+'</span>'+(dziecko()?'<button data-wymien="'+x.id+'" '+(wolne<x.koszt?"disabled":"")+'>'+x.koszt+' pkt</button>':'<span class="wiersz"><span class="mal">'+x.koszt+' pkt</span>'+(d.prawa.zleca?'<button data-usunnagr="'+x.id+'" aria-label="Usuń nagrodę" style="min-height:36px">Usuń</button>':"")+'</span>')+'</div>').join("") : '<div class="mal">Jeszcze nie ma nagród.</div>') + '</div>';
     if (dziecko()) h += '<div class="mal">Wymiana punktów czeka na zgodę rodzica.</div>';
     if (dziecko() || d.prawa.zleca) h += '<details class="karta"><summary style="min-height:36px;font-weight:600">'+(dziecko()?"Zaproponuj własną nagrodę":"Dodaj nagrodę")+'</summary><div class="rzad" style="margin-top:8px"><input type="text" id="nn'+d.id+'" placeholder="nazwa" style="flex:3"><input type="number" id="nk'+d.id+'" placeholder="pkt" style="flex:1"></div><label class="krok"><input type="checkbox" id="nc'+d.id+'">Duży cel</label><button class="glowny" data-nowanagr="'+d.id+'">'+(dziecko()?"Wyślij propozycję":"Dodaj")+'</button></details>';
+    h += historia(d);
     const hist = S.wymiany.filter(x => x.dziecko_id===d.id && x.stan!=="czeka");
     if (hist.length) h += '<div class="mal">Ostatnio: '+hist.slice(0,3).map(x => esc(x.nazwa)+" ("+(x.stan==="zatwierdzona"?"tak":"nie")+")").join(", ")+'</div>';
   }
@@ -390,22 +415,32 @@ function widokNagrody(){
 function widokOsoby(){
   const dor = S.osoby.filter(o => o.rola==="dorosly"), dzi = S.osoby.filter(o => o.rola==="dziecko");
   const op = (a,b) => S.opieka.find(x => x.dorosly_id===a && x.dziecko_id===b);
-  let h = '<h1>Dzieci i opiekunowie</h1><p class="mal">Każdy opiekun widzi tylko swoje dzieci. Z – zleca, A – zatwierdza; zaznaczony opiekun bez Z i A tylko podgląda.'+(S.ha?"":" Powiadomienia: brak połączenia z Home Assistant.")+'</p>';
+  const tel = S.telefony || [];
+  const nazwaTel = t => t.replace(/^mobile_app_/,"").replace(/_/g," ");
+  let h = '<h1>Osoby</h1>' + (S.ha?"":'<div class="karta mal">Powiadomienia na telefon są wyłączone, dopóki aplikacja nie jest połączona z Home Assistantem (ramka na dole strony).</div>');
+  if (dzi.length && dor.length) h += '<h3>Kto opiekuje się którym dzieckiem</h3>';
   for (const c of dzi) {
-    h += '<div class="karta"><div class="wiersz"><h2>'+esc(c.imie)+'</h2><button data-link="'+c.id+'" style="min-height:36px">Link</button></div>'
-      + dor.map(a => { const o = op(a.id,c.id); return '<div class="wiersz" style="min-height:44px;border-top:1px solid var(--linia2)"><label class="krok"><input type="checkbox" data-op="'+a.id+':'+c.id+':jest" '+(o?"checked":"")+'>'+esc(a.imie)+(a.admin?' <span class="mal">(admin)</span>':"")+'</label><span class="prawo"><label><input type="checkbox" data-op="'+a.id+':'+c.id+':zleca" '+(o&&o.zleca?"checked":"")+' '+(o?"":"disabled")+'>Z</label><label><input type="checkbox" data-op="'+a.id+':'+c.id+':zatwierdza" '+(o&&o.zatwierdza?"checked":"")+' '+(o?"":"disabled")+'>A</label></span></div>'; }).join("")
+    h += '<div class="karta"><h2>'+esc(c.imie)+'</h2>'
+      + dor.map(a => { const o = op(a.id,c.id); return '<div style="border-top:1px solid var(--linia2);padding:6px 0"><label class="krok"><input type="checkbox" data-op="'+a.id+':'+c.id+':jest" '+(o?"checked":"")+'><b>'+esc(a.imie)+'</b></label>'
+        + (o ? '<div class="rzad" style="margin-left:36px"><label class="krok"><input type="checkbox" data-op="'+a.id+':'+c.id+':zleca" '+(o.zleca?"checked":"")+'>zleca</label><label class="krok"><input type="checkbox" data-op="'+a.id+':'+c.id+':zatwierdza" '+(o.zatwierdza?"checked":"")+'>zatwierdza</label></div>'+(o.zleca||o.zatwierdza?"":'<div class="mal" style="margin-left:36px">tylko podgląd</div>') : "") + '</div>'; }).join("")
       + '</div>';
   }
-  h += '<h3>Osoby</h3>' + S.osoby.map(o => '<div class="karta"><div class="wiersz"><b>'+esc(o.imie)+' <span class="mal">· '+(o.rola==="dziecko"?"dziecko":"dorosły")+(o.admin?", admin":"")+'</span></b><button data-link="'+o.id+'" style="min-height:36px">Link</button></div>'
+  h += '<h3>Ustawienia osób</h3>' + S.osoby.map(o => '<details class="karta" '+det("o"+o.id)+'><summary style="min-height:40px"><b>'+esc(o.imie)+'</b> <span class="mal">· '+(o.rola==="dziecko"?"dziecko":"dorosły")+(o.admin?", administrator":"")+' · '+(o.ha?"wchodzi przez Home Assistant":o.ma_pin?"ma PIN":"jeszcze nie wchodził(a)")+'</span></summary>'
+      + '<div style="margin-top:8px"><button data-link="'+o.id+'" style="width:100%">Pokaż link do wejścia'+(o.ma_pin?"":" (wyślij tej osobie)")+'</button></div>'
+      + (o.rola==="dziecko" ? '<label class="pole" for="ru'+o.id+'">Rok urodzenia (dobiera zadania z katalogu do wieku)</label><div class="rzad"><input type="number" id="ru'+o.id+'" value="'+(o.rok_ur||"")+'" placeholder="np. 2013" style="flex:3"><button data-ru="'+o.id+'" style="flex:1">Zapisz</button></div>' : "")
+      + '<label class="pole" for="pw'+o.id+'">Telefon do powiadomień</label>'
+      + (tel.length ? '<select id="pw'+o.id+'" data-pws="'+o.id+'"><option value="">– bez powiadomień –</option>'+tel.map(t => '<option value="'+esc(t)+'" '+((o.powiadom||"").replace("notify.","")===t?"selected":"")+'>'+esc(nazwaTel(t))+'</option>').join("")+(o.powiadom && !tel.includes(o.powiadom.replace("notify.","")) ? '<option selected value="'+esc(o.powiadom)+'">'+esc(o.powiadom)+'</option>' : "")+'</select><div class="mal" style="margin-top:4px">Lista telefonów z aplikacją Home Assistant.</div>'
+         : '<div class="rzad"><input type="text" id="pw'+o.id+'" value="'+esc(o.powiadom)+'" placeholder="np. mobile_app_iphone_zosi" style="flex:3"><button data-pw="'+o.id+'" style="flex:1">Zapisz</button></div><div class="mal" style="margin-top:4px">Po połączeniu z Home Assistantem pojawi się tu lista telefonów do wyboru.</div>')
       + ((S.ha_konta||[]).length ? '<label class="pole" for="hu'+o.id+'">Konto Home Assistant (wejście z aplikacji HA bez PIN-u)</label><select id="hu'+o.id+'" data-hu="'+o.id+'"><option value="">– brak –</option>'+S.ha_konta.map(k => '<option value="'+esc(k.id)+'" '+(o.ha_user===k.id?"selected":"")+'>'+esc(k.nazwa)+'</option>').join("")+'</select>' : "")
-      + (o.rola==="dziecko" ? '<label class="pole" for="ru'+o.id+'">Rok urodzenia (do katalogu zadań wg wieku)</label><div class="rzad"><input type="number" id="ru'+o.id+'" value="'+(o.rok_ur||"")+'" placeholder="np. 2013" style="flex:3"><button data-ru="'+o.id+'" style="flex:1">Zapisz</button></div>' : "")
-      + '<label class="pole" for="pw'+o.id+'">Powiadomienia (usługa notify w HA, np. mobile_app_telefon)</label><div class="rzad"><input type="text" id="pw'+o.id+'" value="'+esc(o.powiadom)+'" style="flex:3"><button data-pw="'+o.id+'" style="flex:1">Zapisz</button></div>'
-      + '<div class="mal" style="margin-top:6px">'+(o.ma_pin?"PIN ustawiony":"bez PIN-u – czeka na pierwsze wejście z linku")+(o.ha?" · połączone z kontem HA":"")+'</div>'
-      + '<div class="rzad" style="margin-top:8px">'+(o.ma_pin?'<button data-pinreset="'+o.id+'">Skasuj PIN</button>':"")+'<button data-nowykod="'+o.id+'">Nowy link (stary przestanie działać)</button>'+(o.id!==S.ja.id?'<button data-usunos="'+o.id+'" style="color:var(--zle)">Usuń</button>':"")+'</div></div>').join("");
-  h += '<details class="karta"><summary style="min-height:36px;font-weight:600">Aplikacja Home Assistant (dostęp spoza domu)</summary><p class="mal">W HA: Ustawienia → Dodatki → „Zadania dzieci” → Konfiguracja. Wklej adres i klucz poniżej oraz token HA (profil → Bezpieczeństwo). Zapisz i uruchom dodatek. Gdy domownik raz otworzy „Zadania” w menu HA, jego konto pojawi się tu przy osobach do przypisania (albo połączy się samo po wpisaniu PIN-u).</p>'
+      + '<h3>Gdy coś nie działa</h3>'
+      + (o.ma_pin?'<button data-pinreset="'+o.id+'" style="width:100%">Zapomniany PIN – skasuj</button>':"")
+      + '<button data-nowykod="'+o.id+'" style="width:100%;margin-top:8px">Link wyciekł – zrób nowy</button>'
+      + (o.id!==S.ja.id?'<button data-usunos="'+o.id+'" style="width:100%;margin-top:8px;color:var(--zle)">Usuń osobę</button>':"")
+      + '</details>').join("");
+  h += '<details class="karta"><summary style="min-height:36px;font-weight:600">Połączenie z Home Assistantem (powiadomienia, wejście spoza domu)</summary><p class="mal">W HA: Ustawienia → Dodatki → „Zadania dzieci” → Konfiguracja. Wklej adres i klucz poniżej oraz token HA (profil → Bezpieczeństwo). Zapisz i uruchom dodatek. Gdy domownik raz otworzy „Zadania” w menu HA, jego konto pojawi się tu przy osobach do przypisania (albo połączy się samo po wpisaniu PIN-u).</p>'
     + '<label class="pole" for="dadr">Adres aplikacji</label><input type="text" id="dadr" readonly value="'+esc(S.adres||location.origin)+'" onclick="this.select()">'
     + '<label class="pole" for="dkl">Klucz aplikacji</label><input type="text" id="dkl" readonly value="'+esc(S.klucz_dodatku||"")+'" onclick="this.select()"></details>';
-  h += '<details class="karta" open><summary style="min-height:36px;font-weight:600">Dodaj osobę</summary><label class="pole" for="noim">Imię</label><input type="text" id="noim" maxlength="40"><div class="rzad" style="margin-top:8px"><button data-nowa="dziecko">Dziecko</button><button data-nowa="dorosly">Dorosły</button></div></details>'
+  h += '<details class="karta" '+(S.osoby.length<3?"open":"")+'><summary style="min-height:36px;font-weight:600">Dodaj osobę</summary><label class="pole" for="noim">Imię</label><input type="text" id="noim" maxlength="40"><div class="rzad" style="margin-top:8px"><button data-nowa="dziecko">Dziecko</button><button data-nowa="dorosly">Dorosły</button></div></details>'
     + '<div id="linkwyn"></div>';
   return h;
 }
@@ -453,6 +488,9 @@ function podepnij(){
   A.querySelectorAll("[data-f]").forEach(e => e.onclick = () => { zachowajFormularz(); const [k, ...v] = e.dataset.f.split(":"); F[k] = k==="dziecko" ? +v.join(":") : v.join(":"); rysuj(); przywrocFormularz(); });
   A.querySelectorAll("[data-dzien]").forEach(e => e.onclick = () => { zachowajFormularz(); const n = e.dataset.dzien; F.dni = F.dni.includes(n) ? F.dni.replace(n,"") : [...F.dni+n].sort().join(""); rysuj(); przywrocFormularz(); });
   if ($("#pula")) $("#pula").onchange = () => { F.pula = $("#pula").checked; };
+  if ($("#aikroki")) $("#aikroki").onchange = () => { F.aikroki = $("#aikroki").checked; };
+  A.querySelectorAll("details[data-det]").forEach(e => e.ontoggle = () => { e.open ? OTW.add(e.dataset.det) : OTW.delete(e.dataset.det); });
+  if ($("#wiecej")) $("#wiecej").ontoggle = () => { F.wiecej = $("#wiecej").open; };
   A.querySelectorAll("[data-tryb]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.tryb = KS.tryb===e.dataset.tryb ? "" : e.dataset.tryb; rysuj(); przywrocFormularz(); });
   A.querySelectorAll("[data-poziom]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.poziom = +e.dataset.poziom; rysuj(); przywrocFormularz(); });
   A.querySelectorAll("[data-kat]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.kat = e.dataset.kat; rysuj(); przywrocFormularz(); });
@@ -483,8 +521,9 @@ function podepnij(){
   if ($("#zlec")) $("#zlec").onclick = async () => {
     const b = {dziecko_id:F.dziecko, tytul:$("#tyt").value, opis:$("#opis").value, weryfikacja:F.wer, pora:F.pora, punkty:+$("#pkt").value,
       minuty: $("#min") ? +$("#min").value : 0, kroki: $("#kroki") ? $("#kroki").value.split("\n").map(s=>s.trim()).filter(Boolean) : []};
+    b.ai_kroki = !!(F.aikroki && !b.kroki.length);
     if (F.dni) { b.dni = F.dni; b.godzina = $("#godz").value; } else { b.termin = $("#term").value; b.pula = F.pula; }
-    try { await akcja("api/zadanie", b, F.pula ? "Dodane do puli" : "Zlecone"); F.pula = false; zapis = {}; DP = null; idz("dzieci"); } catch(er) {}
+    try { await akcja("api/zadanie", b, F.pula ? "Dodane do puli" : "Zlecone"); F.pula = false; F.wiecej = false; zapis = {}; DP = null; idz("dzieci"); } catch(er) {}
   };
   // administrator
   A.querySelectorAll("[data-op]").forEach(e => e.onchange = () => {
@@ -496,6 +535,7 @@ function podepnij(){
   A.querySelectorAll("[data-link]").forEach(e => e.onclick = () => { const o = S.osoby.find(x => x.id===+e.dataset.link); pokazLink(o, o.imie); });
   A.querySelectorAll("[data-hu]").forEach(e => e.onchange = () => akcja("api/osoba/"+e.dataset.hu, {ha_user:e.value}, e.value ? "Konto HA przypisane" : "Odłączone"));
   A.querySelectorAll("[data-ru]").forEach(e => e.onclick = () => akcja("api/osoba/"+e.dataset.ru, {rok_ur:+$("#ru"+e.dataset.ru).value||0}, "Zapisane"));
+  A.querySelectorAll("[data-pws]").forEach(e => e.onchange = () => akcja("api/osoba/"+e.dataset.pws, {powiadom:e.value}, e.value ? "Telefon zapisany" : "Powiadomienia wyłączone"));
   A.querySelectorAll("[data-pw]").forEach(e => e.onclick = () => akcja("api/osoba/"+e.dataset.pw, {powiadom:$("#pw"+e.dataset.pw).value}, "Zapisane"));
   A.querySelectorAll("[data-nowykod]").forEach(e => e.onclick = async () => { const o = S.osoby.find(x => x.id===+e.dataset.nowykod); const r = await akcja("api/osoba/"+o.id, {nowy_kod:true}, "Nowy link gotowy"); pokazLink(r, o.imie); });
   A.querySelectorAll("[data-usunos]").forEach(e => e.onclick = () => { if (e.dataset.pewne) akcja("api/osoba/"+e.dataset.usunos, {usun:true}, "Usunięta"); else { e.dataset.pewne = 1; e.textContent = "Na pewno? Dotknij jeszcze raz"; } });
