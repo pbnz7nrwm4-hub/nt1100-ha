@@ -30,7 +30,16 @@ class Atrapa(BaseHTTPRequestHandler):
             odp = b"[]"
         else:
             AI["pytania"].append(d)
-            if d.get("images"):
+            if "dziennika" in d["prompt"]:
+                r = {"zadania": [{"przedmiot": "Matematyka", "tytul": "Zad. 3 i 4 str. 52", "opis": "zeszyt ćwiczeń",
+                                  "termin": "2026-11-18", "rodzaj": "zadanie"},
+                                 {"przedmiot": "Historia", "tytul": "Sprawdzian rozdz. 2", "termin": "zly", "rodzaj": "sprawdzian"},
+                                 {"tytul": ""}]}
+            elif "Pomagasz rodzicowi" in d["prompt"]:
+                r = {"tytul": "Posprzątać biurko", "opis": "Pusty blat do 18:00.", "brakuje": ["termin", "co znaczy porządek"],
+                     "kroki": ["Książki", "Kable"], "punkty": "12", "weryfikacja": "zdjecie", "dlaczego": "efekt widać",
+                     "minuty": 0, "uwaga": "Pasuje do wieku."}
+            elif d.get("images"):
                 r = {"werdykt": "raczej zrobione", "punkty": [{"ok": True, "tekst": "Pusty blat"},
                                                               {"ok": False, "tekst": "Kabel z lewej"}],
                      "dla_dziecka": "Prawie idealnie!"}
@@ -58,8 +67,9 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = "http://127.0.0.1:%d" % srv.server_address[1]
 
 
-def zapytaj(kod, sciezka, dane=None, typ="application/json"):
-    h = {"X-Zadania-Kod": kod} if kod else {}
+def zapytaj(ses, sciezka, dane=None, typ="application/json", nag=None):
+    h = {"X-Zadania-Sesja": ses} if ses else {}
+    h.update(nag or {})
     body = None
     if dane is not None:
         body = dane if isinstance(dane, bytes) else json.dumps(dane).encode()
@@ -87,18 +97,20 @@ class TestZadania(unittest.TestCase):
         Z.db()
         with Z.BLOKADA:
             a = Z.ex("INSERT INTO osoby(imie,rola,admin,kod) VALUES('Admin','dorosly',1,'kodadmin00')")
-        cls.adm = "kodadmin00"
-        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziecko A", "rola": "dziecko", "powiadom": "notify.mobile_app_a"})
-        cls.a_id, cls.a = r["id"], r["link"].rsplit("/", 1)[1]
-        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziecko B", "rola": "dziecko"})
-        cls.b_id, cls.b = r["id"], r["link"].rsplit("/", 1)[1]
-        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Mama", "rola": "dorosly", "powiadom": "mobile_app_mama"})
-        cls.m_id, cls.m = r["id"], r["link"].rsplit("/", 1)[1]
-        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Inny rodzic", "rola": "dorosly"})
-        cls.i_id, cls.i = r["id"], r["link"].rsplit("/", 1)[1]
-        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziadek", "rola": "dorosly"})
-        cls.d_id, cls.d = r["id"], r["link"].rsplit("/", 1)[1]
-        assert r["link"].startswith("http://dom:8092/k/")
+            cls.adm = Z.nowa_sesja(a)
+        cls.kody = {}
+
+        def dodaj(**kw):
+            _, r = zapytaj(cls.adm, "/api/osoba", kw)
+            cls.kody[r["id"]] = r["link"].rsplit("/", 1)[1]
+            with Z.BLOKADA:
+                return r["id"], Z.nowa_sesja(r["id"]), r["link"]
+        cls.a_id, cls.a, _ = dodaj(imie="Dziecko A", rola="dziecko", powiadom="notify.mobile_app_a")
+        cls.b_id, cls.b, _ = dodaj(imie="Dziecko B", rola="dziecko")
+        cls.m_id, cls.m, _ = dodaj(imie="Mama", rola="dorosly", powiadom="mobile_app_mama")
+        cls.i_id, cls.i, _ = dodaj(imie="Inny rodzic", rola="dorosly")
+        cls.d_id, cls.d, ln = dodaj(imie="Dziadek", rola="dorosly")
+        assert ln.startswith("http://dom:8092/k/")
         # Mama: A zleca+zatwierdza; Inny rodzic: B; Dziadek: A tylko podgląd; Admin: A zatwierdza (bez zlecania)
         for dor, dz, zl, za in ((cls.m_id, cls.a_id, 1, 1), (cls.i_id, cls.b_id, 1, 1), (cls.d_id, cls.a_id, 0, 0),
                                 (1, cls.a_id, 0, 1)):
@@ -106,7 +118,7 @@ class TestZadania(unittest.TestCase):
             assert s == 200
 
     def test_1_logowanie_linkiem(self):
-        req = urllib.request.Request(URL + "/k/" + self.a)
+        req = urllib.request.Request(URL + "/k/" + self.kody[self.b_id])
 
         class Bez(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, *a, **k):
@@ -115,7 +127,8 @@ class TestZadania(unittest.TestCase):
             urllib.request.build_opener(Bez).open(req)
         except urllib.error.HTTPError as e:
             self.assertEqual(e.code, 302)
-            self.assertIn("zd=" + self.a, e.headers["Set-Cookie"])
+            tok = e.headers["Set-Cookie"].split("zd=")[1].split(";")[0]
+            self.assertEqual(zapytaj(tok, "/api/stan")[1]["ja"]["imie"], "Dziecko B")
         self.assertEqual(zapytaj(None, "/api/stan")[0], 401)
         self.assertEqual(zapytaj("zlykodzlykod", "/api/stan")[0], 401)
         s, r = zapytaj(None, "/")
@@ -277,16 +290,119 @@ class TestZadania(unittest.TestCase):
         self.assertTrue(czekaj(lambda: POWIADOMIENIA))
 
     def test_9_osoby_i_nowy_link(self):
-        _, r = zapytaj(self.adm, "/api/osoba/%d" % self.d_id, {"nowy_kod": True})
-        nowy = r["link"].rsplit("/", 1)[1]
-        self.assertEqual(zapytaj(self.d, "/api/stan")[0], 401)
-        self.assertEqual(zapytaj(nowy, "/api/stan")[0], 200)
+        zapytaj(self.adm, "/api/osoba/%d" % self.d_id, {"nowy_kod": True})
+        self.assertEqual(zapytaj(self.d, "/api/stan")[0], 401)      # nowy link kasuje stare sesje
+        with Z.BLOKADA:
+            type(self).d = Z.nowa_sesja(self.d_id)
+        self.assertEqual(zapytaj(self.d, "/api/stan")[0], 200)
         self.assertEqual(zapytaj(self.adm, "/api/osoba/1", {"usun": True})[0], 409)
         self.assertEqual(zapytaj(self.adm, "/api/opieka", {"dorosly_id": self.a_id, "dziecko_id": self.b_id})[0], 400)
         _, st = zapytaj(self.adm, "/api/stan")
         self.assertTrue(st["ja"]["admin"])
         self.assertIn("osoby", st)
         self.assertTrue(st["ha"])
+        self.assertTrue(st["klucz_dodatku"])
+
+    def test_a_pin(self):
+        oid = Z.ex("INSERT INTO osoby(imie,rola,kod) VALUES('P','dziecko','kodp0000000')")
+        Z.ex("INSERT INTO opieka(dorosly_id,dziecko_id,zleca,zatwierdza) VALUES(?,?,1,1)", self.m_id, oid)
+        ses = Z.nowa_sesja(oid)
+        _, st = zapytaj(ses, "/api/stan")
+        self.assertFalse(st["ja"]["ma_pin"])
+        self.assertEqual(zapytaj(ses, "/api/pin", {"pin": "12"})[0], 400)
+        self.assertEqual(zapytaj(ses, "/api/pin", {"pin": "4321"})[0], 200)
+        self.assertEqual(zapytaj(ses, "/api/pin", {"pin": "1111", "stary": "0000"})[0], 403)   # zmiana wymaga starego
+        Z.ex("UPDATE osoby SET pin_bledy=0 WHERE id=?", oid)
+
+        class Bez(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        with self.assertRaises(urllib.error.HTTPError) as e:    # link przy PIN-ie tylko podpowiada imię
+            urllib.request.build_opener(Bez).open(URL + "/k/kodp0000000")
+        self.assertIn("#zaloguj-%d" % oid, e.exception.headers["Location"])
+        self.assertIsNone(e.exception.headers.get("Set-Cookie"))
+        _, lg = zapytaj(None, "/api/logowanie")
+        self.assertIn({"id": oid, "imie": "P", "ma_pin": True}, lg["osoby"])
+        self.assertNotIn("kod", json.dumps(lg))
+        r = urllib.request.urlopen(urllib.request.Request(URL + "/api/zaloguj", json.dumps({"osoba_id": oid, "pin": "4321"}).encode(),
+                                                          {"Content-Type": "application/json"}))
+        tok = r.headers["Set-Cookie"].split("zd=")[1].split(";")[0]
+        self.assertEqual(zapytaj(None, "/api/stan", nag={"Cookie": "zd=" + tok})[0], 200)
+        for _ in range(4):
+            self.assertEqual(zapytaj(None, "/api/zaloguj", {"osoba_id": oid, "pin": "0000"})[0], 403)
+        _, r = zapytaj(None, "/api/zaloguj", {"osoba_id": oid, "pin": "0000"})
+        self.assertIn("zablokowane", r["blad"])
+        self.assertEqual(zapytaj(None, "/api/zaloguj", {"osoba_id": oid, "pin": "4321"})[0], 429)
+        self.assertEqual(zapytaj(self.i, "/api/osoba/%d/pin_reset" % oid, {})[0], 403)
+        s, r = zapytaj(self.m, "/api/osoba/%d/pin_reset" % oid, {})
+        self.assertEqual(s, 200)
+        self.assertTrue(r["link"].endswith("/k/kodp0000000"))
+        self.assertEqual(zapytaj(None, "/api/stan", nag={"Cookie": "zd=" + tok})[0], 401)   # sesje skasowane
+        s, r = zapytaj(None, "/api/zaloguj", {"osoba_id": oid, "pin": "4321"})
+        self.assertEqual((s, r.get("bez_pinu")), (409, True))
+
+    def test_b_dodatek_ha(self):
+        klucz = Z.klucz_dodatku(utworz=True)
+        nag = {"X-Zadania-Klucz": klucz, "X-Zadania-HA-User": "ha-uzytkownik-1", "X-Zadania-HA-Nazwa": "Zosia HA",
+               "X-Zadania-Panel": "/hassio/ingress/abc_zadania"}
+        s, r = zapytaj(None, "/api/stan", nag=nag)
+        self.assertEqual((s, r.get("logowanie")), (401, True))
+        _, lg = zapytaj(None, "/api/logowanie", nag=nag)
+        self.assertEqual((lg["przez_ha"], lg["konto_ha"]), (True, "Zosia HA"))
+        self.assertFalse(zapytaj(None, "/api/logowanie", nag=dict(nag, **{"X-Zadania-Klucz": "zly"}))[1]["przez_ha"])
+        _, st = zapytaj(self.adm, "/api/stan")
+        self.assertIn("ha-uzytkownik-1", [k["id"] for k in st["ha_konta"]])
+        self.assertEqual(zapytaj(self.adm, "/api/osoba/%d" % self.a_id, {"ha_user": "nieznane"})[0], 400)
+        self.assertEqual(zapytaj(self.adm, "/api/osoba/%d" % self.a_id, {"ha_user": "ha-uzytkownik-1"})[0], 200)
+        s, st = zapytaj(None, "/api/stan", nag=nag)
+        self.assertEqual((s, st["ja"]["imie"], st["ja"]["przez_ha"]), (200, "Dziecko A", True))
+        self.assertEqual(Z.ust("panel_ha"), "/hassio/ingress/abc_zadania")
+        Z.ustaw_pin(self.a_id, "9999")
+        self.assertEqual(zapytaj(None, "/api/pin", {"pin": "1234"}, nag=nag)[0], 200)   # w HA bez starego PIN-u
+        POWIADOMIENIA.clear()
+        Z.powiadom(Z.osoba(self.a_id), "t", "m")
+        self.assertTrue(czekaj(lambda: POWIADOMIENIA))
+        self.assertEqual(POWIADOMIENIA[0][1]["data"]["url"], "/hassio/ingress/abc_zadania")
+        self.assertEqual(zapytaj(None, "/api/dodatek/token", {"token": "tok2"}, nag={"X-Zadania-Klucz": "zly"})[0], 403)
+        self.assertEqual(zapytaj(None, "/api/dodatek/token", {"token": "tok2"}, nag={"X-Zadania-Klucz": klucz})[0], 200)
+        with open(os.path.join(T, "ha_token")) as f:
+            self.assertEqual(f.read(), "tok2")
+        self.assertEqual(zapytaj(None, "/api/wyloguj", {}, nag=nag)[0], 200)
+        self.assertEqual(zapytaj(None, "/api/stan", nag=nag)[0], 401)
+
+    def test_c_zrzut_doprecyzuj_katalog(self):
+        s, r = zapytaj(self.m, "/api/zrzut", JPG, "image/jpeg")
+        self.assertEqual(s, 200, r)
+        self.assertEqual(len(r["zadania"]), 2)
+        self.assertEqual(r["zadania"][0]["tytul"], "Matematyka: Zad. 3 i 4 str. 52")
+        self.assertEqual((r["zadania"][0]["termin"], r["zadania"][1]["termin"]), ("2026-11-18", ""))
+        self.assertEqual(r["zadania"][1]["weryfikacja"], "minutnik")
+        self.assertEqual(zapytaj(self.a, "/api/zrzut", JPG, "image/jpeg")[0], 403)
+        self.assertEqual(zapytaj(self.m, "/api/zrzut", b"tekst", "image/jpeg")[0], 415)
+        Z.ex("UPDATE osoby SET rok_ur=? WHERE id=?", dt.date.today().year - 13, self.a_id)
+        s, r = zapytaj(self.m, "/api/doprecyzuj", {"dziecko_id": self.a_id, "tytul": "biurko"})
+        self.assertEqual((s, r["punkty"], r["weryfikacja"], r["dlaczego"]), (200, 12, "zdjecie", "efekt widać"))
+        self.assertIn("13 lat", AI["pytania"][-1]["prompt"])
+        self.assertEqual(zapytaj(self.i, "/api/doprecyzuj", {"dziecko_id": self.a_id, "tytul": "x"})[0], 403)
+        _, st = zapytaj(self.m, "/api/stan")
+        self.assertEqual(st["dzieci"][0]["wiek"], 13)
+        with open(os.path.join(HERE, "..", "zadania", "www", "katalog.json"), encoding="utf-8") as f:
+            kat = json.load(f)
+        self.assertGreaterEqual(len(kat), 45)
+        for k in kat:
+            self.assertIn(k["od"], (6, 10, 13))
+            self.assertIn(k["weryfikacja"], Z.WERYFIKACJE)
+            self.assertIn(k["pora"], Z.PORY)
+            self.assertTrue(k["minuty"] or k["weryfikacja"] != "minutnik")
+        self.assertEqual(zapytaj(None, "/katalog.json")[0], 200)
+
+    def test_d_podsumowanie(self):
+        s, r = zapytaj(None, "/api/podsumowanie")
+        self.assertEqual(s, 200)
+        self.assertIn("Dziecko A", [d["imie"] for d in r["dzieci"]])
+        self.assertTrue({"punkty", "seria", "dzis", "dzis_zrobione", "tydzien_punkty"} <= set(r["dzieci"][0]))
+        self.assertNotIn("kod", json.dumps(r))
+        self.assertEqual(zapytaj(None, "/api/podsumowanie", nag={"X-Zadania-Klucz": "x"})[0], 401)   # nie przez dodatek
 
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})

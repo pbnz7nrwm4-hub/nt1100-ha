@@ -1,0 +1,10 @@
+configuration:
+  adres_aplikacji:
+    name: Adres aplikacji w kontenerze
+    description: Adres aplikacji Zadania (widać go w aplikacji → Osoby → Aplikacja Home Assistant), np. http://adres-kontenera:8092
+  klucz_aplikacji:
+    name: Klucz aplikacji
+    description: Klucz z aplikacji Zadania (Osoby → Aplikacja Home Assistant).
+  token_ha:
+    name: Token Home Assistant
+    description: Token długoterminowy (profil → Bezpieczeństwo). Aplikacja wysyła nim powiadomienia na telefony.

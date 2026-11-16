@@ -10,10 +10,17 @@ Tylko biblioteka standardowa.
 Uruchom:  python3 zadania.py                      (serwer, port z ZD_PORT, domyślnie 8092)
           python3 zadania.py --nowy-admin "Imię"  (pierwszy dorosły z prawami administratora; wypisuje link)
           python3 zadania.py --link "Imię"        (przypomina link osoby)
+          python3 zadania.py --pin-reset "Imię"   (kasuje PIN osoby i wypisuje jej link – gdy ktoś zapomni)
+
+Logowanie: osobisty link przy pierwszym wejściu, potem imię + PIN (sesja w ciasteczku).
+Spoza domu: panel w aplikacji Home Assistant przez dodatek-pośrednik (katalog zadania-dodatek): dodatek przekazuje
+żądania z kluczem (ZD_KLUCZ_PLIK) i identyfikatorem użytkownika HA; konto HA łączy się z osobą raz, PIN-em.
 """
 import argparse
 import base64
 import datetime as dt
+import hashlib
+import hmac
 import json
 import os
 import random
@@ -28,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.0"
+WERSJA = "1.1.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -41,7 +48,11 @@ AI_MODEL = os.environ.get("ZD_AI_MODEL", "gemma3:12b")
 AI_TIMEOUT = int(os.environ.get("ZD_AI_TIMEOUT", "240"))
 LOSOWE = float(os.environ.get("ZD_LOSOWE", "0.2"))           # odsetek zadań „na zaufanie” z losowym zdjęciem
 ZDJ_DNI = int(os.environ.get("ZD_ZDJECIA_DNI", "90"))         # po ilu dniach kasować zdjęcia zakończonych zadań
+KLUCZ_PLIK = os.environ.get("ZD_KLUCZ_PLIK", "/etc/zadania/klucz_dodatku")
 MAX_ZDJ = 8 * 1024 * 1024
+PIN_PROB = 5            # tyle błędnych PIN-ów pod rząd …
+PIN_BLOKADA_MIN = 15    # … blokuje logowanie tej osoby na tyle minut
+SESJA_DNI = 365
 WWW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "www")
 
 WERYFIKACJE = ("zdjecie", "zeszyt", "minutnik", "zaufanie")
@@ -71,7 +82,13 @@ CREATE TABLE IF NOT EXISTS nagrody(id INTEGER PRIMARY KEY, dziecko_id INTEGER, n
 CREATE TABLE IF NOT EXISTS wymiany(id INTEGER PRIMARY KEY, nagroda_id INTEGER, dziecko_id INTEGER, koszt INTEGER,
   stan TEXT DEFAULT 'czeka', ts TEXT, decyzja_id INTEGER, decyzja_ts TEXT);
 CREATE INDEX IF NOT EXISTS zad_dz ON zadania(dziecko_id, dzien);
+CREATE TABLE IF NOT EXISTS sesje(token TEXT PRIMARY KEY, osoba_id INTEGER, ts TEXT);
+CREATE TABLE IF NOT EXISTS ustawienia(k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS ha_konta(id TEXT PRIMARY KEY, nazwa TEXT, ts TEXT);
 """
+KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT DEFAULT ''"),
+           ("osoby", "ha_user", "TEXT DEFAULT ''"), ("osoby", "pin_bledy", "INTEGER DEFAULT 0"),
+           ("osoby", "pin_blokada", "TEXT DEFAULT ''"), ("osoby", "rok_ur", "INTEGER DEFAULT 0"))
 
 
 class Blad(Exception):
@@ -123,6 +140,9 @@ def db():
     if DB is None:
         DB = baza()
         DB.executescript(SCHEMAT)
+        for tab, kol, typ in KOLUMNY:
+            if kol not in [r[1] for r in DB.execute("PRAGMA table_info(%s)" % tab)]:
+                DB.execute("ALTER TABLE %s ADD COLUMN %s %s" % (tab, kol, typ))
     return DB
 
 
@@ -145,6 +165,79 @@ def nowy_kod():
 
 def link(osoba):
     return "%s/k/%s" % (ADRES or "", osoba["kod"])
+
+
+def ust(k, dom=""):
+    r = q1("SELECT v FROM ustawienia WHERE k=?", k)
+    return r["v"] if r else dom
+
+
+def ustaw(k, v):
+    ex("INSERT INTO ustawienia(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", k, v)
+
+
+# ---------- PIN, sesje, dodatek HA ----------
+def klucz_dodatku(utworz=False):
+    """Klucz, którym dodatek HA podpisuje żądania. Administrator widzi go w aplikacji (Osoby) i wkleja w opcje dodatku."""
+    try:
+        with open(KLUCZ_PLIK, encoding="utf-8") as f:
+            k = f.read().strip()
+            if k:
+                return k
+    except OSError:
+        pass
+    k = ust("klucz_dodatku")
+    if not k and utworz:
+        k = secrets.token_urlsafe(24)
+        ustaw("klucz_dodatku", k)
+    return k
+
+
+def skrot_pin(pin, sol):
+    return hashlib.pbkdf2_hmac("sha256", pin.encode(), sol.encode(), 120000).hex()
+
+
+def pin_poprawny_format(pin):
+    if not re.match(r"^\d{4,6}$", str(pin or "")):
+        raise Blad(400, "PIN to 4–6 cyfr.")
+    return str(pin)
+
+
+def ustaw_pin(oid, pin):
+    sol = secrets.token_hex(8)
+    ex("UPDATE osoby SET pin_hash=?, pin_sol=?, pin_bledy=0, pin_blokada='' WHERE id=?", skrot_pin(pin, sol), sol, oid)
+
+
+def sprawdz_pin(o, pin):
+    """Sprawdza PIN z blokadą po PIN_PROB błędach. Rzuca Blad, gdy zły albo zablokowany."""
+    if not o or not o["aktywna"]:
+        raise Blad(404, "Nie ma takiej osoby.")
+    if not o["pin_hash"]:
+        raise Blad(409, "Ta osoba nie ma jeszcze PIN-u. Otwórz jej osobisty link.", bez_pinu=True)
+    if o["pin_blokada"] and o["pin_blokada"] > iso(teraz()):
+        raise Blad(429, "Za dużo prób. Spróbuj o %s." % o["pin_blokada"][11:16])
+    if hmac.compare_digest(skrot_pin(str(pin or ""), o["pin_sol"]), o["pin_hash"]):
+        ex("UPDATE osoby SET pin_bledy=0, pin_blokada='' WHERE id=?", o["id"])
+        return True
+    bl = o["pin_bledy"] + 1
+    blok = iso(teraz() + dt.timedelta(minutes=PIN_BLOKADA_MIN)) if bl >= PIN_PROB else ""
+    ex("UPDATE osoby SET pin_bledy=?, pin_blokada=? WHERE id=?", 0 if blok else bl, blok, o["id"])
+    raise Blad(403, "Zły PIN." + (" Logowanie zablokowane na %d min." % PIN_BLOKADA_MIN if blok else
+                                  " Zostało prób: %d." % (PIN_PROB - bl)))
+
+
+def nowa_sesja(oid):
+    tok = secrets.token_urlsafe(24)
+    ex("INSERT INTO sesje(token,osoba_id,ts) VALUES(?,?,?)", tok, oid, iso(teraz()))
+    return tok
+
+
+def usun_sesje(oid):
+    ex("DELETE FROM sesje WHERE osoba_id=?", oid)
+
+
+def ciastko(tok, wiek=SESJA_DNI * 86400):
+    return ("Set-Cookie", "zd=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax" % (tok, wiek))
 
 
 # ---------- prawa ----------
@@ -221,11 +314,16 @@ def seria(dziecko_id):
 
 # ---------- powiadomienia (Home Assistant) ----------
 def ha_token():
-    try:
-        with open(HA_TOKEN_PLIK, encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+    """Token HA: plik z instalatora albo przekazany przez dodatek (opcja „token_ha”) i zapisany w katalogu danych."""
+    for p in (HA_TOKEN_PLIK, os.path.join(KAT, "ha_token")):
+        try:
+            with open(p, encoding="utf-8") as f:
+                t = f.read().strip()
+                if t:
+                    return t
+        except OSError:
+            pass
+    return ""
 
 
 def powiadom(osoba, tytul, tresc, sciezka="/"):
@@ -237,7 +335,8 @@ def powiadom(osoba, tytul, tresc, sciezka="/"):
     if not tok:
         return False
     usl = usl.replace("notify.", "")
-    url = (ADRES + sciezka) if ADRES else ""
+    panel = ust("panel_ha")
+    url = panel if (panel and osoba.get("ha_user")) else ((ADRES + sciezka) if ADRES else "")
     dane = {"title": tytul, "message": tresc}
     if url:
         dane["data"] = {"url": url, "clickAction": url}
@@ -430,6 +529,7 @@ def stan_dla(ja):
     for c in moje_dzieci(ja):
         pr = opieka(ja, c["id"])
         dzieci.append({"id": c["id"], "imie": c["imie"], "saldo": saldo(c["id"]), "zarezerwowane": zarezerwowane(c["id"]),
+                       "wiek": (teraz().year - c["rok_ur"]) if c["rok_ur"] else None,
                        "tydzien": tydzien(c["id"]), "seria": seria(c["id"]),
                        "prawa": {"zleca": pr["zleca"], "zatwierdza": pr["zatwierdza"]}})
     ids = [c["id"] for c in dzieci] or [-1]
@@ -443,7 +543,8 @@ def stan_dla(ja):
     wym = q("SELECT w.*, n.nazwa FROM wymiany w JOIN nagrody n ON n.id=w.nagroda_id WHERE w.dziecko_id IN (" + zn + ") "
             "AND (w.stan='czeka' OR w.ts>=?) ORDER BY w.id DESC", *ids, od7)
     wynik = {"wersja": WERSJA, "teraz": iso(teraz()), "dzis": d, "ai": ai_wlaczone(),
-             "ja": {"id": ja["id"], "imie": ja["imie"], "rola": ja["rola"], "admin": bool(ja["admin"])},
+             "ja": {"id": ja["id"], "imie": ja["imie"], "rola": ja["rola"], "admin": bool(ja["admin"]),
+                    "ma_pin": bool(ja["pin_hash"]), "przez_ha": bool(ja.get("_przez_ha"))},
              "dzieci": dzieci, "zadania": [zadanie_dla(z, ja) for z in zad], "nagrody": nagr, "wymiany": wym}
     if ja["rola"] != "dziecko":
         wynik["szablony"] = q("SELECT * FROM szablony WHERE aktywny=1 AND dziecko_id IN (" + zn + ") ORDER BY dziecko_id, pora, tytul",
@@ -451,10 +552,36 @@ def stan_dla(ja):
         hist = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 40", *ids)
         wynik["punkty"] = hist
     if ja["admin"]:
-        wynik["osoby"] = [dict(o, link=link(o)) for o in q("SELECT * FROM osoby WHERE aktywna=1 ORDER BY rola DESC, imie")]
+        wynik["osoby"] = [{"id": o["id"], "imie": o["imie"], "rola": o["rola"], "admin": o["admin"], "powiadom": o["powiadom"],
+                           "rok_ur": o["rok_ur"] or None, "ha_user": o["ha_user"],
+                           "link": link(o), "ma_pin": bool(o["pin_hash"]), "ha": bool(o["ha_user"])}
+                          for o in q("SELECT * FROM osoby WHERE aktywna=1 ORDER BY rola DESC, imie")]
+        wynik["klucz_dodatku"] = klucz_dodatku(utworz=True)
+        wynik["ha_konta"] = q("SELECT * FROM ha_konta ORDER BY nazwa")
+        wynik["adres"] = ADRES
         wynik["opieka"] = q("SELECT * FROM opieka")
         wynik["ha"] = bool(HA_URL and ha_token())
     return wynik
+
+
+def podsumowanie():
+    """Liczby dla tablicy w domu (strona Aplikacje na Wyse): bez zdjęć, opisów i kodów."""
+    wygeneruj()
+    d = dzis()
+    od7 = iso(teraz() - dt.timedelta(days=7))
+    dzieci = []
+    for c in q("SELECT * FROM osoby WHERE rola='dziecko' AND aktywna=1 ORDER BY imie"):
+        z = q("SELECT stan FROM zadania WHERE dziecko_id=? AND dzien=? AND pula=0", c["id"], d)
+        dzieci.append({"imie": c["imie"], "punkty": saldo(c["id"]) - zarezerwowane(c["id"]), "seria": seria(c["id"]),
+                       "dzis": len(z), "dzis_zrobione": sum(1 for x in z if x["stan"] in KONCOWE or x["stan"] == "wyslane"),
+                       "tydzien_punkty": tydzien(c["id"])})
+    return {"wersja": WERSJA, "dzieci": dzieci,
+            "do_zatwierdzenia": q1("SELECT COUNT(*) n FROM zadania WHERE stan='wyslane'")["n"]
+            + q1("SELECT COUNT(*) n FROM wymiany WHERE stan='czeka'")["n"],
+            "tydzien_zatwierdzone": q1("SELECT COUNT(*) n FROM zadania WHERE stan IN ('zatwierdzone','czesciowo') AND zatwierdzone>=?",
+                                       od7)["n"],
+            "po_terminie": q1("SELECT COUNT(*) n FROM zadania WHERE stan IN ('do_zrobienia','do_poprawki') AND pula=0 "
+                              "AND termin IS NOT NULL AND termin<?", iso(teraz()))["n"]}
 
 
 # ---------- akcje ----------
@@ -774,8 +901,21 @@ def a_osoba_zmien(ja, oid, b):
             ex("UPDATE osoby SET imie=? WHERE id=?", tekst(b["imie"], 40), oid)
         if "powiadom" in b:
             ex("UPDATE osoby SET powiadom=? WHERE id=?", tekst(b["powiadom"], 80), oid)
+        if "ha_user" in b:
+            hu = tekst(b["ha_user"], 64)
+            if hu and not q1("SELECT id FROM ha_konta WHERE id=?", hu):
+                raise Blad(400, "Nie znam takiego konta HA – niech ta osoba raz otworzy Zadania w aplikacji HA.")
+            if hu:
+                ex("UPDATE osoby SET ha_user='' WHERE ha_user=?", hu)
+            ex("UPDATE osoby SET ha_user=? WHERE id=?", hu, oid)
+        if "rok_ur" in b:
+            r = int(b["rok_ur"] or 0)
+            if r and not 1990 <= r <= teraz().year:
+                raise Blad(400, "Rok urodzenia, np. 2013.")
+            ex("UPDATE osoby SET rok_ur=? WHERE id=?", r, oid)
         if b.get("nowy_kod"):
             ex("UPDATE osoby SET kod=? WHERE id=?", nowy_kod(), oid)
+            usun_sesje(oid)
         if "admin" in b and o["rola"] == "dorosly":
             if not b["admin"] and oid == ja["id"]:
                 raise Blad(409, "Nie odbieraj sobie praw administratora.")
@@ -783,9 +923,104 @@ def a_osoba_zmien(ja, oid, b):
         if b.get("usun"):
             if oid == ja["id"]:
                 raise Blad(409, "Nie usuwaj siebie.")
-            ex("UPDATE osoby SET aktywna=0, kod=? WHERE id=?", "x" + nowy_kod(), oid)
+            ex("UPDATE osoby SET aktywna=0, kod=?, ha_user='' WHERE id=?", "x" + nowy_kod(), oid)
+            usun_sesje(oid)
             ex("DELETE FROM opieka WHERE dorosly_id=? OR dziecko_id=?", oid, oid)
         o = osoba(oid)
+    return {"ok": True, "link": link(o)}
+
+
+def a_zrzut(ja, dane):
+    """Zrzut ekranu (np. dziennik elektroniczny) albo zdjęcie kartki -> propozycje zadań od AI. Nic nie zapisuje:
+    rodzic wybiera, które zlecić."""
+    if ja["rola"] == "dziecko" or not [d for d in moje_dzieci(ja) if opieka(ja, d["id"])["zleca"]]:
+        raise Blad(403, "Zadania ze zrzutu dodaje rodzic, który zleca.")
+    if not ai_wlaczone():
+        raise Blad(409, "AI nie jest jeszcze podłączone – ten przycisk zadziała po podłączeniu modelu z komputera w domu.")
+    if not dane or len(dane) > MAX_ZDJ or not (dane[:3] == b"\xff\xd8\xff" or dane[:8] == b"\x89PNG\r\n\x1a\n"):
+        raise Blad(415, "Potrzebny obraz JPEG albo PNG.")
+    prompt = ("To zrzut ekranu z dziennika elektronicznego szkoły (np. zadania domowe, sprawdziany, kartkówki) albo zdjęcie "
+              "kartki z zadaniami. Dzisiaj jest " + dzis() + ". Wypisz wszystkie zadania do zrobienia przez ucznia. "
+              "Odpowiedz wyłącznie JSON: {\"zadania\": [{\"przedmiot\": \"…\", \"tytul\": \"krótko, co zrobić\", "
+              "\"opis\": \"szczegóły z ekranu\", \"termin\": \"RRRR-MM-DD albo null\", \"rodzaj\": \"zadanie|sprawdzian|kartkowka|inne\"}]}. "
+              "Nie zmyślaj: tylko to, co widać na obrazie.")
+    try:
+        o = ai_zapytaj(prompt, [base64.b64encode(dane).decode()])
+    except Exception as e:  # noqa: BLE001
+        raise Blad(502, "AI nie odpowiedziało: %s" % str(e)[:120])
+    wynik = []
+    for z in (o.get("zadania") if isinstance(o, dict) else None) or []:
+        if not isinstance(z, dict) or not str(z.get("tytul") or "").strip():
+            continue
+        t = str(z.get("termin") or "")
+        t = t if re.match(r"^\d{4}-\d\d-\d\d$", t) else ""
+        rodz = str(z.get("rodzaj") or "zadanie")
+        prz = tekst(z.get("przedmiot"), 40)
+        wynik.append({"tytul": ((prz + ": ") if prz else "") + tekst(z.get("tytul"), 90), "opis": tekst(z.get("opis"), 400),
+                      "termin": t, "rodzaj": rodz, "weryfikacja": "zeszyt" if rodz == "zadanie" else "minutnik",
+                      "minuty": 0 if rodz == "zadanie" else 30, "punkty": 10 if rodz == "zadanie" else 15})
+    return {"zadania": wynik[:15]}
+
+
+def a_doprecyzuj(ja, b):
+    """AI czyta polecenie rodzica (z wiekiem dziecka) i proponuje poprawki. Nic nie zapisuje."""
+    dz = int(b.get("dziecko_id") or 0)
+    wymagaj(ja, dz, "zleca")
+    if not ai_wlaczone():
+        raise Blad(409, "AI nie jest jeszcze podłączone – ten przycisk zadziała po podłączeniu modelu z komputera w domu.")
+    tyt = tekst(b.get("tytul"), 120)
+    if not tyt:
+        raise Blad(400, "Wpisz najpierw, co trzeba zrobić.")
+    c = osoba(dz)
+    wiek = (teraz().year - c["rok_ur"]) if c and c["rok_ur"] else None
+    prompt = ("Pomagasz rodzicowi napisać jasne zadanie domowe dla dziecka" + (" w wieku %d lat" % wiek if wiek else "") + ". "
+              "Zadanie: " + tyt + ". Opis rodzica: " + (tekst(b.get("opis"), 600) or "(brak)") + ". "
+              "Oceń, czego brakuje, żeby dziecko wiedziało dokładnie, co ma zrobić i kiedy jest zrobione, i zaproponuj lepszą wersję. "
+              "Dopasuj do wieku. Odpowiedz wyłącznie JSON po polsku: {\"tytul\": \"krótki\", \"opis\": \"czego oczekujemy, konkretnie\", "
+              "\"brakuje\": [\"czego nie było w poleceniu\"], \"kroki\": [\"2–5 krótkich kroków\"], \"punkty\": liczba 1–30, "
+              "\"weryfikacja\": \"zdjecie|zeszyt|minutnik|zaufanie\" (jak dziecko najlepiej pokaże, że zrobione), "
+              "\"dlaczego\": \"jedno zdanie, czemu ta forma potwierdzenia\", \"minuty\": liczba albo 0, "
+              "\"uwaga\": \"jedno zdanie, np. czy zadanie pasuje do wieku\"}")
+    try:
+        o = ai_zapytaj(prompt)
+    except Exception as e:  # noqa: BLE001
+        raise Blad(502, "AI nie odpowiedziało: %s" % str(e)[:120])
+    if not isinstance(o, dict):
+        raise Blad(502, "AI odpowiedziało nie na temat.")
+    wer = o.get("weryfikacja") if o.get("weryfikacja") in WERYFIKACJE else "zdjecie"
+    try:
+        pk = max(0, min(100, int(o.get("punkty") or 0)))
+        mn = max(0, min(240, int(o.get("minuty") or 0)))
+    except (TypeError, ValueError):
+        pk, mn = 0, 0
+    return {"tytul": tekst(o.get("tytul"), 120) or tyt, "opis": tekst(o.get("opis"), 600),
+            "brakuje": [tekst(x, 160) for x in (o.get("brakuje") or [])[:6] if str(x).strip()],
+            "kroki": [tekst(x, 80) for x in (o.get("kroki") or [])[:6] if str(x).strip()],
+            "punkty": pk, "weryfikacja": wer, "minuty": mn, "uwaga": tekst(o.get("uwaga"), 200),
+            "dlaczego": tekst(o.get("dlaczego"), 200)}
+
+
+def a_pin(ja, b):
+    pin = pin_poprawny_format(b.get("pin"))
+    with BLOKADA:
+        o = osoba(ja["id"])
+        if o["pin_hash"] and not ja.get("_przez_ha"):   # w aplikacji HA tożsamość potwierdza logowanie HA
+            sprawdz_pin(o, b.get("stary"))
+        ustaw_pin(ja["id"], pin)
+    return {"ok": True}
+
+
+def a_pin_reset(ja, oid):
+    """Kasuje PIN: administrator każdemu, zatwierdzający – swojemu dziecku. Osoba ustawia nowy przy wejściu z linku
+    (albo z aplikacji HA, gdy konto już połączone)."""
+    with BLOKADA:
+        o = osoba(oid)
+        if not o or not o["aktywna"]:
+            raise Blad(404, "Nie ma takiej osoby.")
+        if not ja["admin"] and not (o["rola"] == "dziecko" and opieka(ja, oid)["zatwierdza"]):
+            raise Blad(403, "PIN skasuje administrator albo opiekun dziecka.")
+        ex("UPDATE osoby SET pin_hash='', pin_sol='', pin_bledy=0, pin_blokada='' WHERE id=?", oid)
+        usun_sesje(oid)
     return {"ok": True, "link": link(o)}
 
 
@@ -865,6 +1100,10 @@ TRASY_POST = [
     (r"^/api/osoba$", lambda ja, m, b, raw: a_osoba(ja, b)),
     (r"^/api/osoba/(\d+)$", lambda ja, m, b, raw: a_osoba_zmien(ja, int(m[1]), b)),
     (r"^/api/opieka$", lambda ja, m, b, raw: a_opieka(ja, b)),
+    (r"^/api/pin$", lambda ja, m, b, raw: a_pin(ja, b)),
+    (r"^/api/zrzut$", lambda ja, m, b, raw: a_zrzut(ja, raw)),
+    (r"^/api/doprecyzuj$", lambda ja, m, b, raw: a_doprecyzuj(ja, b)),
+    (r"^/api/osoba/(\d+)/pin_reset$", lambda ja, m, b, raw: a_pin_reset(ja, int(m[1]))),
 ]
 TYPY = {".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css",
         ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json"}
@@ -889,17 +1128,66 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(cialo)
 
-    def kto(self):
-        kod = ""
+    def dodatek_ha(self):
+        """Identyfikator użytkownika HA, gdy żądanie przyszło przez dodatek-pośrednik z dobrym kluczem."""
+        k, klucz = self.headers.get("X-Zadania-Klucz") or "", klucz_dodatku()
+        if not (klucz and k and hmac.compare_digest(k.encode(), klucz.encode())):
+            return ""
+        panel = self.headers.get("X-Zadania-Panel") or ""
+        if panel.startswith("/") and panel != ust("panel_ha"):
+            with BLOKADA:
+                ustaw("panel_ha", panel)
+        return (self.headers.get("X-Zadania-HA-User") or "").strip()[:64]
+
+    def sesja(self):
+        tok = self.headers.get("X-Zadania-Sesja") or ""
         for cz in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = cz.strip().partition("=")
-            if k == "zd":
-                kod = v
-        kod = self.headers.get("X-Zadania-Kod") or kod
-        if not kod:
-            return None
+            if k == "zd" and not tok:
+                tok = v
+        return tok
+
+    def kto(self):
+        ha = self.dodatek_ha()
         with BLOKADA:
-            return q1("SELECT * FROM osoby WHERE kod=? AND aktywna=1", kod)
+            if ha:
+                naz = (self.headers.get("X-Zadania-HA-Nazwa") or "").strip()[:60]
+                ex("INSERT INTO ha_konta(id,nazwa,ts) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET nazwa=excluded.nazwa, ts=excluded.ts",
+                   ha, naz or ha[:8], iso(teraz()))
+                o = q1("SELECT * FROM osoby WHERE ha_user=? AND aktywna=1", ha)
+                if o:
+                    o["_przez_ha"] = True
+                    return o
+                return None
+            tok = self.sesja()
+            if not tok:
+                return None
+            s = q1("SELECT * FROM sesje WHERE token=?", tok)
+            if not s or s["ts"] < iso(teraz() - dt.timedelta(days=SESJA_DNI)):
+                return None
+            return q1("SELECT * FROM osoby WHERE id=? AND aktywna=1", s["osoba_id"])
+
+    def logowanie(self, sc, b):
+        """Bez sesji: lista osób, logowanie PIN-em, wylogowanie. W dodatku HA logowanie łączy konto HA z osobą."""
+        ha = self.dodatek_ha()
+        if sc == "/api/zaloguj":
+            with BLOKADA:
+                o = osoba(int(b.get("osoba_id") or 0))
+                sprawdz_pin(o, b.get("pin"))
+                if ha:
+                    ex("UPDATE osoby SET ha_user='' WHERE ha_user=?", ha)
+                    ex("UPDATE osoby SET ha_user=? WHERE id=?", ha, o["id"])
+                    return self.wyslij(200, {"ok": True})
+                tok = nowa_sesja(o["id"])
+            return self.wyslij(200, {"ok": True}, naglowki=[ciastko(tok)])
+        if sc == "/api/wyloguj":
+            with BLOKADA:
+                if ha:
+                    ex("UPDATE osoby SET ha_user='' WHERE ha_user=?", ha)
+                else:
+                    ex("DELETE FROM sesje WHERE token=?", self.sesja())
+            return self.wyslij(200, {"ok": True}, naglowki=[ciastko("", 0)])
+        return None
 
     def do_GET(self):
         sc = self.path.split("?")[0]
@@ -908,16 +1196,28 @@ class H(BaseHTTPRequestHandler):
             if m:
                 with BLOKADA:
                     o = q1("SELECT * FROM osoby WHERE kod=? AND aktywna=1", m[1])
-                if not o:
-                    return self.wyslij(404, "Nieznany link. Poproś o nowy.".encode(), "text/plain; charset=utf-8")
-                return self.wyslij(302, b"", naglowki=[("Location", "/"), (
-                    "Set-Cookie", "zd=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % m[1])])
+                    if not o:
+                        return self.wyslij(404, "Nieznany link. Poproś o nowy.".encode(), "text/plain; charset=utf-8")
+                    if o["pin_hash"]:   # PIN już jest – link tylko podpowiada imię, wejście PIN-em
+                        return self.wyslij(302, b"", naglowki=[("Location", "../#zaloguj-%d" % o["id"])])
+                    tok = nowa_sesja(o["id"])
+                return self.wyslij(302, b"", naglowki=[("Location", "../"), ciastko(tok)])
             if sc == "/api/zdrowie":
                 return self.wyslij(200, {"ok": True, "wersja": WERSJA})
+            if sc == "/api/podsumowanie" and not self.headers.get("X-Zadania-Klucz"):   # tylko bezpośrednio w domu
+                with BLOKADA:
+                    return self.wyslij(200, podsumowanie())
+            if sc == "/api/logowanie":
+                ha = self.dodatek_ha()
+                with BLOKADA:
+                    konto = q1("SELECT nazwa FROM ha_konta WHERE id=?", ha) if ha else None
+                    return self.wyslij(200, {"przez_ha": bool(ha), "konto_ha": konto["nazwa"] if konto else "", "osoby": [
+                        {"id": o["id"], "imie": o["imie"], "ma_pin": bool(o["pin_hash"])}
+                        for o in q("SELECT * FROM osoby WHERE aktywna=1 ORDER BY rola DESC, imie")]})
             if sc.startswith("/api/"):
                 ja = self.kto()
                 if not ja:
-                    return self.wyslij(401, {"blad": "Otwórz swój link z aplikacji."})
+                    return self.wyslij(401, {"blad": "Zaloguj się.", "logowanie": True})
                 if sc == "/api/stan":
                     with BLOKADA:
                         return self.wyslij(200, stan_dla(ja))
@@ -951,9 +1251,23 @@ class H(BaseHTTPRequestHandler):
             if n > MAX_ZDJ + 1024:
                 raise Blad(413, "Za duże.")
             raw = self.rfile.read(n) if n else b""
+            if sc == "/api/dodatek/token":
+                if not self.dodatek_ha() and not (self.headers.get("X-Zadania-Klucz") and hmac.compare_digest(
+                        (self.headers.get("X-Zadania-Klucz") or "").encode(), (klucz_dodatku() or "-").encode())):
+                    raise Blad(403, "Zły klucz dodatku.")
+                tok = (json.loads(raw.decode() or "{}").get("token") or "").strip()
+                if tok:
+                    os.makedirs(KAT, exist_ok=True)
+                    fd = os.open(os.path.join(KAT, "ha_token"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(tok)
+                return self.wyslij(200, {"ok": True, "ha": bool(HA_URL)})
+            if sc in ("/api/zaloguj", "/api/wyloguj"):
+                b = json.loads(raw.decode() or "{}") if raw else {}
+                return self.logowanie(sc, b)
             ja = self.kto()
             if not ja:
-                raise Blad(401, "Otwórz swój link z aplikacji.")
+                raise Blad(401, "Zaloguj się.", logowanie=True)
             for wzor, f in TRASY_POST:
                 m = re.match(wzor, sc)
                 if m:
@@ -976,12 +1290,23 @@ def main():
     a = argparse.ArgumentParser()
     a.add_argument("--nowy-admin")
     a.add_argument("--link")
+    a.add_argument("--pin-reset")
     a.add_argument("--port", type=int, default=PORT)
     a = a.parse_args()
     if a.nowy_admin:
         with BLOKADA:
             oid = ex("INSERT INTO osoby(imie,rola,admin,kod) VALUES(?,?,?,?)", a.nowy_admin.strip()[:40], "dorosly", 1, nowy_kod())
         print("Administrator dodany. Twój link (otwórz na telefonie, nie wklejaj nigdzie):", link(osoba(oid)))
+        return
+    if a.pin_reset:
+        o = q1("SELECT * FROM osoby WHERE imie=? AND aktywna=1", a.pin_reset.strip())
+        if not o:
+            print("Nie ma takiej osoby.")
+            return
+        with BLOKADA:
+            ex("UPDATE osoby SET pin_hash='', pin_sol='', pin_bledy=0, pin_blokada='' WHERE id=?", o["id"])
+            usun_sesje(o["id"])
+        print("PIN skasowany. Otwórz link i ustaw nowy PIN:", link(o))
         return
     if a.link:
         o = q1("SELECT * FROM osoby WHERE imie=? AND aktywna=1", a.link.strip())

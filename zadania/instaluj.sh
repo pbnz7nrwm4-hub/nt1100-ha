@@ -95,6 +95,15 @@ EOT
 chmod 750 /usr/local/sbin/zadania-link
 ln -sf /usr/local/sbin/zadania-link /usr/local/bin/zadania-link
 
+# Awaryjne skasowanie PIN-u (gdy nikt z administratorów nie może wejść): zadania-pin "Imię"
+cat > /usr/local/sbin/zadania-pin <<EOT
+#!/bin/bash
+set -a; . $ENV; set +a
+exec runuser -u zadania -- /usr/bin/python3 $KOD/zadania/zadania.py --pin-reset "\$1"
+EOT
+chmod 750 /usr/local/sbin/zadania-pin
+ln -sf /usr/local/sbin/zadania-pin /usr/local/bin/zadania-pin
+
 # Kopia bazy co noc (30 ostatnich) – zdjęć nie kopiuję, zostają w katalogu danych.
 cat > /etc/cron.d/zadania-kopia <<EOT
 15 2 * * * zadania mkdir -p $DANE/kopie && sqlite3 $DANE/zadania.db ".backup $DANE/kopie/zadania-\$(date +\%F).db" && ls -1t $DANE/kopie/*.db | tail -n +31 | xargs -r rm -f

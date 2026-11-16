@@ -79,8 +79,45 @@ async function api(sc, dane, typ){
   return j;
 }
 async function odswiez(){
-  try { S = await api("/api/stan"); rysuj(); }
-  catch(e){ $("#app").innerHTML = e.kod===401 ? '<div class="karta"><h2>Zadania</h2><p>Otwórz swój osobisty link (dostaniesz go od administratora). Potem dodaj tę stronę do ekranu początkowego.</p></div>' : '<div class="karta">'+esc(e.message)+'</div>'; $("#nav").innerHTML=""; }
+  try { S = await api("api/stan"); rysuj(); }
+  catch(e){
+    $("#nav").innerHTML = "";
+    if (e.kod===401) { S = null; return logowanie(); }
+    $("#app").innerHTML = '<div class="karta">'+esc(e.message)+'</div>';
+  }
+}
+/* ---------- logowanie i PIN ---------- */
+let L = {osoby:[], wyb:null, przez_ha:false};
+async function logowanie(){
+  if (document.activeElement && document.activeElement.id==="lpin") return;
+  try { const r = await api("api/logowanie"); L.osoby = r.osoby; L.przez_ha = r.przez_ha; L.konto = r.konto_ha; } catch(e) {}
+  const m = location.hash.match(/^#zaloguj-(\d+)$/);
+  if (m) L.wyb = +m[1];
+  rysujLogowanie();
+}
+function rysujLogowanie(){
+  const o = L.osoby.find(x => x.id===L.wyb);
+  let h = '<h1>Zadania</h1><p class="mal">'+(L.przez_ha ? "Konto Home Assistant „"+esc(L.konto)+"” nie jest jeszcze przypisane do nikogo w Zadaniach. Poproś administratora o przypisanie (Osoby → Konto HA) albo wybierz siebie i wpisz swój PIN – wtedy połączy się samo." : "Kim jesteś?")+'</p>';
+  h += '<div class="siatka">' + L.osoby.map(x => '<button data-kto="'+x.id+'" class="'+(x.id===L.wyb?"wyb":"")+'">'+esc(x.imie)+'</button>').join("") + '</div>';
+  if (o && o.ma_pin) h += '<label class="pole" for="lpin">PIN</label><input type="password" id="lpin" inputmode="numeric" autocomplete="current-password" maxlength="6"><div style="margin-top:12px"><button class="glowny" id="lzal">Wejdź</button></div><p class="mal">Nie pamiętasz PIN-u? Poproś opiekuna albo administratora o skasowanie – potem ustawisz nowy.</p>';
+  else if (o) h += '<div class="karta" style="margin-top:12px">'+esc(o.imie)+' nie ma jeszcze PIN-u. Otwórz swój osobisty link (dostaniesz go od administratora) i ustaw PIN.</div>';
+  if (!L.osoby.length) h += '<div class="karta">Nie ma jeszcze żadnej osoby. Administratora dodaje instalator.</div>';
+  $("#app").innerHTML = h;
+  $("#app").querySelectorAll("[data-kto]").forEach(e => e.onclick = () => { L.wyb = +e.dataset.kto; rysujLogowanie(); if ($("#lpin")) $("#lpin").focus(); });
+  const wejdz = async () => { try { await api("api/zaloguj", {osoba_id:L.wyb, pin:$("#lpin").value}); if (/^#zaloguj/.test(location.hash)) history.replaceState(null, "", location.pathname); widok = ""; await odswiez(); } catch(e) { toast(e.message); $("#lpin").value = ""; } };
+  if ($("#lzal")) { $("#lzal").onclick = wejdz; $("#lpin").onkeydown = ev => { if (ev.key==="Enter") wejdz(); }; }
+}
+function widokPin(wymuszony){
+  const stary = S.ja.ma_pin && !S.ja.przez_ha;
+  return '<h1>'+(wymuszony?"Ustaw swój PIN":"Zmień PIN")+'</h1><p class="mal">'+(wymuszony?"Cześć, "+esc(S.ja.imie)+"! Wymyśl PIN (4–6 cyfr). Będziesz nim wchodzić do aplikacji.":"PIN to 4–6 cyfr.")+'</p>'
+    + (stary ? '<label class="pole" for="pst">Obecny PIN</label><input type="password" id="pst" inputmode="numeric" maxlength="6">' : "")
+    + '<label class="pole" for="pn1">Nowy PIN</label><input type="password" id="pn1" inputmode="numeric" autocomplete="new-password" maxlength="6">'
+    + '<label class="pole" for="pn2">Powtórz PIN</label><input type="password" id="pn2" inputmode="numeric" autocomplete="new-password" maxlength="6">'
+    + '<div style="margin-top:14px"><button class="glowny" id="pzap">Zapisz PIN</button></div>'
+    + (wymuszony ? "" : '<div style="margin-top:8px"><a href="#">Wróć</a></div>');
+}
+function stopka(){
+  return '<p class="mal" style="text-align:center;margin-top:28px">'+esc(S.ja.imie)+' · <a href="#pin">Zmień PIN</a> · <a href="#" id="wyloguj">'+(S.ja.przez_ha?"Odłącz to konto":"Wyloguj")+'</a> · wersja '+esc(S.wersja)+'</p>';
 }
 async function akcja(sc, dane, msg, typ){
   if (czekaOdp) return; czekaOdp = true;
@@ -122,13 +159,15 @@ function rysujNav(){
 
 function rysuj(){
   if (!S) return;
+  if (!S.ja.ma_pin) { $("#nav").innerHTML = ""; $("#app").innerHTML = widokPin(true); return podepnij(); }
   rysujNav();
   const m = widok.match(/^z(\d+)$/);
   let h;
-  if (m) h = widokZadania(+m[1]);
+  if (widok==="pin") h = widokPin(false);
+  else if (m) h = widokZadania(+m[1]);
   else if (dziecko()) h = widok==="pula" ? widokPula() : widok==="nagrody" ? widokNagrody() : widokDzis();
   else h = widok==="zlec" ? widokZlec() : widok==="dzieci" ? widokDzieci() : widok==="nagrody" ? widokNagrody() : widok==="osoby" && S.ja.admin ? widokOsoby() : widokZatwierdz();
-  $("#app").innerHTML = h;
+  $("#app").innerHTML = h + (widok==="pin" ? "" : stopka());
   podepnij();
 }
 
@@ -185,8 +224,8 @@ function widokZadania(id){
   // zdjęcia
   if (z.weryfikacja!=="minutnik" || z.zdjecia.length) {
     const pokPo = po.slice(-1)[0];
-    h += '<div class="zdj"><div><div class="mal">Przed</div>'+(przed?'<img src="/api/zdjecie/'+przed.id+'" alt="Zdjęcie przed">':'<div class="pusto">'+(ja&&otw?"możesz dodać":"brak")+'</div>')+'</div>'
-      + '<div><div class="mal">Po'+(po.length>1?" ("+po.length+")":"")+'</div>'+(pokPo?'<img src="/api/zdjecie/'+pokPo.id+'" alt="Zdjęcie po">':'<div class="pusto">'+(ja&&otw?"zrób zdjęcie":"brak")+'</div>')+'</div></div>';
+    h += '<div class="zdj"><div><div class="mal">Przed</div>'+(przed?'<img src="api/zdjecie/'+przed.id+'" alt="Zdjęcie przed">':'<div class="pusto">'+(ja&&otw?"możesz dodać":"brak")+'</div>')+'</div>'
+      + '<div><div class="mal">Po'+(po.length>1?" ("+po.length+")":"")+'</div>'+(pokPo?'<img src="api/zdjecie/'+pokPo.id+'" alt="Zdjęcie po">':'<div class="pusto">'+(ja&&otw?"zrób zdjęcie":"brak")+'</div>')+'</div></div>';
     if (ja && otw) h += '<div class="rzad"><label class="btn" style="display:flex;align-items:center;justify-content:center">Przed<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':przed" class="ukryj"></label><label class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;border:2px solid var(--akcent)">'+IK.aparat+' Po<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':po" class="ukryj"></label>'+(pokPo?'<button data-usunfoto="'+pokPo.id+'">Usuń ostatnie</button>':"")+'</div>';
   }
   // ocena AI
@@ -229,7 +268,7 @@ function widokZatwierdz(){
   h += z.map(x => {
     const po = x.zdjecia.filter(p => p.rodzaj==="po").slice(-1)[0];
     const wd = x.ocena && x.ocena.werdykt ? WERD[x.ocena.werdykt] : null;
-    return '<a href="#z'+x.id+'" class="karta" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="/api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>';
+    return '<a href="#z'+x.id+'" class="karta" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>';
   }).join("");
   if (w.length) h += '<h3>Wymiana punktów</h3>' + w.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">'+x.koszt+' pkt · ma '+dz(x.dziecko_id).saldo+'</div><div class="rzad" style="margin-top:8px"><button data-wym="'+x.id+':nie">Jeszcze nie</button><button class="wyb" data-wym="'+x.id+':tak">Zgoda</button></div></div>').join("");
   if (n.length) h += '<h3>Propozycje nagród</h3>' + n.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">proponuje '+x.koszt+' pkt'+(x.cel?" · jako duży cel":"")+'</div><div class="rzad" style="margin-top:8px"><button data-nagr="'+x.id+':nie">Nie</button><button class="wyb" data-nagr="'+x.id+':tak">Dodaj</button></div></div>').join("");
@@ -244,11 +283,15 @@ function widokZlec(){
   if (!moje.find(d => d.id===F.dziecko)) F.dziecko = moje[0].id;
   const d0 = new Date(Date.parse(S.teraz)); d0.setHours(Math.max(d0.getHours()+3, 18)); d0.setMinutes(0);
   const domTerm = S.dzis + "T" + String(Math.min(d0.getHours(),21)).padStart(2,"0") + ":00";
+  const dzW = moje.find(d => d.id===F.dziecko);
   return '<h1>Nowe zadanie</h1>'
-   + '<label class="pole">Dla kogo</label><div class="rzad">'+moje.map(d => '<button data-f="dziecko:'+d.id+'" class="'+(F.dziecko===d.id?"wyb":"")+'">'+esc(d.imie)+'</button>').join("")+'</div>'
+   + '<label class="pole">Dla kogo</label><div class="rzad">'+moje.map(d => '<button data-f="dziecko:'+d.id+'" class="'+(F.dziecko===d.id?"wyb":"")+'">'+esc(d.imie)+(d.wiek?' <span class="mal">'+d.wiek+' l.</span>':"")+'</button>').join("")+'</div>'
+   + '<div class="rzad" style="margin-top:10px"><button data-tryb="katalog" class="'+(KS.tryb==="katalog"?"wyb":"")+'">Z katalogu</button><button data-tryb="zrzut" class="'+(KS.tryb==="zrzut"?"wyb":"")+'">Ze zrzutu ekranu</button></div>'
+   + (KS.tryb==="katalog" ? widokKatalog(dzW) : KS.tryb==="zrzut" ? widokZrzut() : "")
    + '<label class="pole" for="tyt">Co trzeba zrobić</label><input type="text" id="tyt" maxlength="120" placeholder="np. Posprzątać biurko">'
    + '<label class="pole" for="opis">Czego oczekuję</label><textarea id="opis" maxlength="600" placeholder="np. Pusty blat, książki na półce."></textarea>'
-   + (S.ai ? '<div class="mal">AI rozpisze to na kroki i porówna ze zdjęciem.</div>' : '<label class="pole" for="kroki">Kroki (każdy w nowej linii, można pominąć)</label><textarea id="kroki"></textarea>')
+   + '<div style="margin-top:8px"><button id="dopr" style="width:100%">Popraw z AI – czego brakuje w poleceniu?</button></div>' + widokDopr()
+   + '<label class="pole" for="kroki">Kroki (każdy w nowej linii'+(S.ai?"; puste – AI rozpisze samo":", można pominąć")+')</label><textarea id="kroki"></textarea>'
    + '<label class="pole">Jak potwierdzi, że zrobione</label><div class="siatka">'+Object.keys(WER).map(k => '<button data-f="wer:'+k+'" class="'+(F.wer===k?"wyb":"")+'">'+WER[k]+'</button>').join("")+'</div>'
    + (F.wer==="minutnik" ? '<label class="pole" for="min">Ile minut</label><input type="number" id="min" min="1" max="240" value="20">' : "")
    + (F.wer==="zaufanie" ? '<div class="mal" style="margin-top:6px">Co piąte takie zadanie losowo poprosi o zdjęcie.</div>' : "")
@@ -261,6 +304,50 @@ function widokZlec(){
    + (F.dni ? "" : '<label class="krok" style="margin-top:10px"><input type="checkbox" id="pula" '+(F.pula?"checked":"")+'>Do puli – dziecko samo zdecyduje, czy weźmie</label>')
    + '<div style="margin-top:16px"><button class="glowny" id="zlec">Zleć zadanie</button></div>';
 }
+/* ---------- katalog, zrzut ekranu, poprawki AI ---------- */
+let KAT = null, KS = {tryb:"", poziom:null, kat:""}, ZR = null, DP = null;
+const POZIOMY = [[6,"6–9 lat"],[10,"10–12 lat"],[13,"13+ lat"]];
+const poziomDla = w => !w ? 6 : w < 10 ? 6 : w < 13 ? 10 : 13;
+function widokKatalog(d){
+  if (!KAT) { fetch("katalog.json").then(r => r.json()).then(j => { KAT = j; zachowajFormularz(); rysuj(); przywrocFormularz(); }); return '<div class="karta mal">Ładuję katalog…</div>'; }
+  const pz = KS.poziom || poziomDla(d && d.wiek);
+  const lista = KAT.filter(k => k.od === pz);
+  const kategorie = [...new Set(lista.map(k => k.kategoria))];
+  const kat = kategorie.includes(KS.kat) ? KS.kat : kategorie[0];
+  return '<div class="karta" style="margin-top:10px"><div class="mal">Poziom'+(d && d.wiek ? " (" + esc(d.imie) + ": " + d.wiek + " lat)" : "")+'</div><div class="rzad" style="margin:6px 0">'+POZIOMY.map(([v,t]) => '<button data-poziom="'+v+'" class="'+(pz===v?"wyb":"")+'">'+t+'</button>').join("")+'</div>'
+    + '<div class="rzad" style="margin-bottom:6px">'+kategorie.map(k => '<button data-kat="'+esc(k)+'" class="'+(k===kat?"wyb":"")+'" style="min-height:38px;flex:0 0 auto">'+esc(k)+'</button>').join("")+'</div>'
+    + lista.map((k,i) => [k,i]).filter(([k]) => k.kategoria===kat).map(([k]) => '<button data-kz="'+KAT.indexOf(k)+'" style="width:100%;text-align:left;margin-top:6px;display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 12px"><span>'+esc(k.tytul)+'<br><span class="mal" style="font-weight:400">'+WER[k.weryfikacja]+(k.minuty?" "+k.minuty+" min":"")+(k.pora?" · "+PORA[k.pora].toLowerCase():"")+'</span></span><span class="pigu">'+k.punkty+' pkt</span></button>').join("")
+    + '</div>';
+}
+function widokZrzut(){
+  let h = '<div class="karta" style="margin-top:10px"><p class="mal" style="margin-top:0">Zrzut ekranu z dziennika (np. zadania domowe, sprawdziany) albo zdjęcie kartki. AI wypisze zadania, Ty wybierzesz, które zlecić.</p>'
+    + '<label class="btn" style="display:flex;align-items:center;justify-content:center">Wybierz zrzut<input type="file" accept="image/*" id="zrzutplik" class="ukryj"></label>';
+  if (ZR === "czeka") h += '<p class="mal">AI czyta obraz… (do kilku minut)</p>';
+  else if (ZR && !ZR.length) h += '<p class="mal">Nie znalazłem zadań na tym obrazie.</p>';
+  else if (ZR) h += ZR.map((z,i) => '<label class="krok" style="align-items:flex-start;margin-top:8px"><input type="checkbox" data-zr="'+i+'" checked><span><b>'+esc(z.tytul)+'</b>'+(z.termin?' <span class="mal">do '+esc(z.termin.slice(8,10)+"."+z.termin.slice(5,7))+'</span>':"")+(z.opis?'<br><span class="mal">'+esc(z.opis)+'</span>':"")+'</span></label>').join("")
+      + '<button class="glowny" id="zrzlec" style="margin-top:10px">Zleć zaznaczone</button>';
+  return h + '</div>';
+}
+function widokDopr(){
+  if (!DP) return "";
+  if (DP === "czeka") return '<div class="karta mal" style="margin-top:8px">AI czyta polecenie…</div>';
+  return '<div class="karta wazna" style="margin-top:8px"><div class="mal" style="font-weight:600">Propozycja AI</div>'
+    + (DP.brakuje.length ? '<div class="mal" style="margin-top:6px">Czego brakowało:</div>' + DP.brakuje.map(b => '<div class="wpis uw-ic">'+IK.uw+'<span style="color:var(--tekst)">'+esc(b)+'</span></div>').join("") : "")
+    + '<p style="margin:8px 0 4px"><b>'+esc(DP.tytul)+'</b></p><p style="margin:0 0 6px">'+esc(DP.opis)+'</p>'
+    + (DP.kroki.length ? '<div class="mal">Kroki: '+DP.kroki.map(esc).join(" · ")+'</div>' : "")
+    + '<div class="mal">Potwierdzenie: <b>'+WER[DP.weryfikacja]+(DP.minuty?" "+DP.minuty+" min":"")+'</b> · '+DP.punkty+' pkt'+(DP.dlaczego?' – '+esc(DP.dlaczego):"")+'</div>'
+    + (DP.uwaga ? '<div class="mal" style="margin-top:4px">'+esc(DP.uwaga)+'</div>' : "")
+    + '<div class="rzad" style="margin-top:10px"><button data-dp="nie">Zostaw moje</button><button class="wyb" data-dp="tak">Przyjmij</button></div></div>';
+}
+function wypelnij(z){
+  zachowajFormularz();
+  zapis.tyt = z.tytul; zapis.opis = z.opis || ""; zapis.kroki = (z.kroki || []).join("\n");
+  if (z.punkty) zapis.pkt = z.punkty;
+  if (z.minuty) zapis.min = z.minuty;
+  if (z.weryfikacja) F.wer = z.weryfikacja;
+  if (z.pora !== undefined) F.pora = z.pora;
+  rysuj(); przywrocFormularz();
+}
 function widokDzieci(){
   if (!S.dzieci.length) return '<h1>Dzieci</h1><div class="karta mal">Nie masz przypisanych dzieci.</div>';
   return '<h1>Dzieci</h1>' + S.dzieci.map(d => {
@@ -271,6 +358,7 @@ function widokDzieci(){
      + (otw.length ? '<h3>Otwarte</h3>' + otw.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.po_terminie?"po terminie":kiedy(z.termin))+'</span></div>').join("") : "")
      + (pula.length ? '<h3>W puli</h3>' + pula.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+z.punkty+' pkt</span></div>').join("") : "")
      + (sz.length ? '<h3>Powtarzane</h3>' + sz.map(s => '<div class="wiersz" style="min-height:40px"><span>'+esc(s.tytul)+' <span class="mal">· '+s.dni.split("").map(i=>DNI[i-1]).join(" ")+' do '+s.godzina+(s.pora?" · "+PORA[s.pora].toLowerCase():"")+'</span></span>'+(d.prawa.zleca?'<button data-wyl="'+s.id+'" style="min-height:36px">Wyłącz</button>':"")+'</div>').join("") : "")
+     + (d.prawa.zatwierdza ? '<div style="margin-top:10px"><button data-pinreset="'+d.id+'" style="min-height:36px">Skasuj PIN '+esc(d.imie)+'</button></div>' : "")
      + (d.prawa.zatwierdza ? '<h3>Premia albo odjęcie punktów</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="+10 / -10" style="flex:1"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:2"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
      + '</div>';
   }).join("");
@@ -309,71 +397,119 @@ function widokOsoby(){
       + '</div>';
   }
   h += '<h3>Osoby</h3>' + S.osoby.map(o => '<div class="karta"><div class="wiersz"><b>'+esc(o.imie)+' <span class="mal">· '+(o.rola==="dziecko"?"dziecko":"dorosły")+(o.admin?", admin":"")+'</span></b><button data-link="'+o.id+'" style="min-height:36px">Link</button></div>'
+      + ((S.ha_konta||[]).length ? '<label class="pole" for="hu'+o.id+'">Konto Home Assistant (wejście z aplikacji HA bez PIN-u)</label><select id="hu'+o.id+'" data-hu="'+o.id+'"><option value="">– brak –</option>'+S.ha_konta.map(k => '<option value="'+esc(k.id)+'" '+(o.ha_user===k.id?"selected":"")+'>'+esc(k.nazwa)+'</option>').join("")+'</select>' : "")
+      + (o.rola==="dziecko" ? '<label class="pole" for="ru'+o.id+'">Rok urodzenia (do katalogu zadań wg wieku)</label><div class="rzad"><input type="number" id="ru'+o.id+'" value="'+(o.rok_ur||"")+'" placeholder="np. 2013" style="flex:3"><button data-ru="'+o.id+'" style="flex:1">Zapisz</button></div>' : "")
       + '<label class="pole" for="pw'+o.id+'">Powiadomienia (usługa notify w HA, np. mobile_app_telefon)</label><div class="rzad"><input type="text" id="pw'+o.id+'" value="'+esc(o.powiadom)+'" style="flex:3"><button data-pw="'+o.id+'" style="flex:1">Zapisz</button></div>'
-      + '<div class="rzad" style="margin-top:8px"><button data-nowykod="'+o.id+'">Nowy link (stary przestanie działać)</button>'+(o.id!==S.ja.id?'<button data-usunos="'+o.id+'" style="color:var(--zle)">Usuń</button>':"")+'</div></div>').join("");
+      + '<div class="mal" style="margin-top:6px">'+(o.ma_pin?"PIN ustawiony":"bez PIN-u – czeka na pierwsze wejście z linku")+(o.ha?" · połączone z kontem HA":"")+'</div>'
+      + '<div class="rzad" style="margin-top:8px">'+(o.ma_pin?'<button data-pinreset="'+o.id+'">Skasuj PIN</button>':"")+'<button data-nowykod="'+o.id+'">Nowy link (stary przestanie działać)</button>'+(o.id!==S.ja.id?'<button data-usunos="'+o.id+'" style="color:var(--zle)">Usuń</button>':"")+'</div></div>').join("");
+  h += '<details class="karta"><summary style="min-height:36px;font-weight:600">Aplikacja Home Assistant (dostęp spoza domu)</summary><p class="mal">W HA: Ustawienia → Dodatki → „Zadania dzieci” → Konfiguracja. Wklej adres i klucz poniżej oraz token HA (profil → Bezpieczeństwo). Zapisz i uruchom dodatek. Gdy domownik raz otworzy „Zadania” w menu HA, jego konto pojawi się tu przy osobach do przypisania (albo połączy się samo po wpisaniu PIN-u).</p>'
+    + '<label class="pole" for="dadr">Adres aplikacji</label><input type="text" id="dadr" readonly value="'+esc(S.adres||location.origin)+'" onclick="this.select()">'
+    + '<label class="pole" for="dkl">Klucz aplikacji</label><input type="text" id="dkl" readonly value="'+esc(S.klucz_dodatku||"")+'" onclick="this.select()"></details>';
   h += '<details class="karta" open><summary style="min-height:36px;font-weight:600">Dodaj osobę</summary><label class="pole" for="noim">Imię</label><input type="text" id="noim" maxlength="40"><div class="rzad" style="margin-top:8px"><button data-nowa="dziecko">Dziecko</button><button data-nowa="dorosly">Dorosły</button></div></details>'
     + '<div id="linkwyn"></div>';
   return h;
 }
 
 /* ---------- zdarzenia ---------- */
-async function zmniejsz(plik){
+async function zmniejsz(plik, maks){
   const url = URL.createObjectURL(plik);
   try {
     const img = await new Promise((ok, zle) => { const i = new Image(); i.onload = () => ok(i); i.onerror = zle; i.src = url; });
-    const sk = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const sk = Math.min(1, (maks || 1600) / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*sk); c.height = Math.round(img.naturalHeight*sk);
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
     return await new Promise(ok => c.toBlob(ok, "image/jpeg", 0.82));
   } finally { URL.revokeObjectURL(url); }
 }
 function pokazLink(r, kto){
-  $("#linkwyn") ? ($("#linkwyn").innerHTML = '<div class="karta"><b>Link dla: '+esc(kto)+'</b><p class="mal">Otwórz go na telefonie tej osoby i dodaj stronę do ekranu początkowego. Nie wysyłaj go nikomu innemu.</p><input type="text" readonly value="'+esc(location.origin + r.link.replace(/^https?:\/\/[^/]+/, ""))+'" onclick="this.select()"></div>', $("#linkwyn").scrollIntoView()) : toast(r.link);
+  const h = '<div class="karta"><b>Link dla: '+esc(kto)+'</b><p class="mal">Otwórz go w domu na telefonie tej osoby: ustawi swój PIN, potem dodaj stronę do ekranu początkowego. Nie wysyłaj linku nikomu innemu.</p><input type="text" readonly value="'+esc(r.link)+'" onclick="this.select()"></div>';
+  let e = $("#linkwyn");
+  if (!e) { e = document.createElement("div"); e.id = "linkwyn"; $("#app").appendChild(e); }
+  e.innerHTML = h; e.scrollIntoView();
 }
 function podepnij(){
   const A = $("#app");
-  A.querySelectorAll("[data-krok]").forEach(e => e.onchange = () => { const [z,i] = e.dataset.krok.split(":"); akcja("/api/zadanie/"+z+"/kroki", {i:+i, z:e.checked}); });
-  A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("/api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
-  A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("/api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
+  A.querySelectorAll("[data-krok]").forEach(e => e.onchange = () => { const [z,i] = e.dataset.krok.split(":"); akcja("api/zadanie/"+z+"/kroki", {i:+i, z:e.checked}); });
+  A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
+  A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
   A.querySelectorAll("[data-foto]").forEach(e => e.onchange = async () => {
     const [z, r] = e.dataset.foto.split(":"); if (!e.files[0]) return;
     toast("Wysyłam zdjęcie…");
-    try { const b = await zmniejsz(e.files[0]); await akcja("/api/zadanie/"+z+"/zdjecie/"+r, b, r==="po" && S.ai ? "Zdjęcie dodane – komputer je ogląda" : "Zdjęcie dodane", "image/jpeg"); } catch(er) {}
+    try { const b = await zmniejsz(e.files[0]); await akcja("api/zadanie/"+z+"/zdjecie/"+r, b, r==="po" && S.ai ? "Zdjęcie dodane – komputer je ogląda" : "Zdjęcie dodane", "image/jpeg"); } catch(er) {}
   });
-  A.querySelectorAll("[data-usunfoto]").forEach(e => e.onclick = () => akcja("/api/zdjecie/"+e.dataset.usunfoto+"/usun", {}, "Usunięte"));
+  A.querySelectorAll("[data-usunfoto]").forEach(e => e.onclick = () => akcja("api/zdjecie/"+e.dataset.usunfoto+"/usun", {}, "Usunięte"));
   A.querySelectorAll("[data-wyslij]").forEach(e => e.onclick = async () => {
-    try { await akcja("/api/zadanie/"+e.dataset.wyslij+"/wyslij", {komentarz: ($("#kom")||{}).value || ""}, "Wysłane – brawo!"); idz(""); } catch(er) {}
+    try { await akcja("api/zadanie/"+e.dataset.wyslij+"/wyslij", {komentarz: ($("#kom")||{}).value || ""}, "Wysłane – brawo!"); idz(""); } catch(er) {}
   });
-  A.querySelectorAll("[data-dec]").forEach(e => e.onclick = async () => { const [z,d] = e.dataset.dec.split(":"); await akcja("/api/zadanie/"+z+"/decyzja", {decyzja:d, slowo:($("#slowo")||{}).value||""}, d==="poprawka"?"Odesłane do poprawki":"Zatwierdzone"); idz(""); });
-  A.querySelectorAll("[data-usunzad]").forEach(e => e.onclick = async () => { if (e.dataset.pewne) { await akcja("/api/zadanie/"+e.dataset.usunzad+"/usun", {}, "Usunięte"); idz(""); } else { e.dataset.pewne = 1; e.textContent = "Na pewno usunąć? Dotknij jeszcze raz"; } });
-  A.querySelectorAll("[data-wym]").forEach(e => e.onclick = () => { const [w,d] = e.dataset.wym.split(":"); akcja("/api/wymiana/"+w+"/decyzja", {decyzja:d}, d==="tak"?"Zgoda – punkty odjęte":"Odrzucone"); });
-  A.querySelectorAll("[data-nagr]").forEach(e => e.onclick = () => { const [n,d] = e.dataset.nagr.split(":"); akcja("/api/nagroda/"+n+"/decyzja", {decyzja:d}, d==="tak"?"Nagroda dodana":"Odrzucona"); });
-  A.querySelectorAll("[data-usunnagr]").forEach(e => e.onclick = () => akcja("/api/nagroda/"+e.dataset.usunnagr+"/decyzja", {decyzja:"usun"}, "Usunięta"));
-  A.querySelectorAll("[data-wymien]").forEach(e => e.onclick = () => akcja("/api/wymiana", {nagroda_id:+e.dataset.wymien}, "Wysłane do rodzica"));
-  A.querySelectorAll("[data-nowanagr]").forEach(e => e.onclick = () => { const d = e.dataset.nowanagr; akcja("/api/nagroda", {dziecko_id:+d, nazwa:$("#nn"+d).value, koszt:+$("#nk"+d).value, cel:$("#nc"+d).checked}, dziecko()?"Propozycja wysłana":"Dodane"); });
-  A.querySelectorAll("[data-wyl]").forEach(e => e.onclick = () => akcja("/api/szablon/"+e.dataset.wyl+"/wylacz", {}, "Powtarzanie wyłączone"));
-  A.querySelectorAll("[data-premia]").forEach(e => e.onclick = () => { const d = e.dataset.premia; akcja("/api/punkty", {dziecko_id:+d, ile:+$("#pk"+d).value, powod:$("#pp"+d).value}, "Zapisane"); });
+  A.querySelectorAll("[data-dec]").forEach(e => e.onclick = async () => { const [z,d] = e.dataset.dec.split(":"); await akcja("api/zadanie/"+z+"/decyzja", {decyzja:d, slowo:($("#slowo")||{}).value||""}, d==="poprawka"?"Odesłane do poprawki":"Zatwierdzone"); idz(""); });
+  A.querySelectorAll("[data-usunzad]").forEach(e => e.onclick = async () => { if (e.dataset.pewne) { await akcja("api/zadanie/"+e.dataset.usunzad+"/usun", {}, "Usunięte"); idz(""); } else { e.dataset.pewne = 1; e.textContent = "Na pewno usunąć? Dotknij jeszcze raz"; } });
+  A.querySelectorAll("[data-wym]").forEach(e => e.onclick = () => { const [w,d] = e.dataset.wym.split(":"); akcja("api/wymiana/"+w+"/decyzja", {decyzja:d}, d==="tak"?"Zgoda – punkty odjęte":"Odrzucone"); });
+  A.querySelectorAll("[data-nagr]").forEach(e => e.onclick = () => { const [n,d] = e.dataset.nagr.split(":"); akcja("api/nagroda/"+n+"/decyzja", {decyzja:d}, d==="tak"?"Nagroda dodana":"Odrzucona"); });
+  A.querySelectorAll("[data-usunnagr]").forEach(e => e.onclick = () => akcja("api/nagroda/"+e.dataset.usunnagr+"/decyzja", {decyzja:"usun"}, "Usunięta"));
+  A.querySelectorAll("[data-wymien]").forEach(e => e.onclick = () => akcja("api/wymiana", {nagroda_id:+e.dataset.wymien}, "Wysłane do rodzica"));
+  A.querySelectorAll("[data-nowanagr]").forEach(e => e.onclick = () => { const d = e.dataset.nowanagr; akcja("api/nagroda", {dziecko_id:+d, nazwa:$("#nn"+d).value, koszt:+$("#nk"+d).value, cel:$("#nc"+d).checked}, dziecko()?"Propozycja wysłana":"Dodane"); });
+  A.querySelectorAll("[data-wyl]").forEach(e => e.onclick = () => akcja("api/szablon/"+e.dataset.wyl+"/wylacz", {}, "Powtarzanie wyłączone"));
+  A.querySelectorAll("[data-premia]").forEach(e => e.onclick = () => { const d = e.dataset.premia; akcja("api/punkty", {dziecko_id:+d, ile:+$("#pk"+d).value, powod:$("#pp"+d).value}, "Zapisane"); });
   A.querySelectorAll("[data-f]").forEach(e => e.onclick = () => { zachowajFormularz(); const [k, ...v] = e.dataset.f.split(":"); F[k] = k==="dziecko" ? +v.join(":") : v.join(":"); rysuj(); przywrocFormularz(); });
   A.querySelectorAll("[data-dzien]").forEach(e => e.onclick = () => { zachowajFormularz(); const n = e.dataset.dzien; F.dni = F.dni.includes(n) ? F.dni.replace(n,"") : [...F.dni+n].sort().join(""); rysuj(); przywrocFormularz(); });
   if ($("#pula")) $("#pula").onchange = () => { F.pula = $("#pula").checked; };
+  A.querySelectorAll("[data-tryb]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.tryb = KS.tryb===e.dataset.tryb ? "" : e.dataset.tryb; rysuj(); przywrocFormularz(); });
+  A.querySelectorAll("[data-poziom]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.poziom = +e.dataset.poziom; rysuj(); przywrocFormularz(); });
+  A.querySelectorAll("[data-kat]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.kat = e.dataset.kat; rysuj(); przywrocFormularz(); });
+  A.querySelectorAll("[data-kz]").forEach(e => e.onclick = () => { const k = KAT[+e.dataset.kz]; KS.tryb = ""; wypelnij(k); toast("Wypełnione – sprawdź termin i zleć"); $("#tyt").scrollIntoView(); });
+  if ($("#zrzutplik")) $("#zrzutplik").onchange = async () => {
+    const f = $("#zrzutplik").files[0]; if (!f) return;
+    zachowajFormularz(); ZR = "czeka"; rysuj(); przywrocFormularz();
+    try { const b = await zmniejsz(f, 2000); const r = await api("api/zrzut", b, "image/jpeg"); ZR = r.zadania; }
+    catch(er) { ZR = null; toast(er.message); }
+    zachowajFormularz(); rysuj(); przywrocFormularz();
+  };
+  if ($("#zrzlec")) $("#zrzlec").onclick = async () => {
+    const wyb = [...A.querySelectorAll("[data-zr]")].filter(e => e.checked).map(e => ZR[+e.dataset.zr]);
+    let n = 0;
+    for (const z of wyb) {
+      try { await api("api/zadanie", {dziecko_id:F.dziecko, tytul:z.tytul, opis:z.opis, termin: z.termin ? z.termin+"T18:00" : "", weryfikacja:z.weryfikacja, minuty:z.minuty, punkty:z.punkty}); n++; }
+      catch(er) { toast(er.message); }
+    }
+    ZR = null; KS.tryb = ""; toast("Zlecone: " + n); await odswiez();
+  };
+  if ($("#dopr")) $("#dopr").onclick = async () => {
+    zachowajFormularz(); DP = "czeka"; rysuj(); przywrocFormularz();
+    try { DP = await api("api/doprecyzuj", {dziecko_id:F.dziecko, tytul:zapis.tyt||"", opis:zapis.opis||""}); }
+    catch(er) { DP = null; toast(er.message); }
+    zachowajFormularz(); rysuj(); przywrocFormularz();
+  };
+  A.querySelectorAll("[data-dp]").forEach(e => e.onclick = () => { const d = DP; DP = null; if (e.dataset.dp==="tak") wypelnij(d); else { zachowajFormularz(); rysuj(); przywrocFormularz(); } });
   if ($("#zlec")) $("#zlec").onclick = async () => {
     const b = {dziecko_id:F.dziecko, tytul:$("#tyt").value, opis:$("#opis").value, weryfikacja:F.wer, pora:F.pora, punkty:+$("#pkt").value,
       minuty: $("#min") ? +$("#min").value : 0, kroki: $("#kroki") ? $("#kroki").value.split("\n").map(s=>s.trim()).filter(Boolean) : []};
     if (F.dni) { b.dni = F.dni; b.godzina = $("#godz").value; } else { b.termin = $("#term").value; b.pula = F.pula; }
-    try { await akcja("/api/zadanie", b, F.pula ? "Dodane do puli" : "Zlecone"); F.pula = false; zapis = {}; idz("dzieci"); } catch(er) {}
+    try { await akcja("api/zadanie", b, F.pula ? "Dodane do puli" : "Zlecone"); F.pula = false; zapis = {}; DP = null; idz("dzieci"); } catch(er) {}
   };
   // administrator
   A.querySelectorAll("[data-op]").forEach(e => e.onchange = () => {
     const [a, c, co] = e.dataset.op.split(":");
     const z = A.querySelector('[data-op="'+a+':'+c+':zleca"]'), t = A.querySelector('[data-op="'+a+':'+c+':zatwierdza"]');
-    if (co==="jest") akcja("/api/opieka", e.checked ? {dorosly_id:+a, dziecko_id:+c, zleca:true, zatwierdza:true} : {dorosly_id:+a, dziecko_id:+c, usun:true}, "Zapisane");
-    else akcja("/api/opieka", {dorosly_id:+a, dziecko_id:+c, zleca:z.checked, zatwierdza:t.checked}, "Zapisane");
+    if (co==="jest") akcja("api/opieka", e.checked ? {dorosly_id:+a, dziecko_id:+c, zleca:true, zatwierdza:true} : {dorosly_id:+a, dziecko_id:+c, usun:true}, "Zapisane");
+    else akcja("api/opieka", {dorosly_id:+a, dziecko_id:+c, zleca:z.checked, zatwierdza:t.checked}, "Zapisane");
   });
   A.querySelectorAll("[data-link]").forEach(e => e.onclick = () => { const o = S.osoby.find(x => x.id===+e.dataset.link); pokazLink(o, o.imie); });
-  A.querySelectorAll("[data-pw]").forEach(e => e.onclick = () => akcja("/api/osoba/"+e.dataset.pw, {powiadom:$("#pw"+e.dataset.pw).value}, "Zapisane"));
-  A.querySelectorAll("[data-nowykod]").forEach(e => e.onclick = async () => { const o = S.osoby.find(x => x.id===+e.dataset.nowykod); const r = await akcja("/api/osoba/"+o.id, {nowy_kod:true}, "Nowy link gotowy"); pokazLink(r, o.imie); });
-  A.querySelectorAll("[data-usunos]").forEach(e => e.onclick = () => { if (e.dataset.pewne) akcja("/api/osoba/"+e.dataset.usunos, {usun:true}, "Usunięta"); else { e.dataset.pewne = 1; e.textContent = "Na pewno? Dotknij jeszcze raz"; } });
-  A.querySelectorAll("[data-nowa]").forEach(e => e.onclick = async () => { const im = $("#noim").value; const r = await akcja("/api/osoba", {imie:im, rola:e.dataset.nowa}, "Dodane"); pokazLink(r, im); });
+  A.querySelectorAll("[data-hu]").forEach(e => e.onchange = () => akcja("api/osoba/"+e.dataset.hu, {ha_user:e.value}, e.value ? "Konto HA przypisane" : "Odłączone"));
+  A.querySelectorAll("[data-ru]").forEach(e => e.onclick = () => akcja("api/osoba/"+e.dataset.ru, {rok_ur:+$("#ru"+e.dataset.ru).value||0}, "Zapisane"));
+  A.querySelectorAll("[data-pw]").forEach(e => e.onclick = () => akcja("api/osoba/"+e.dataset.pw, {powiadom:$("#pw"+e.dataset.pw).value}, "Zapisane"));
+  A.querySelectorAll("[data-nowykod]").forEach(e => e.onclick = async () => { const o = S.osoby.find(x => x.id===+e.dataset.nowykod); const r = await akcja("api/osoba/"+o.id, {nowy_kod:true}, "Nowy link gotowy"); pokazLink(r, o.imie); });
+  A.querySelectorAll("[data-usunos]").forEach(e => e.onclick = () => { if (e.dataset.pewne) akcja("api/osoba/"+e.dataset.usunos, {usun:true}, "Usunięta"); else { e.dataset.pewne = 1; e.textContent = "Na pewno? Dotknij jeszcze raz"; } });
+  A.querySelectorAll("[data-nowa]").forEach(e => e.onclick = async () => { const im = $("#noim").value; const r = await akcja("api/osoba", {imie:im, rola:e.dataset.nowa}, "Dodane"); pokazLink(r, im); });
+  A.querySelectorAll("[data-pinreset]").forEach(e => e.onclick = async () => {
+    if (!e.dataset.pewne) { e.dataset.pewne = 1; e.textContent = "Na pewno skasować PIN? Dotknij jeszcze raz"; return; }
+    const o = (S.osoby||S.dzieci).find(x => x.id===+e.dataset.pinreset) || {imie:""};
+    try { const r = await akcja("api/osoba/"+e.dataset.pinreset+"/pin_reset", {}, "PIN skasowany"); pokazLink(r, o.imie); } catch(er) {}
+  });
+  if ($("#wyloguj")) $("#wyloguj").onclick = async ev => { ev.preventDefault(); await api("api/wyloguj", {}); S = null; $("#nav").innerHTML = ""; location.hash = ""; logowanie(); };
+  if ($("#pzap")) $("#pzap").onclick = async () => {
+    if ($("#pn1").value !== $("#pn2").value) return toast("PIN-y się różnią.");
+    try { await akcja("api/pin", {pin:$("#pn1").value, stary:($("#pst")||{}).value||""}, "PIN zapisany"); idz(""); } catch(er) {}
+  };
   minutnik();
 }
 let zapis = {};
@@ -387,7 +523,7 @@ function minutnik(){
 // odświeżanie: częściej, gdy AI ocenia; nie w trakcie pisania
 setInterval(() => {
   const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName);
-  if (!pisze && !czekaOdp && document.visibilityState==="visible" && widok!=="zlec") odswiez();
+  if (S && !pisze && !czekaOdp && document.visibilityState==="visible" && widok!=="zlec" && widok!=="pin" && S.ja.ma_pin) odswiez();
 }, 20000);
 setInterval(() => { if (S && S.zadania.some(z => z.ocena_stan==="czeka") && !czekaOdp) { const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName); if (!pisze) odswiez(); } }, 4000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible") odswiez(); });
