@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.7.0"
+WERSJA = "1.7.1"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")

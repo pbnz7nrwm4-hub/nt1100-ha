@@ -31,6 +31,9 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
   „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
 - **Od 1.4/1.5**: „Pomóż mi zacząć” (AI podpowiada dziecku pierwszy krok), licznik prób, „Dziś nie dam rady” z decyzją rodzica,
   zgłoszenie własnego zadania, własne przypomnienia dziecka, ponaglenie rodzica po 2 h, punkty jako kieszonkowe (opcja).
+- **Od 1.7.1**: zdjęcie najpierw zapisuje się w telefonie, potem idzie na serwer (3 próby). Gdy się nie uda, zostaje na karcie
+  „Zdjęcie czeka na wysłanie” i aplikacja ponawia sama (także po zamknięciu strony). Strona nie przerysowuje się, gdy
+  otwarty jest aparat albo galeria.
 - **Od 1.7**: ekran „Ustawienia” dla administratora (link na dole strony) zastępuje polecenia w konsoli: adres i model AI,
   adres i token Home Assistanta, sprawdzenie połączeń, „Zobacz jako dziecko”, „Sprawdź i zaktualizuj teraz”. Ustawienia z
   aplikacji mają pierwszeństwo przed plikiem instalatora. Po zmianie instalatora aktualizacja uruchamia go sama.

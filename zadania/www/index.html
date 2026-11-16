@@ -70,7 +70,53 @@ const STAN = {do_zrobienia:"do zrobienia", wyslane:"czeka na zatwierdzenie", zat
 const WERD = {zrobione:["zrobione","ok"], raczej_zrobione:["raczej zrobione","ok"], niepewne:["niepewne",""], nie_zrobione:["nie widać efektu","zle"]};
 const DNI = ["Pn","Wt","Śr","Cz","Pt","So","Nd"];
 
-function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.remove("ukryj"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.add("ukryj"),3500); }
+/* ---------- zdjęcia: nie giną, gdy sieć albo serwer na chwilę zawiedzie ---------- */
+let WYBOR = 0;                       // kiedy otwarto aparat/galerię; do tego czasu strona się nie przerysowuje
+const wybiera = () => Date.now() - WYBOR < 180000;
+let FOTO = [];                       // zdjęcia czekające na wysłanie (kopie w pamięci telefonu)
+function fotoBaza(){ return new Promise((ok, zle) => { try { const r = indexedDB.open("zadania", 1); r.onupgradeneeded = () => r.result.createObjectStore("zdjecia", {keyPath:"id", autoIncrement:true}); r.onsuccess = () => ok(r.result); r.onerror = () => zle(r.error); } catch(e) { zle(e); } }); }
+async function fotoOp(tryb, f){ const d = await fotoBaza(); return new Promise((ok, zle) => { const t = d.transaction("zdjecia", tryb); const r = f(t.objectStore("zdjecia")); t.oncomplete = () => ok(r && r.result); t.onerror = () => zle(t.error); }); }
+async function fotoWczytaj(){ try { FOTO = (await fotoOp("readonly", st => st.getAll())) || []; } catch(e) {} }
+async function fotoUsun(id){ FOTO = FOTO.filter(x => x.id !== id); try { await fotoOp("readwrite", st => st.delete(id)); } catch(e) {} }
+const czekaj = ms => new Promise(ok => setTimeout(ok, ms));
+async function wyslijFoto(sciezka, blob, opis){
+  /* Zdjęcie najpierw trafia do pamięci telefonu, potem na serwer (3 próby). Gdy się nie uda, zostaje na liście
+     „czeka na wysłanie” i aplikacja ponawia sama – nie trzeba robić zdjęcia drugi raz. */
+  const w = {sciezka, blob, opis, osoba: S && S.ja.id, ts: Date.now()};
+  try { w.id = await fotoOp("readwrite", st => st.add(w)); } catch(e) { w.id = "m" + w.ts; }
+  FOTO.push(w);
+  return fotoPonow(w, 3);
+}
+async function fotoPonow(w, prob){
+  if (w.trwa) { const e = new Error("To zdjęcie właśnie się wysyła."); e.czeka = true; throw e; }
+  w.trwa = true;
+  try { return await fotoProby(w, prob); } finally { w.trwa = false; }
+}
+async function fotoProby(w, prob){
+  let ost;
+  for (let i = 0; i < prob; i++) {
+    if (i) await czekaj(i * 4000);
+    try { const r = await api(w.sciezka, w.blob, "image/jpeg"); await fotoUsun(w.id); return r; }
+    catch(e) { ost = e; if (e.kod && e.kod >= 400 && e.kod < 500 && e.kod !== 408 && e.kod !== 429) { await fotoUsun(w.id); throw e; } }
+  }
+  const er = new Error("Zdjęcie nie wysłało się (" + (ost && ost.kod ? "serwer: " + ost.message : "brak połączenia") + "). Jest zapisane w telefonie – wyślę je sam, gdy połączenie wróci.");
+  er.czeka = true; throw er;
+}
+let FOTO_PONAWIA = false;
+async function fotoPonowWszystkie(){
+  if (FOTO_PONAWIA || !S) return; FOTO_PONAWIA = true;
+  let ok = 0;
+  try { for (const w of FOTO.filter(x => x.osoba === S.ja.id)) { try { await fotoPonow(w, 1); ok++; } catch(e) {} } }
+  finally { FOTO_PONAWIA = false; }
+  if (ok) { toast(ok === 1 ? "Zaległe zdjęcie wysłane" : "Zaległe zdjęcia wysłane: " + ok); await odswiez(); }
+}
+function fotoKarta(){
+  const m = S ? FOTO.filter(x => x.osoba === S.ja.id) : [];
+  if (!m.length) return "";
+  return '<div class="karta wazna"><b>'+(m.length===1?"Zdjęcie czeka na wysłanie":"Zdjęcia czekają na wysłanie: "+m.length)+'</b><div class="mal">Są zapisane w telefonie. Aplikacja ponawia sama, możesz też wysłać teraz.</div>'
+    + m.map(w => '<div class="wiersz" style="margin-top:8px;gap:8px"><span>'+esc(w.opis)+'<div class="mal">'+new Date(w.ts).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})+'</div></span><span style="display:flex;gap:6px"><button data-fotousun="'+w.id+'" style="min-height:40px">Usuń</button><button class="wyb" data-fotoponow="'+w.id+'" style="min-height:40px">Wyślij</button></span></div>').join("") + '</div>';
+}
+function toast(t, dlugo){ const e=$("#toast"); e.textContent=t; e.classList.remove("ukryj"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.add("ukryj"), dlugo ? 9000 : 3500); }
 async function api(sc, dane, typ){
   const o = dane===undefined ? {} : {method:"POST", headers:{"Content-Type": typ||"application/json"}, body: typ ? dane : JSON.stringify(dane)};
   const r = await fetch(sc, o); let j = {};
@@ -170,7 +216,7 @@ function rysuj(){
   else if (dziecko()) h = widok==="pula" ? widokPula() : widok==="nagrody" ? widokNagrody() : widokDzis();
   else h = widok==="zlec" ? widokZlec() : widok==="dzieci" ? widokDzieci() : widok==="nagrody" ? widokNagrody() : widok==="osoby" && S.ja.admin ? widokOsoby() : widok==="ustawienia" && S.ja.admin ? widokUstawienia() : widokZatwierdz();
   if (S.ja.podglad) h = '<div class="karta wazna" style="position:sticky;top:6px;z-index:5"><b>Oglądasz jako '+esc(S.ja.imie)+'</b><div class="mal">Wszystko, co tu klikniesz, zapisuje się naprawdę.</div><button id="podkoniec" style="width:100%;margin-top:8px">Wróć do siebie</button></div>' + h;
-  $("#app").innerHTML = h + (widok==="pin" ? "" : stopka());
+  $("#app").innerHTML = fotoKarta() + h + (widok==="pin" ? "" : stopka());
   podepnij();
 }
 
@@ -572,10 +618,10 @@ function podepnij(){
     try { await api("api/zadanie/"+e.dataset.pomoc+"/pomoc", {}); } catch(er) { toast(er.message); }
     POMOC_CZEKA = 0; await odswiez();
   });
-  const nAI = async (co, f) => { if (NS.czeka) return; NS.czeka = co; rysuj(); try { await f(); } catch(er) { toast(er.message); } NS.czeka = ""; await odswiez(); };
+  const nAI = async (co, f) => { if (NS.czeka) return; NS.czeka = co; rysuj(); try { await f(); } catch(er) { toast(er.message, er.czeka); } NS.czeka = ""; await odswiez(); };
   A.querySelectorAll("[data-ntryb]").forEach(e => e.onclick = () => { const t = ($("#ntemat")||{}).value || ""; NS.tryb = e.dataset.ntryb; rysuj(); $("#ntemat").value = t; });
   if ($("#nstart")) $("#nstart").onclick = async () => { try { const r = await api("api/nauka", {temat:$("#ntemat").value, tryb:NS.tryb}); await odswiez(); idz("n"+r.id); } catch(er) { toast(er.message); } };
-  A.querySelectorAll("[data-nstrona]").forEach(e => e.onchange = () => { const f = e.files[0]; if (!f) return; const id = e.dataset.nstrona; nAI("strona", async () => { const b = await zmniejsz(f, 2000); await api("api/nauka/"+id+"/strona", b, "image/jpeg"); toast("Strona przeczytana"); }); });
+  A.querySelectorAll("[data-nstrona]").forEach(e => e.onchange = () => { WYBOR = 0; const f = e.files[0]; if (!f) return; const id = e.dataset.nstrona; const n = (S.nauka||[]).find(x => x.id === +id) || {temat:""}; nAI("strona", async () => { const b = await zmniejsz(f, 2000); await wyslijFoto("api/nauka/"+id+"/strona", b, "Nauka: "+n.temat); toast("Strona przeczytana"); }); });
   A.querySelectorAll("[data-nuloz]").forEach(e => e.onclick = () => nAI("pytania", () => api("api/nauka/"+e.dataset.nuloz+"/pytania", {})));
   A.querySelectorAll("[data-nodp]").forEach(e => e.onclick = () => { const [id,i] = e.dataset.nodp.split(":"); const t = $("#nodp").value; nAI("odp", () => api("api/nauka/"+id+"/odpowiedz", {i:+i, tekst:t})); });
   A.querySelectorAll("[data-npytaj]").forEach(e => e.onclick = () => { const t = $("#npyt").value; nAI("pytanie", () => api("api/nauka/"+e.dataset.npytaj+"/pytanie", {tekst:t})); });
@@ -592,9 +638,13 @@ function podepnij(){
   A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
   A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
   A.querySelectorAll("[data-foto]").forEach(e => e.onchange = async () => {
-    const [z, r] = e.dataset.foto.split(":"); if (!e.files[0]) return;
+    WYBOR = 0;
+    const [z, r] = e.dataset.foto.split(":"); const f = e.files[0]; if (!f) return;
+    const zad = S.zadania.find(x => x.id === +z) || {tytul:""};
     toast("Wysyłam zdjęcie…");
-    try { const b = await zmniejsz(e.files[0]); await akcja("api/zadanie/"+z+"/zdjecie/"+r, b, r==="po" && S.ai ? "Zdjęcie dodane – komputer je ogląda" : "Zdjęcie dodane", "image/jpeg"); } catch(er) {}
+    try { const b = await zmniejsz(f); await wyslijFoto("api/zadanie/"+z+"/zdjecie/"+r, b, (r==="po"?"Zdjęcie po: ":"Zdjęcie przed: ")+zad.tytul); toast(r==="po" && S.ai ? "Zdjęcie dodane – komputer je ogląda" : "Zdjęcie dodane"); }
+    catch(er) { toast(er.message, true); }
+    await odswiez();
   });
   A.querySelectorAll("[data-usunfoto]").forEach(e => e.onclick = () => akcja("api/zdjecie/"+e.dataset.usunfoto+"/usun", {}, "Usunięte"));
   A.querySelectorAll("[data-wyslij]").forEach(e => e.onclick = async () => {
@@ -620,10 +670,13 @@ function podepnij(){
   A.querySelectorAll("[data-kat]").forEach(e => e.onclick = () => { zachowajFormularz(); KS.kat = e.dataset.kat; rysuj(); przywrocFormularz(); });
   A.querySelectorAll("[data-kz]").forEach(e => e.onclick = () => { const k = KAT[+e.dataset.kz]; KS.tryb = ""; wypelnij(k); toast("Wypełnione – sprawdź termin i zleć"); $("#tyt").scrollIntoView(); });
   if ($("#zrzutplik")) $("#zrzutplik").onchange = async () => {
+    WYBOR = 0;
     const f = $("#zrzutplik").files[0]; if (!f) return;
     zachowajFormularz(); ZR = "czeka"; rysuj(); przywrocFormularz();
-    try { const b = await zmniejsz(f, 2000); const r = await api("api/zrzut", b, "image/jpeg"); ZR = r.zadania; }
-    catch(er) { ZR = null; toast(er.message); }
+    try { const b = await zmniejsz(f, 2000); let r, ost;
+      for (let i = 0; i < 3 && !r; i++) { if (i) await czekaj(i * 4000); try { r = await api("api/zrzut", b, "image/jpeg"); } catch(e) { ost = e; if (e.kod && e.kod < 500) break; } }
+      if (!r) throw ost; ZR = r.zadania; }
+    catch(er) { ZR = null; toast(er.message + " Wybierz zrzut jeszcze raz.", true); }
     zachowajFormularz(); rysuj(); przywrocFormularz();
   };
   if ($("#zrzlec")) $("#zrzlec").onclick = async () => {
@@ -669,6 +722,9 @@ function podepnij(){
     const o = (S.osoby||S.dzieci).find(x => x.id===+e.dataset.pinreset) || {imie:""};
     try { const r = await akcja("api/osoba/"+e.dataset.pinreset+"/pin_reset", {}, "PIN skasowany"); pokazLink(r, o.imie); } catch(er) {}
   });
+  A.querySelectorAll('input[type="file"]').forEach(e => { e.addEventListener("click", () => { WYBOR = Date.now(); }); e.addEventListener("cancel", () => { WYBOR = 0; }); });
+  A.querySelectorAll("[data-fotoponow]").forEach(e => e.onclick = async () => { const w = FOTO.find(x => String(x.id) === e.dataset.fotoponow); if (!w) return; e.disabled = true; e.textContent = "Wysyłam…"; try { await fotoPonow(w, 1); toast("Wysłane"); } catch(er) { toast(er.czeka ? "Nadal nie ma połączenia z aplikacją. Spróbuj za chwilę." : er.message, true); } await odswiez(); });
+  A.querySelectorAll("[data-fotousun]").forEach(e => e.onclick = async () => { if (!e.dataset.pewne) { e.dataset.pewne = 1; e.textContent = "Na pewno?"; return; } await fotoUsun(FOTO.find(x => String(x.id) === e.dataset.fotousun)?.id); rysuj(); });
   if ($("#podkoniec")) $("#podkoniec").onclick = async () => { await api("api/podglad/koniec", {}); widok = ""; history.replaceState(null, "", location.pathname); await odswiez(); };
   A.querySelectorAll("[data-podglad]").forEach(e => e.onclick = async () => { await api("api/podglad", {dziecko_id:+e.dataset.podglad}); widok = ""; history.replaceState(null, "", location.pathname); await odswiez(); window.scrollTo(0,0); });
   const zapiszUst = async (dane, co) => { try { toast("Sprawdzam połączenie…"); const w = await api("api/ustawienia", dane); UT = w; await odswiez(); toast(w[co].ok ? "Zapisane, działa." : "Zapisane, ale połączenie nie działa."); } catch(e) { toast(e.message); } };
@@ -693,11 +749,12 @@ function minutnik(){
 // odświeżanie: częściej, gdy AI ocenia; nie w trakcie pisania
 setInterval(() => {
   const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName);
-  if (S && !pisze && !czekaOdp && document.visibilityState==="visible" && widok!=="zlec" && widok!=="pin" && widok!=="ustawienia" && S.ja.ma_pin) odswiez();
+  if (S && !pisze && !czekaOdp && !wybiera() && document.visibilityState==="visible" && widok!=="zlec" && widok!=="pin" && widok!=="ustawienia" && S.ja.ma_pin) odswiez();
+  if (S && FOTO.length) fotoPonowWszystkie();
 }, 20000);
-setInterval(() => { if (S && S.zadania.some(z => z.ocena_stan==="czeka") && !czekaOdp) { const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName); if (!pisze) odswiez(); } }, 4000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible" && widok!=="ustawienia") odswiez(); });
-odswiez();
+setInterval(() => { if (S && S.zadania.some(z => z.ocena_stan==="czeka") && !czekaOdp && !wybiera()) { const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName); if (!pisze) odswiez(); } }, 4000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible" && widok!=="ustawienia" && widok!=="zlec" && !wybiera() && !czekaOdp) odswiez().then(fotoPonowWszystkie); });
+fotoWczytaj().then(odswiez).then(fotoPonowWszystkie);
 </script>
 </body>
 </html>
