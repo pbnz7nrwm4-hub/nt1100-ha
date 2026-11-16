@@ -564,6 +564,26 @@ def stan_dla(ja):
     return wynik
 
 
+def podsumowanie():
+    """Liczby dla tablicy w domu (strona Aplikacje na Wyse): bez zdjęć, opisów i kodów."""
+    wygeneruj()
+    d = dzis()
+    od7 = iso(teraz() - dt.timedelta(days=7))
+    dzieci = []
+    for c in q("SELECT * FROM osoby WHERE rola='dziecko' AND aktywna=1 ORDER BY imie"):
+        z = q("SELECT stan FROM zadania WHERE dziecko_id=? AND dzien=? AND pula=0", c["id"], d)
+        dzieci.append({"imie": c["imie"], "punkty": saldo(c["id"]) - zarezerwowane(c["id"]), "seria": seria(c["id"]),
+                       "dzis": len(z), "dzis_zrobione": sum(1 for x in z if x["stan"] in KONCOWE or x["stan"] == "wyslane"),
+                       "tydzien_punkty": tydzien(c["id"])})
+    return {"wersja": WERSJA, "dzieci": dzieci,
+            "do_zatwierdzenia": q1("SELECT COUNT(*) n FROM zadania WHERE stan='wyslane'")["n"]
+            + q1("SELECT COUNT(*) n FROM wymiany WHERE stan='czeka'")["n"],
+            "tydzien_zatwierdzone": q1("SELECT COUNT(*) n FROM zadania WHERE stan IN ('zatwierdzone','czesciowo') AND zatwierdzone>=?",
+                                       od7)["n"],
+            "po_terminie": q1("SELECT COUNT(*) n FROM zadania WHERE stan IN ('do_zrobienia','do_poprawki') AND pula=0 "
+                              "AND termin IS NOT NULL AND termin<?", iso(teraz()))["n"]}
+
+
 # ---------- akcje ----------
 def tekst(v, n=200):
     return str(v or "").strip()[:n]
@@ -1184,6 +1204,9 @@ class H(BaseHTTPRequestHandler):
                 return self.wyslij(302, b"", naglowki=[("Location", "../"), ciastko(tok)])
             if sc == "/api/zdrowie":
                 return self.wyslij(200, {"ok": True, "wersja": WERSJA})
+            if sc == "/api/podsumowanie" and not self.headers.get("X-Zadania-Klucz"):   # tylko bezpośrednio w domu
+                with BLOKADA:
+                    return self.wyslij(200, podsumowanie())
             if sc == "/api/logowanie":
                 ha = self.dodatek_ha()
                 with BLOKADA:

@@ -396,6 +396,14 @@ class TestZadania(unittest.TestCase):
             self.assertTrue(k["minuty"] or k["weryfikacja"] != "minutnik")
         self.assertEqual(zapytaj(None, "/katalog.json")[0], 200)
 
+    def test_d_podsumowanie(self):
+        s, r = zapytaj(None, "/api/podsumowanie")
+        self.assertEqual(s, 200)
+        self.assertIn("Dziecko A", [d["imie"] for d in r["dzieci"]])
+        self.assertTrue({"punkty", "seria", "dzis", "dzis_zrobione", "tydzien_punkty"} <= set(r["dzieci"][0]))
+        self.assertNotIn("kod", json.dumps(r))
+        self.assertEqual(zapytaj(None, "/api/podsumowanie", nag={"X-Zadania-Klucz": "x"})[0], 401)   # nie przez dodatek
+
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})
         self.assertEqual(o["werdykt"], "niepewne")
