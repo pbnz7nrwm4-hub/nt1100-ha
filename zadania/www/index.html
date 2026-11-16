@@ -151,10 +151,10 @@ const doZatw = () => S.zadania.filter(z => (z.stan==="wyslane" || z.prosba) && d
 
 function rysujNav(){
   let p;
-  if (dziecko()) p = [["","Dziś"],["pula","Pula"],["nagrody","Nagrody"]];
+  if (dziecko()) p = [["","Dziś"],["nauka","Nauka"],["pula","Pula"],["nagrody","Nagrody"]];
   else { p = [["","Zatwierdź"],["zlec","Zleć"],["dzieci","Dzieci"],["nagrody","Nagrody"]]; if (S.ja.admin) p.push(["osoby","Osoby"]); }
   const n = dziecko() ? 0 : doZatw();
-  $("#nav").innerHTML = p.map(([h,t]) => '<a href="#'+h+'" class="'+((widok===h || (h==="" && /^z\d/.test(widok)))?"akt":"")+'">'+t+(h==="" && n ? ' <span class="lic">'+n+'</span>' : "")+'</a>').join("");
+  $("#nav").innerHTML = p.map(([h,t]) => '<a href="#'+h+'" class="'+((widok===h || (h==="" && /^z\d/.test(widok)) || (h==="nauka" && /^n\d/.test(widok)))?"akt":"")+'">'+t+(h==="" && n ? ' <span class="lic">'+n+'</span>' : "")+'</a>').join("");
 }
 
 function rysuj(){
@@ -165,6 +165,8 @@ function rysuj(){
   let h;
   if (widok==="pin") h = widokPin(false);
   else if (m) h = widokZadania(+m[1]);
+  else if (dziecko() && /^n\d+$/.test(widok)) h = widokSesja(+widok.slice(1));
+  else if (dziecko() && widok==="nauka") h = widokNauka();
   else if (dziecko()) h = widok==="pula" ? widokPula() : widok==="nagrody" ? widokNagrody() : widokDzis();
   else h = widok==="zlec" ? widokZlec() : widok==="dzieci" ? widokDzieci() : widok==="nagrody" ? widokNagrody() : widok==="osoby" && S.ja.admin ? widokOsoby() : widokZatwierdz();
   $("#app").innerHTML = h + (widok==="pin" ? "" : stopka());
@@ -270,6 +272,53 @@ function widokZadania(id){
       + '<div class="rzad" style="margin-top:8px"><button data-dec="'+z.id+':poprawka">Do poprawki</button><button data-dec="'+z.id+':czesciowo">Częściowo · +'+Math.floor(z.punkty/2)+'</button></div>');
   }
   if (!ja && d.prawa?.zleca && !["zatwierdzone","czesciowo"].includes(z.stan)) h += '<div style="margin-top:20px"><button data-usunzad="'+z.id+'" style="width:100%;color:var(--zle)">Usuń zadanie</button></div>';
+  return h;
+}
+
+/* ---------- nauka z AI ---------- */
+const TRYB = {przepytaj:["Przepytaj mnie","5 pytań po kolei, od razu wiesz, czy dobrze"], test:["Test przed sprawdzianem","10 pytań, wynik na końcu"], wytlumacz:["Wytłumacz mi","Ty pytasz o to, czego nie rozumiesz"]};
+const OCENA = {dobrze:["dobrze","ok"], czesciowo:["prawie",""], zle:["jeszcze nie","zle"]};
+const POZA = "To nie wynika z Twoich materiałów – sprawdź w podręczniku albo zapytaj nauczyciela.";
+let NS = {tryb:"przepytaj", czeka:""};
+function naukaWynik(n){ return n.tryb==="wytlumacz" ? "pytań: "+n.pytan_dziecka : n.ile ? n.dobrze+" z "+n.ile+(n.odpowiedzi<n.ile?" (w trakcie)":"") : "nie zaczęte"; }
+function widokNauka(){
+  if (!S.ai) return '<h1>Nauka</h1><div class="karta mal">Komputer w domu, który pomaga w nauce, nie jest jeszcze podłączony. Powiedz rodzicowi.</div>';
+  let h = '<h1>Uczę się</h1><div class="karta"><label class="pole" for="ntemat" style="margin-top:0">Czego się uczysz?</label><input type="text" id="ntemat" maxlength="120" placeholder="np. Ułamki zwykłe, Powstanie styczniowe">'
+    + '<label class="pole">Jak chcesz się uczyć?</label>' + Object.keys(TRYB).map(k => '<button data-ntryb="'+k+'" class="'+(NS.tryb===k?"wyb":"")+'" style="width:100%;margin-bottom:8px;text-align:left;padding:10px 14px;height:auto"><b>'+TRYB[k][0]+'</b><div class="mal">'+TRYB[k][1]+'</div></button>').join("")
+    + '<button class="glowny" id="nstart" style="margin-top:6px">Dalej – dodam materiały</button></div>';
+  const r = S.nauka || [];
+  if (r.length) h += '<h3>Ostatnio</h3>' + r.slice(0,8).map(n => '<a href="#n'+n.id+'" class="karta" style="display:block;color:inherit;text-decoration:none"><div class="wiersz"><b>'+esc(n.temat)+'</b><span class="mal">'+naukaWynik(n)+'</span></div><div class="mal">'+TRYB[n.tryb][0]+' · '+kiedy(n.start)+(n.minuty?' · '+n.minuty+' min':"")+'</div></a>').join("");
+  return h;
+}
+function widokSesja(id){
+  const n = (S.nauka||[]).find(x => x.id===id);
+  if (!n) return '<h1>Nauka</h1><div class="karta mal">Nie ma takiej nauki.</div>';
+  const cz = t => NS.czeka===t;
+  let h = '<div class="wiersz" style="justify-content:flex-start;gap:12px"><a class="btn" href="#nauka" aria-label="Wróć" style="display:flex;align-items:center;justify-content:center;min-width:46px;min-height:46px;border:1px solid var(--linia);border-radius:12px;text-decoration:none;color:inherit">←</a><div><h2>'+esc(n.temat)+'</h2><div class="mal">'+TRYB[n.tryb][0]+(n.minuty?' · '+n.minuty+' min':"")+'</div></div></div>';
+  const mozeMat = !n.ile && n.strony < 3 && !n.koniec;
+  h += '<div class="karta" style="margin-top:12px"><div class="wiersz"><b>Materiały</b><span class="mal">'+(n.strony ? n.strony+" z 3 stron" : n.ma_material ? "notatki wpisane" : "brak")+'</span></div>'
+    + (n.ma_material ? "" : '<div class="mal" style="margin-top:6px">Zrób zdjęcie notatek albo strony z podręcznika. Bez materiału komputer pyta z własnej wiedzy i może nie trafić w to, co było na lekcji.</div>')
+    + (mozeMat ? '<label class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;min-height:46px;border:2px solid var(--akcent);border-radius:12px">'+IK.aparat+' '+(cz("strona")?"Komputer czyta stronę…":n.strony?"Dodaj kolejną stronę":"Zrób zdjęcie strony")+'<input type="file" accept="image/*" capture="environment" data-nstrona="'+n.id+'" class="ukryj"></label>' : "") + '</div>';
+  if (n.tryb==="wytlumacz") {
+    h += (n.rozmowa||[]).map(r => '<div class="karta"><div class="mal" style="font-weight:600">Pytasz</div><div>'+esc(r.p)+'</div><div class="mal" style="font-weight:600;margin-top:8px">Odpowiedź</div><div>'+esc(r.o)+'</div>'+(r.poza?'<div class="wpis uw-ic" style="margin-top:8px">'+IK.uw+'<span style="color:var(--tekst)"><b>Uwaga:</b> '+POZA+'</span></div>':"")+'</div>').join("");
+    if (!n.koniec) h += '<label class="pole" for="npyt">Czego nie rozumiesz?</label><textarea id="npyt" maxlength="400" placeholder="np. Jak sprowadzić ułamki do wspólnego mianownika?"></textarea><button class="glowny" data-npytaj="'+n.id+'" style="margin-top:10px">'+(cz("pytanie")?"Komputer w domu myśli…":"Zapytaj")+'</button><button data-nkoniec="'+n.id+'" style="width:100%;margin-top:8px">Kończę naukę</button>';
+    else h += '<div class="karta mal">Nauka zakończona. Zadanych pytań: '+n.pytan_dziecka+'.</div>';
+    return h;
+  }
+  if (!n.ile) return h + '<button class="glowny" data-nuloz="'+n.id+'" style="margin-top:12px">'+(cz("pytania")?"Komputer układa pytania…":"Ułóż pytania")+'</button>';
+  const test = n.tryb==="test", koniec = n.odpowiedzi >= n.ile;
+  if (koniec) h += '<div class="karta wazna" style="text-align:center"><div class="mal">Wynik</div><div style="font-size:36px;font-weight:700">'+n.dobrze+' z '+n.ile+'</div>'+(n.czesciowo?'<div class="mal">i '+n.czesciowo+' prawie dobrze</div>':"")+'<div class="mal" style="margin-top:6px">'+(n.dobrze===n.ile?"Komplet. Świetna robota.":"Przeczytaj jeszcze raz to, co poszło gorzej, i spróbuj jutro.")+'</div></div>';
+  n.pytania.forEach((p, i) => {
+    const pierwsze = n.pytania.findIndex(x => !x.ocena) === i;
+    if (!p.ocena && !pierwsze) return;
+    h += '<div class="karta '+(pierwsze?"wazna":"")+'"><div class="wiersz" style="align-items:flex-start"><b>'+(i+1)+'. '+esc(p.p)+'</b>'+(p.ocena && (!test || koniec) ? '<span class="pigu '+OCENA[p.ocena][1]+'">'+OCENA[p.ocena][0]+'</span>' : "")+'</div>'
+      + (p.poza ? '<div class="mal" style="margin-top:4px">pytanie spoza Twoich materiałów</div>' : "");
+    if (p.ocena) h += '<div class="mal" style="margin-top:8px">Twoja odpowiedź</div><div>'+esc(p.moja)+'</div>' + (!test || koniec ? '<div class="mal" style="margin-top:8px">'+esc(p.komentarz)+'</div><div class="mal" style="margin-top:6px">Wzorcowa odpowiedź: '+esc(p.wzor)+'</div>' : '<div class="mal" style="margin-top:6px">Zapisane. Wynik zobaczysz na końcu.</div>');
+    else h += '<textarea id="nodp" maxlength="600" placeholder="Napisz swoimi słowami. Jeśli nie wiesz, napisz „nie wiem”." style="margin-top:10px"></textarea><button class="glowny" data-nodp="'+n.id+':'+i+'" style="margin-top:10px">'+(cz("odp")?"Komputer sprawdza…":test?"Dalej":"Sprawdź")+'</button>';
+    h += '</div>';
+  });
+  if (koniec && n.poza) h += '<div class="karta mal">'+IK.uw+' Część pytań była spoza Twoich materiałów. '+POZA+'</div>';
+  if (koniec) h += '<a class="btn" href="#nauka" style="display:flex;align-items:center;justify-content:center;min-height:46px;border:1px solid var(--linia);border-radius:12px;text-decoration:none;color:inherit">Nowa nauka</a>';
   return h;
 }
 
@@ -391,6 +440,7 @@ function widokDzieci(){
      + (otw.length ? '<h3>Otwarte</h3>' + otw.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.po_terminie?"po terminie":kiedy(z.termin))+'</span></div>').join("") : "")
      + (pula.length ? '<h3>W puli</h3>' + pula.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+z.punkty+' pkt</span></div>').join("") : "")
      + (sz.length ? '<h3>Powtarzane</h3>' + sz.map(s => '<div class="wiersz" style="min-height:40px"><span>'+esc(s.tytul)+' <span class="mal">· '+s.dni.split("").map(i=>DNI[i-1]).join(" ")+' do '+s.godzina+(s.pora?" · "+PORA[s.pora].toLowerCase():"")+'</span></span>'+(d.prawa.zleca?'<button data-wyl="'+s.id+'" style="min-height:36px">Wyłącz</button>':"")+'</div>').join("") : "")
+     + ((S.nauka||[]).some(n => n.dziecko_id===d.id) ? '<h3>Nauka z komputerem (7 dni)</h3>' + S.nauka.filter(n => n.dziecko_id===d.id).slice(0,6).map(n => '<div class="wiersz" style="min-height:40px;border-top:1px solid var(--linia2)"><span>'+esc(n.temat)+'<div class="mal">'+TRYB[n.tryb][0]+' · '+kiedy(n.start)+(n.minuty?' · '+n.minuty+' min':"")+(n.poza?' · '+n.poza+'× poza materiałem':"")+'</div></span><b>'+naukaWynik(n)+'</b></div>').join("") : "")
      + (przypomnieniaLista(d.id, false) ? '<h3>Przypomnienia dziecka</h3>' + przypomnieniaLista(d.id, false) : "")
      + (d.prawa.zatwierdza && d.grosze && d.saldo-d.zarezerwowane > 0 ? '<div style="margin-top:10px"><button data-wyplata="'+d.id+'" style="width:100%">Wypłaciłem kieszonkowe '+zl(d.saldo-d.zarezerwowane, d.grosze)+' – wyzeruj punkty</button></div>' : "")
      + (d.prawa.zatwierdza ? '<div style="margin-top:10px"><button data-pinreset="'+d.id+'" style="min-height:36px">Skasuj PIN '+esc(d.imie)+'</button></div>' : "")
@@ -497,6 +547,14 @@ function podepnij(){
     try { await api("api/zadanie/"+e.dataset.pomoc+"/pomoc", {}); } catch(er) { toast(er.message); }
     POMOC_CZEKA = 0; await odswiez();
   });
+  const nAI = async (co, f) => { if (NS.czeka) return; NS.czeka = co; rysuj(); try { await f(); } catch(er) { toast(er.message); } NS.czeka = ""; await odswiez(); };
+  A.querySelectorAll("[data-ntryb]").forEach(e => e.onclick = () => { const t = ($("#ntemat")||{}).value || ""; NS.tryb = e.dataset.ntryb; rysuj(); $("#ntemat").value = t; });
+  if ($("#nstart")) $("#nstart").onclick = async () => { try { const r = await api("api/nauka", {temat:$("#ntemat").value, tryb:NS.tryb}); await odswiez(); idz("n"+r.id); } catch(er) { toast(er.message); } };
+  A.querySelectorAll("[data-nstrona]").forEach(e => e.onchange = () => { const f = e.files[0]; if (!f) return; const id = e.dataset.nstrona; nAI("strona", async () => { const b = await zmniejsz(f, 2000); await api("api/nauka/"+id+"/strona", b, "image/jpeg"); toast("Strona przeczytana"); }); });
+  A.querySelectorAll("[data-nuloz]").forEach(e => e.onclick = () => nAI("pytania", () => api("api/nauka/"+e.dataset.nuloz+"/pytania", {})));
+  A.querySelectorAll("[data-nodp]").forEach(e => e.onclick = () => { const [id,i] = e.dataset.nodp.split(":"); const t = $("#nodp").value; nAI("odp", () => api("api/nauka/"+id+"/odpowiedz", {i:+i, tekst:t})); });
+  A.querySelectorAll("[data-npytaj]").forEach(e => e.onclick = () => { const t = $("#npyt").value; nAI("pytanie", () => api("api/nauka/"+e.dataset.npytaj+"/pytanie", {tekst:t})); });
+  A.querySelectorAll("[data-nkoniec]").forEach(e => e.onclick = () => akcja("api/nauka/"+e.dataset.nkoniec+"/koniec", {}, "Nauka zapisana"));
   A.querySelectorAll("[data-ndr]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.ndr+"/niedamrady", {powod:($("#ndrp")||{}).value||""}, "Prośba wysłana do rodzica"));
   A.querySelectorAll("[data-prosba]").forEach(e => e.onclick = () => { const [z,d] = e.dataset.prosba.split(":"); akcja("api/zadanie/"+z+"/prosba", {decyzja:d}, d==="jutro"?"Przesunięte na jutro":"Zostaje na dziś"); });
   A.querySelectorAll("[data-usunprz]").forEach(e => e.onclick = () => akcja("api/przypomnienie/"+e.dataset.usunprz+"/usun", {}, "Usunięte"));
