@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.4.0"
+WERSJA = "1.5.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -86,11 +86,14 @@ CREATE INDEX IF NOT EXISTS zad_dz ON zadania(dziecko_id, dzien);
 CREATE TABLE IF NOT EXISTS sesje(token TEXT PRIMARY KEY, osoba_id INTEGER, ts TEXT);
 CREATE TABLE IF NOT EXISTS ustawienia(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS ha_konta(id TEXT PRIMARY KEY, nazwa TEXT, ts TEXT);
+CREATE TABLE IF NOT EXISTS notatki(id INTEGER PRIMARY KEY, osoba_id INTEGER, tekst TEXT, kiedy TEXT, wyslane INTEGER DEFAULT 0, ts TEXT);
 """
 KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT DEFAULT ''"),
            ("osoby", "ha_user", "TEXT DEFAULT ''"), ("osoby", "pin_bledy", "INTEGER DEFAULT 0"),
            ("osoby", "pin_blokada", "TEXT DEFAULT ''"), ("osoby", "rok_ur", "INTEGER DEFAULT 0"),
-           ("zadania", "pomoc", "TEXT DEFAULT ''"), ("zadania", "proby", "INTEGER DEFAULT 0"))
+           ("zadania", "pomoc", "TEXT DEFAULT ''"), ("zadania", "proby", "INTEGER DEFAULT 0"),
+           ("zadania", "ponaglono", "INTEGER DEFAULT 0"), ("zadania", "prosba", "TEXT DEFAULT ''"),
+           ("zadania", "wlasne", "INTEGER DEFAULT 0"), ("osoby", "grosze", "INTEGER DEFAULT 0"))
 
 
 class Blad(Exception):
@@ -591,7 +594,7 @@ def stan_dla(ja):
     for c in moje_dzieci(ja):
         pr = opieka(ja, c["id"])
         dzieci.append({"id": c["id"], "imie": c["imie"], "saldo": saldo(c["id"]), "zarezerwowane": zarezerwowane(c["id"]),
-                       "wiek": (teraz().year - c["rok_ur"]) if c["rok_ur"] else None,
+                       "wiek": (teraz().year - c["rok_ur"]) if c["rok_ur"] else None, "grosze": c["grosze"] or 0,
                        "tydzien": tydzien(c["id"]), "seria": seria(c["id"]),
                        "prawa": {"zleca": pr["zleca"], "zatwierdza": pr["zatwierdza"]}})
     ids = [c["id"] for c in dzieci] or [-1]
@@ -609,12 +612,14 @@ def stan_dla(ja):
                     "ma_pin": bool(ja["pin_hash"]), "przez_ha": bool(ja.get("_przez_ha"))},
              "dzieci": dzieci, "zadania": [zadanie_dla(z, ja) for z in zad], "nagrody": nagr, "wymiany": wym}
     wynik["punkty"] = q("SELECT * FROM punkty WHERE dziecko_id IN (" + zn + ") ORDER BY id DESC LIMIT 60", *ids)
+    wynik["przypomnienia"] = q("SELECT id, osoba_id, tekst, kiedy, wyslane FROM notatki WHERE osoba_id IN (" + zn + ") AND kiedy>=? "
+                               "ORDER BY kiedy", *ids, d)
     if ja["rola"] != "dziecko":
         wynik["szablony"] = q("SELECT * FROM szablony WHERE aktywny=1 AND dziecko_id IN (" + zn + ") ORDER BY dziecko_id, pora, tytul",
                               *ids)
     if ja["admin"]:
         wynik["osoby"] = [{"id": o["id"], "imie": o["imie"], "rola": o["rola"], "admin": o["admin"], "powiadom": o["powiadom"],
-                           "rok_ur": o["rok_ur"] or None, "ha_user": o["ha_user"],
+                           "rok_ur": o["rok_ur"] or None, "ha_user": o["ha_user"], "grosze": o["grosze"] or 0,
                            "link": link(o), "ma_pin": bool(o["pin_hash"]), "ha": bool(o["ha_user"])}
                           for o in q("SELECT * FROM osoby WHERE aktywna=1 ORDER BY rola DESC, imie")]
         wynik["klucz_dodatku"] = klucz_dodatku(utworz=True)
@@ -978,6 +983,8 @@ def a_osoba_zmien(ja, oid, b):
             if r and not 1990 <= r <= teraz().year:
                 raise Blad(400, "Rok urodzenia, np. 2013.")
             ex("UPDATE osoby SET rok_ur=? WHERE id=?", r, oid)
+        if "grosze" in b:   # kieszonkowe: ile groszy za 1 punkt (0 = wyłączone)
+            ex("UPDATE osoby SET grosze=? WHERE id=?", max(0, min(1000, int(b["grosze"] or 0))), oid)
         if b.get("nowy_kod"):
             ex("UPDATE osoby SET kod=? WHERE id=?", nowy_kod(), oid)
             usun_sesje(oid)
@@ -1063,6 +1070,114 @@ def a_doprecyzuj(ja, b):
             "kroki": [tekst(x, 80) for x in (o.get("kroki") or [])[:6] if str(x).strip()],
             "punkty": pk, "weryfikacja": wer, "minuty": mn, "uwaga": tekst(o.get("uwaga"), 200),
             "dlaczego": tekst(o.get("dlaczego"), 200)}
+
+
+def a_nie_dam_rady(ja, zid, b):
+    """Dziecko prosi o przesunięcie zadania i podaje powód; decyduje rodzic."""
+    powod = tekst(b.get("powod"), 200)
+    if not powod:
+        raise Blad(400, "Napisz krótko, dlaczego.")
+    with BLOKADA:
+        z = zadanie_moje(ja, zid, "dziecko")
+        if z["stan"] not in ("do_zrobienia", "do_poprawki") or z["pula"]:
+            raise Blad(409, "Tego zadania nie da się już przesunąć.")
+        if z["prosba"]:
+            raise Blad(409, "Prośba już wysłana. Poczekaj na odpowiedź.")
+        ex("UPDATE zadania SET prosba=? WHERE id=?", powod, zid)
+        dz = osoba(z["dziecko_id"])
+    for o in zatwierdzajacy(z["dziecko_id"]):
+        powiadom(o, "Prośba o przesunięcie", "%s: %s – %s" % (dz["imie"], z["tytul"], powod), "/#z%d" % zid)
+    return {"ok": True}
+
+
+def a_prosba(ja, zid, b):
+    """Rodzic odpowiada na „nie dam rady”: jutro (termin i dzień +1) albo zostaje."""
+    dec = b.get("decyzja")
+    if dec not in ("jutro", "zostaje"):
+        raise Blad(400, "Decyzja: jutro albo zostaje.")
+    with BLOKADA:
+        z = zadanie_moje(ja, zid, "zatwierdza")
+        if not z["prosba"]:
+            raise Blad(409, "Nie ma prośby do rozpatrzenia.")
+        if dec == "jutro":
+            jutro = teraz().date() + dt.timedelta(days=1)
+            godz = z["termin"][11:16] if z["termin"] else "18:00"
+            ex("UPDATE zadania SET prosba='', termin=?, dzien=?, przypomniano=0 WHERE id=?",
+               "%sT%s" % (jutro.isoformat(), godz), jutro.isoformat(), zid)
+        else:
+            ex("UPDATE zadania SET prosba='' WHERE id=?", zid)
+    powiadom(osoba(z["dziecko_id"]), z["tytul"], "Przesunięte na jutro." if dec == "jutro" else "Zostaje na dziś. Dasz radę!",
+             "/#z%d" % zid)
+    return {"ok": True}
+
+
+def a_zgloszenie(ja, b):
+    """Dziecko zgłasza coś, co zrobiło samo z siebie; punkty przyznaje rodzic przy zatwierdzaniu."""
+    if ja["rola"] != "dziecko":
+        raise Blad(403, "To zgłasza dziecko.")
+    tyt = tekst(b.get("tytul"), 120)
+    if not tyt:
+        raise Blad(400, "Napisz, co zrobiłaś albo zrobiłeś.")
+    with BLOKADA:
+        if q1("SELECT COUNT(*) AS n FROM zadania WHERE dziecko_id=? AND wlasne=1 AND dzien=?", ja["id"], dzis())["n"] >= 3:
+            raise Blad(409, "Dziś już 3 zgłoszenia. Resztę jutro.")
+        zid = dodaj_zadanie({"dziecko_id": ja["id"], "tytul": tyt, "opis": tekst(b.get("opis"), 300), "punkty": 0,
+                             "weryfikacja": "zaufanie", "zleca_id": ja["id"], "dzien": dzis()})
+        ex("UPDATE zadania SET stan='wyslane', wyslane=?, wlasne=1, wymaga_zdjecia=0 WHERE id=?", iso(teraz()), zid)
+    for o in zatwierdzajacy(ja["id"]):
+        powiadom(o, "Zrobione z własnej inicjatywy", "%s: %s" % (ja["imie"], tyt), "/#z%d" % zid)
+    return {"zadanie_id": zid}
+
+
+def a_przypomnienie(ja, b):
+    """Własne przypomnienie (np. kartkówka w czwartek): powiadomienie o podanej porze, widać je też na ekranie „Dziś”."""
+    t = tekst(b.get("tekst"), 160)
+    if not t:
+        raise Blad(400, "Napisz, o czym przypomnieć.")
+    kiedy = termin_ok(b.get("kiedy"))
+    if not kiedy:
+        raise Blad(400, "Wybierz dzień i godzinę.")
+    with BLOKADA:
+        if q1("SELECT COUNT(*) AS n FROM notatki WHERE osoba_id=? AND wyslane=0", ja["id"])["n"] >= 30:
+            raise Blad(409, "Masz już 30 przypomnień. Usuń stare.")
+        nid = ex("INSERT INTO notatki(osoba_id,tekst,kiedy,ts) VALUES(?,?,?,?)", ja["id"], t, kiedy, iso(teraz()))
+    return {"id": nid}
+
+
+def a_przypomnienie_usun(ja, nid):
+    with BLOKADA:
+        n = q1("SELECT * FROM notatki WHERE id=?", nid)
+        if not n or n["osoba_id"] != ja["id"]:
+            raise Blad(404, "Nie ma takiego przypomnienia.")
+        ex("DELETE FROM notatki WHERE id=?", nid)
+    return {"ok": True}
+
+
+def wyslij_przypomnienia():
+    with BLOKADA:
+        lista = q("SELECT * FROM notatki WHERE wyslane=0 AND kiedy<=?", iso(teraz()))
+        for n in lista:
+            ex("UPDATE notatki SET wyslane=1 WHERE id=?", n["id"])
+    for n in lista:
+        powiadom(osoba(n["osoba_id"]), "Przypomnienie", n["tekst"], "/")
+    return len(lista)
+
+
+def ponaglenia():
+    """Zadanie czeka na zatwierdzenie ponad 2 h → jedno przypomnienie dla zatwierdzających (tylko 7–22)."""
+    t = teraz()
+    if not 7 <= t.hour < 22:
+        return 0
+    with BLOKADA:
+        lista = q("SELECT * FROM zadania WHERE stan='wyslane' AND ponaglono=0 AND wyslane<=?", iso(t - dt.timedelta(hours=2)))
+        for z in lista:
+            ex("UPDATE zadania SET ponaglono=1 WHERE id=?", z["id"])
+    for z in lista:
+        dz = osoba(z["dziecko_id"])
+        for o in zatwierdzajacy(z["dziecko_id"]):
+            powiadom(o, "Czeka na Twoją decyzję", "%s: %s (od ponad 2 godzin)" % (dz["imie"] if dz else "", z["tytul"]),
+                     "/#z%d" % z["id"])
+    return len(lista)
 
 
 def a_pomoc(ja, zid):
@@ -1208,6 +1323,8 @@ def petla_tla():
         try:
             wygeneruj()
             przypomnienia()
+            wyslij_przypomnienia()
+            ponaglenia()
             podsumowanie_tygodnia()
             if teraz().hour == 3:
                 sprzataj_zdjecia()
@@ -1220,6 +1337,11 @@ def petla_tla():
 TRASY_POST = [
     (r"^/api/zadanie$", lambda ja, m, b, raw: a_zadanie(ja, b)),
     (r"^/api/zadanie/(\d+)/kroki$", lambda ja, m, b, raw: a_kroki(ja, int(m[1]), b)),
+    (r"^/api/zadanie/(\d+)/niedamrady$", lambda ja, m, b, raw: a_nie_dam_rady(ja, int(m[1]), b)),
+    (r"^/api/zadanie/(\d+)/prosba$", lambda ja, m, b, raw: a_prosba(ja, int(m[1]), b)),
+    (r"^/api/zgloszenie$", lambda ja, m, b, raw: a_zgloszenie(ja, b)),
+    (r"^/api/przypomnienie$", lambda ja, m, b, raw: a_przypomnienie(ja, b)),
+    (r"^/api/przypomnienie/(\d+)/usun$", lambda ja, m, b, raw: a_przypomnienie_usun(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/pomoc$", lambda ja, m, b, raw: a_pomoc(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/wez$", lambda ja, m, b, raw: a_wez(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/start$", lambda ja, m, b, raw: a_start(ja, int(m[1]))),

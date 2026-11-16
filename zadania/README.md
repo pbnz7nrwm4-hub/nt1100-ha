@@ -29,6 +29,8 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
 - **Ze zrzutu ekranu**: zrzut z dziennika szkolnego albo zdjęcie kartki – AI wypisuje zadania i terminy, rodzic wybiera.
 - **Od 1.3**: krótki formularz zlecania (reszta pod „Więcej”), szybkie zatwierdzanie zadań bez zdjęcia z listy, historia punktów,
   „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
+- **Od 1.4/1.5**: „Pomóż mi zacząć” (AI podpowiada dziecku pierwszy krok), licznik prób, „Dziś nie dam rady” z decyzją rodzica,
+  zgłoszenie własnego zadania, własne przypomnienia dziecka, ponaglenie rodzica po 2 h, punkty jako kieszonkowe (opcja).
 - **Popraw z AI**: czego brakuje w poleceniu, lepszy opis, kroki, punkty i forma potwierdzenia z uzasadnieniem.
 
 ## Instalacja w kontenerze
