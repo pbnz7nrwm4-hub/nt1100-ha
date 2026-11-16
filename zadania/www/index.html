@@ -211,6 +211,7 @@ function widokPula(){
 }
 
 /* ---------- jedno zadanie ---------- */
+let POMOC_CZEKA = 0;
 function widokZadania(id){
   const z = S.zadania.find(x => x.id === id);
   if (!z) return '<div class="karta">Tego zadania już nie ma na liście. <a href="#">Wróć</a></div>';
@@ -228,6 +229,12 @@ function widokZadania(id){
       + '<div><div class="mal">Po'+(po.length>1?" ("+po.length+")":"")+'</div>'+(pokPo?'<img src="api/zdjecie/'+pokPo.id+'" alt="Zdjęcie po">':'<div class="pusto">'+(ja&&otw?"zrób zdjęcie":"brak")+'</div>')+'</div></div>';
     if (ja && otw) h += '<div class="rzad"><label class="btn" style="display:flex;align-items:center;justify-content:center">Przed<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':przed" class="ukryj"></label><label class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;border:2px solid var(--akcent)">'+IK.aparat+' Po<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':po" class="ukryj"></label>'+(pokPo?'<button data-usunfoto="'+pokPo.id+'">Usuń ostatnie</button>':"")+'</div>';
   }
+  // pomoc na start (dziecko prosi samo; rodzic widzi, że prosiło)
+  if (z.pomoc) h += '<div class="karta"><div class="mal" style="font-weight:600">'+(ja?"Od czego zacząć":"Dziecko poprosiło o podpowiedź ("+z.pomoc.ile+"×)")+'</div><div style="margin:6px 0"><b>'+esc(z.pomoc.pierwszy_krok)+'</b></div>'
+    + z.pomoc.wskazowki.map(w => '<div class="wpis">'+IK.ok+'<span>'+esc(w)+'</span></div>').join("")
+    + (z.pomoc.minuty ? '<div class="mal">Całość zajmie około '+z.pomoc.minuty+' min.</div>' : "") + (ja && z.pomoc.otucha ? '<div class="mal">'+esc(z.pomoc.otucha)+'</div>' : "") + '</div>';
+  if (ja && otw && S.ai && !z.pula && (!z.pomoc || z.pomoc.ile < 3)) h += '<button data-pomoc="'+z.id+'" style="width:100%;margin-top:8px">'+(POMOC_CZEKA===z.id ? "Komputer w domu myśli…" : z.pomoc ? "Podpowiedz inaczej" : "Pomóż mi zacząć")+'</button>';
+  if (!ja && z.proby > 1) h += '<div class="karta mal">Zdjęcie „po” robione '+z.proby+' razy – dziecko poprawiało przed wysłaniem.</div>';
   // ocena AI
   if (z.ocena_stan==="czeka") h += '<div class="karta mal">Komputer w domu ogląda zdjęcie…</div>';
   else if (z.ocena && z.ocena.werdykt) {
@@ -465,6 +472,12 @@ function pokazLink(r, kto){
 function podepnij(){
   const A = $("#app");
   A.querySelectorAll("[data-krok]").forEach(e => e.onchange = () => { const [z,i] = e.dataset.krok.split(":"); akcja("api/zadanie/"+z+"/kroki", {i:+i, z:e.checked}); });
+  A.querySelectorAll("[data-pomoc]").forEach(e => e.onclick = async () => {
+    if (POMOC_CZEKA) return;
+    POMOC_CZEKA = +e.dataset.pomoc; e.textContent = "Komputer w domu myśli…"; e.disabled = true;
+    try { await api("api/zadanie/"+e.dataset.pomoc+"/pomoc", {}); } catch(er) { toast(er.message); }
+    POMOC_CZEKA = 0; await odswiez();
+  });
   A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
   A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
   A.querySelectorAll("[data-foto]").forEach(e => e.onchange = async () => {

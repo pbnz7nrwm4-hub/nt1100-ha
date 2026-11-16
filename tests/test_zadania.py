@@ -56,6 +56,9 @@ class Atrapa(BaseHTTPRequestHandler):
                 r = {"tytul": "Posprzątać biurko", "opis": "Pusty blat do 18:00.", "brakuje": ["termin", "co znaczy porządek"],
                      "kroki": ["Książki", "Kable"], "punkty": "12", "weryfikacja": "zdjecie", "dlaczego": "efekt widać",
                      "minuty": 0, "uwaga": "Pasuje do wieku."}
+            elif "pomocnikiem dziecka" in d["prompt"]:
+                r = {"pierwszy_krok": "Zdejmij wszystko z blatu na łóżko", "wskazowki": ["Najpierw książki", "Potem kable", "a", "b"],
+                     "minuty": "15", "otucha": "Dasz radę."}
             elif d.get("images"):
                 r = {"werdykt": "raczej zrobione", "punkty": [{"ok": True, "tekst": "Pusty blat"},
                                                               {"ok": False, "tekst": "Kabel z lewej"}],
@@ -463,6 +466,26 @@ class TestZadania(unittest.TestCase):
         usl, d = POWIADOMIENIA[-1]
         self.assertEqual(usl, "mobile_app_mama")
         self.assertRegex(d["message"], r"Dziecko A: \d+ z \d+ zadań, \+\d+ pkt")
+
+    def test_g_pomoc_i_proby(self):
+        """„Pomóż mi zacząć” (limit 3, tylko dziecko) i licznik zdjęć „po” dla rodzica."""
+        s, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Biurko 2", "weryfikacja": "zdjecie"})
+        zid = r["zadanie_id"]
+        self.assertEqual(zapytaj(self.b, "/api/zadanie/%d/pomoc" % zid, {})[0], 403)
+        self.assertEqual(zapytaj(self.m, "/api/zadanie/%d/pomoc" % zid, {})[0], 403)
+        s, r = zapytaj(self.a, "/api/zadanie/%d/pomoc" % zid, {})
+        self.assertEqual(s, 200, r)
+        self.assertEqual((r["pierwszy_krok"], len(r["wskazowki"]), r["minuty"], r["ile"]),
+                         ("Zdejmij wszystko z blatu na łóżko", 3, 15, 1))
+        self.assertIn("NIE rozwiązuj", AI["pytania"][-1]["prompt"])
+        zapytaj(self.a, "/api/zadanie/%d/pomoc" % zid, {})
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/pomoc" % zid, {})[1]["ile"], 3)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/pomoc" % zid, {})[0], 409)
+        for _ in range(2):
+            self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/zdjecie/po" % zid, JPG, "image/jpeg")[0], 200)
+        _, st = zapytaj(self.m, "/api/stan")
+        z = [x for x in st["zadania"] if x["id"] == zid][0]
+        self.assertEqual((z["proby"], z["pomoc"]["ile"]), (2, 3))
 
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})
