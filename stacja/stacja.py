@@ -25,10 +25,11 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.4"
+WERSJA = "1.0.5"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
+AKT_JEDNOSTKA = os.environ.get("STACJA_AKT_JEDNOSTKA", "/etc/systemd/system/stacja-aktualizacja.path")
 HISTORIA = os.path.join(KAT, "historia.jsonl")
 ESPTOOL = os.environ.get("STACJA_ESPTOOL", sys.executable + " -m esptool").split()
 # Najpierw stała nazwa z /dev/serial/by-id (gdy jest), potem zwykły port USB CDC.
@@ -469,6 +470,18 @@ def dla_claude(nazwa, linii=80):
 
 # ---------------------------------------------------------------- stan dla strony
 
+def aktualizacja():
+    """Kiedy aktualizator ostatnio sprawdzał repozytorium i czy przycisk „Zaktualizuj teraz” ma kto obsłużyć
+    (jednostka stacja-aktualizacja.path pojawia się po instalatorze z 1.0.5)."""
+    try:
+        with open(os.path.join(KAT, "aktualizacja"), encoding="utf-8") as f:
+            kiedy = f.read().strip()
+    except OSError:
+        kiedy = None
+    return {"sprawdzono": kiedy, "przycisk": os.path.exists(AKT_JEDNOSTKA),
+            "czeka": os.path.exists(os.path.join(KAT, "aktualizuj"))}
+
+
 def stan():
     lst = budowy()
     dz = dzienniki(10)
@@ -482,7 +495,8 @@ def stan():
             "na_ekranie": na_ekranie, "budowy": [{k: v for k, v in b.items() if k != "sciezka"} for b in lst[:8]],
             "najnowsza": ({k: v for k, v in lst[0].items() if k != "sciezka"} if lst else None),
             "dzienniki": dz, "historia": historia(15), "klucz": bool(klucz()), "sprawdzono": STAN["sprawdzono"],
-            "blad_budow": STAN["blad_budow"], "blad_wgrania": blad_wgrania(), "fala2": {"wgran": wgran, "nagran": nagr}}
+            "blad_budow": STAN["blad_budow"], "blad_wgrania": blad_wgrania(), "fala2": {"wgran": wgran, "nagran": nagr},
+            "aktualizacja": aktualizacja()}
 
 
 # ---------------------------------------------------------------- serwer
@@ -535,6 +549,12 @@ class H(BaseHTTPRequestHandler):
             return self.wyslij(200, {"ok": True})
         if path == "/api/stop":
             nagrywaj_stop()
+            return self.wyslij(200, {"ok": True})
+        if path == "/api/aktualizuj":
+            # znacznik dla systemd (stacja-aktualizacja.path); aktualizator czeka, aż nic się nie wgrywa
+            with open(os.path.join(KAT, "aktualizuj"), "w") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M"))
+            komunikat("Sprawdzam aktualizację Stacji – jeśli jest nowa wersja, strona odświeży się sama za chwilę.")
             return self.wyslij(200, {"ok": True})
         if path == "/api/sprawdz":
             return self.wyslij(200, {"ok": w_tle(sprawdz_budowy)})

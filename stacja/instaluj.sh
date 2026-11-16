@@ -90,15 +90,20 @@ cat > /usr/local/sbin/stacja-aktualizuj <<EOT
 set -euo pipefail
 cd $KOD
 PRZED=\$(git rev-parse HEAD:stacja)
+INST=\$(git rev-parse HEAD:stacja/instaluj.sh)
 git fetch -q --depth 1 origin main
 git reset -q --hard origin/main
 PO=\$(git rev-parse HEAD:stacja)
+rm -f $DANE/aktualizuj
+date '+%Y-%m-%d %H:%M' > $DANE/aktualizacja; chown stacja:stacja $DANE/aktualizacja
 if [ "\$PRZED" != "\$PO" ]; then
   python3 -m py_compile stacja/stacja.py
   for i in \$(seq 1 60); do
     curl -fsS http://127.0.0.1:$PORT/api/stan 2>/dev/null | grep -q '"zadanie": null' && break
     sleep 10
   done
+  # Zmienił się instalator (nowe usługi, uprawnienia): uruchamiam go ponownie, żeby nie trzeba było konsoli.
+  if [ "\$INST" != "\$(git rev-parse HEAD:stacja/instaluj.sh)" ]; then exec bash $KOD/stacja/instaluj.sh $PORT; fi
   systemctl restart stacja
   echo "Stacja zaktualizowana"
 fi
@@ -111,6 +116,18 @@ Description=Stacja ekranu – aktualizacja z repozytorium
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/stacja-aktualizuj
+EOT
+# Przycisk „Zaktualizuj teraz” na stronie: Stacja zapisuje plik-znacznik, a ta jednostka uruchamia aktualizację.
+cat > /etc/systemd/system/stacja-aktualizacja.path <<EOT
+[Unit]
+Description=Stacja ekranu – aktualizacja na prośbę ze strony
+
+[Path]
+PathExists=$DANE/aktualizuj
+Unit=stacja-aktualizacja.service
+
+[Install]
+WantedBy=multi-user.target
 EOT
 cat > /etc/systemd/system/stacja-aktualizacja.timer <<EOT
 [Unit]
@@ -126,7 +143,8 @@ WantedBy=timers.target
 EOT
 
 systemctl daemon-reload
-systemctl enable -q --now stacja.service stacja-aktualizacja.timer
+rm -f "$DANE/aktualizuj"
+systemctl enable -q --now stacja.service stacja-aktualizacja.timer stacja-aktualizacja.path
 systemctl restart stacja.service
 sleep 2
 systemctl is-active --quiet stacja && echo "Stacja działa: http://$(hostname -I | awk '{print $1}'):$PORT" || { journalctl -u stacja -n 30 --no-pager; exit 1; }
