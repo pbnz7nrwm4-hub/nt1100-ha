@@ -94,6 +94,11 @@ class Stacja(unittest.TestCase):
         # 2. strona i stan
         self.assertIn("Stacja ekranu", urllib.request.urlopen(self.url).read().decode())
         st = json.loads(urllib.request.urlopen(self.url + "api/stan").read())
+        self.assertFalse(st["aktualizacja"]["przycisk"])  # brak jednostki .path w teście
+        self.assertTrue(self.post("api/aktualizuj")["ok"])
+        self.assertTrue(os.path.exists(os.path.join(T, "st", "aktualizuj")))
+        self.assertTrue(json.loads(urllib.request.urlopen(self.url + "api/stan").read())["aktualizacja"]["czeka"])
+        os.remove(os.path.join(T, "st", "aktualizuj"))
         self.assertEqual(st["najnowsza"]["wersja"], "2.16.0")
         self.assertTrue(st["port"])
         # 3. wgranie poprzedniej wersji z nagrywaniem od startu

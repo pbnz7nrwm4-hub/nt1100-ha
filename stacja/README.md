@@ -21,6 +21,10 @@ Instalator zakłada użytkownika `stacja` (grupa `dialout`), kod w `/opt/stacja`
 dane w `/var/lib/stacja` (archiwum budów, dzienniki, historia), usługę `stacja` i sprawdzanie aktualizacji kodu
 co godzinę. Ponowne uruchomienie zostawia dane i klucz.
 
+Od 1.0.5 na dole strony jest **„Zaktualizuj teraz”** (Stacja zostawia znacznik, jednostka `stacja-aktualizacja.path`
+uruchamia aktualizację, gdy nic się nie wgrywa). Gdy zmieni się sam instalator, aktualizator uruchamia go ponownie,
+więc konsola nie jest potrzebna. Instalacje sprzed 1.0.5 potrzebują jednego ręcznego `bash /opt/stacja/stacja/instaluj.sh`.
+
 ## Klucz do budów (tylko do odczytu)
 
 Budowy ekranu leżą w prywatnym repozytorium firmware (gałąź z wynikami). Stacja pobiera je co 5 minut kluczem,
