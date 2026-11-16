@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#F6F5F1">
+<title>Zadania</title>
+<style>
+:root{--tlo:#F6F5F1;--karta:#FFFFFF;--tekst:#1C1C1A;--szary:#57564F;--linia:#D6D4CC;--linia2:#ECEAE3;--akcent:#0F766E;--akcent2:#134E4A;--akcentj:#E6F2F0;--pom:#9A3412;--pomj:#FFF1E6;--zle:#B42318}
+@media (prefers-color-scheme:dark){:root{--tlo:#161614;--karta:#22221F;--tekst:#F2F1EC;--szary:#B5B3AA;--linia:#45443F;--linia2:#33322E;--akcent:#2BA597;--akcent2:#A7E3DB;--akcentj:#173A36;--pom:#F4A06B;--pomj:#3A2416;--zle:#F97066}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--tlo);color:var(--tekst);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:560px;margin:0 auto;padding:16px 16px 96px}
+h1{font-size:26px;margin:4px 0 2px}h2{font-size:20px;margin:0}h3{font-size:13px;font-weight:600;color:var(--szary);margin:18px 0 8px;text-transform:none}
+.mal{font-size:13px;color:var(--szary)}
+.karta{background:var(--karta);border-radius:16px;padding:14px 16px;margin-bottom:10px}
+.karta.wazna{border:2px solid var(--akcent)}
+.wiersz{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pigu{border-radius:999px;padding:5px 11px;font-weight:700;font-size:13px;white-space:nowrap;background:var(--pomj);color:var(--pom)}
+.pigu.ok{background:var(--akcentj);color:var(--akcent2)}
+.pigu.zle{background:transparent;border:1px solid var(--zle);color:var(--zle)}
+.pasek{height:10px;border-radius:999px;background:var(--linia2);overflow:hidden}.pasek>div{height:100%;background:var(--akcent);border-radius:999px}
+button,.btn{font:inherit;font-weight:600;min-height:46px;border-radius:12px;border:1px solid var(--linia);background:var(--karta);color:var(--tekst);padding:0 14px;cursor:pointer}
+button.glowny{background:var(--akcent);border-color:var(--akcent);color:#fff;font-weight:700;width:100%;min-height:52px}
+button.wyb{border:2px solid var(--akcent);background:var(--akcentj);color:var(--akcent2)}
+button:disabled{opacity:.5}
+.rzad{display:flex;gap:8px;flex-wrap:wrap}.rzad>*{flex:1}
+.siatka{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+label.pole{display:block;font-size:13px;font-weight:600;color:var(--szary);margin:12px 0 6px}
+input[type=text],input[type=number],input[type=datetime-local],input[type=time],textarea,select{width:100%;min-height:46px;border-radius:12px;border:1px solid var(--linia);background:var(--karta);color:var(--tekst);padding:10px 14px;font:inherit}
+textarea{min-height:70px;resize:vertical}
+.krok{display:flex;align-items:center;gap:10px;min-height:40px}
+.krok input{width:22px;height:22px;accent-color:var(--akcent)}
+.zdj{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.zdj img{width:100%;height:160px;object-fit:cover;border-radius:12px;background:var(--linia2)}
+.zdj .pusto{height:160px;border-radius:12px;background:var(--linia2);display:flex;align-items:center;justify-content:center;color:var(--szary);font-size:13px;text-align:center;padding:8px}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--karta);border-top:1px solid var(--linia2);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
+nav a{flex:1;max-width:140px;text-align:center;padding:10px 4px 12px;color:var(--szary);text-decoration:none;font-size:12px;font-weight:600;min-height:56px}
+nav a.akt{color:var(--akcent)}
+nav a .lic{background:var(--pom);color:#fff;border-radius:999px;padding:0 6px;font-size:11px;margin-left:2px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:80px;background:var(--tekst);color:var(--tlo);padding:10px 16px;border-radius:12px;font-size:14px;max-width:90%;z-index:9}
+.ok-ic{color:var(--akcent)}.uw-ic{color:var(--pom)}
+.wpis{display:flex;gap:10px;align-items:flex-start;margin:6px 0}
+.lista>.karta:last-child{margin-bottom:0}
+.prawo{display:flex;gap:6px}
+.prawo label{display:flex;align-items:center;gap:4px;font-size:13px;min-height:36px}
+a{color:var(--akcent)}
+.ukryj{display:none}
+</style>
+</head>
+<body>
+<main id="app"><p class="mal">Ładuję…</p></main>
+<nav id="nav"></nav>
+<div id="toast" class="toast ukryj" role="status"></div>
+<script>
+"use strict";
+let S = null, widok = location.hash.slice(1) || "", dzieckoWyb = null, czekaOdp = false;
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const IK = {
+  ok:'<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  uw:'<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>',
+  aparat:'<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px"><path d="M4 7h3l2-3h6l2 3h3v13H4z"/><circle cx="12" cy="13" r="4"/></svg>',
+  gw:'<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5-6.5-4.5-6.5 4.5 2-7.5L2 9h7z"/></svg>'
+};
+const WER = {zdjecie:"Zdjęcie po", zeszyt:"Zdjęcie zeszytu", minutnik:"Minutnik", zaufanie:"Na zaufanie"};
+const PORA = {"":"W ciągu dnia", rano:"Poranek", popoludnie:"Popołudnie", wieczor:"Wieczór"};
+const STAN = {do_zrobienia:"do zrobienia", wyslane:"czeka na zatwierdzenie", zatwierdzone:"zatwierdzone", czesciowo:"częściowo", do_poprawki:"do poprawki"};
+const WERD = {zrobione:["zrobione","ok"], raczej_zrobione:["raczej zrobione","ok"], niepewne:["niepewne",""], nie_zrobione:["nie widać efektu","zle"]};
+const DNI = ["Pn","Wt","Śr","Cz","Pt","So","Nd"];
+
+function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.remove("ukryj"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.add("ukryj"),3500); }
+async function api(sc, dane, typ){
+  const o = dane===undefined ? {} : {method:"POST", headers:{"Content-Type": typ||"application/json"}, body: typ ? dane : JSON.stringify(dane)};
+  const r = await fetch(sc, o); let j = {};
+  try { j = await r.json(); } catch(e) {}
+  if (!r.ok) { const er = new Error(j.blad || ("Błąd " + r.status)); er.dane = j; er.kod = r.status; throw er; }
+  return j;
+}
+async function odswiez(){
+  try { S = await api("/api/stan"); rysuj(); }
+  catch(e){ $("#app").innerHTML = e.kod===401 ? '<div class="karta"><h2>Zadania</h2><p>Otwórz swój osobisty link (dostaniesz go od administratora). Potem dodaj tę stronę do ekranu początkowego.</p></div>' : '<div class="karta">'+esc(e.message)+'</div>'; $("#nav").innerHTML=""; }
+}
+async function akcja(sc, dane, msg, typ){
+  if (czekaOdp) return; czekaOdp = true;
+  try { const r = await api(sc, dane, typ); if (msg) toast(msg); await odswiez(); return r; }
+  catch(e){ toast(e.message); throw e; }
+  finally { czekaOdp = false; }
+}
+function idz(w){ location.hash = w; }
+window.addEventListener("hashchange", () => { widok = location.hash.slice(1); rysuj(); scrollTo(0,0); });
+
+const dziecko = () => S.ja.rola === "dziecko";
+const dz = id => S.dzieci.find(d => d.id === id) || {imie:"?"};
+const czas = s => s ? s.slice(11,16) : "";
+function kiedy(s){
+  if (!s) return "";
+  const d = s.slice(0,10), dzis = S.dzis;
+  const jutro = new Date(Date.parse(dzis+"T12:00:00")+864e5).toISOString().slice(0,10);
+  return (d===dzis ? "dziś" : d===jutro ? "jutro" : d.slice(8,10)+"."+d.slice(5,7)) + " " + czas(s);
+}
+function zostalo(s){
+  if (!s) return "";
+  const m = Math.round((Date.parse(s) - Date.parse(S.teraz)) / 60000);
+  if (m < 0) return "po terminie";
+  if (m < 60) return "jeszcze " + m + " min";
+  const h = Math.floor(m/60);
+  return h < 24 ? "jeszcze " + h + " h " + (m%60) + " min" : "do " + kiedy(s);
+}
+const doZatw = () => S.zadania.filter(z => z.stan==="wyslane" && dz(z.dziecko_id).prawa?.zatwierdza).length
+  + S.wymiany.filter(w => w.stan==="czeka" && dz(w.dziecko_id).prawa?.zatwierdza).length
+  + S.nagrody.filter(n => n.stan==="propozycja" && dz(n.dziecko_id).prawa?.zatwierdza).length;
+
+function rysujNav(){
+  let p;
+  if (dziecko()) p = [["","Dziś"],["pula","Pula"],["nagrody","Nagrody"]];
+  else { p = [["","Zatwierdź"],["zlec","Zleć"],["dzieci","Dzieci"],["nagrody","Nagrody"]]; if (S.ja.admin) p.push(["osoby","Osoby"]); }
+  const n = dziecko() ? 0 : doZatw();
+  $("#nav").innerHTML = p.map(([h,t]) => '<a href="#'+h+'" class="'+((widok===h || (h==="" && /^z\d/.test(widok)))?"akt":"")+'">'+t+(h==="" && n ? ' <span class="lic">'+n+'</span>' : "")+'</a>').join("");
+}
+
+function rysuj(){
+  if (!S) return;
+  rysujNav();
+  const m = widok.match(/^z(\d+)$/);
+  let h;
+  if (m) h = widokZadania(+m[1]);
+  else if (dziecko()) h = widok==="pula" ? widokPula() : widok==="nagrody" ? widokNagrody() : widokDzis();
+  else h = widok==="zlec" ? widokZlec() : widok==="dzieci" ? widokDzieci() : widok==="nagrody" ? widokNagrody() : widok==="osoby" && S.ja.admin ? widokOsoby() : widokZatwierdz();
+  $("#app").innerHTML = h;
+  podepnij();
+}
+
+/* ---------- dziecko ---------- */
+function widokDzis(){
+  const ja = S.dzieci[0] || {saldo:0, seria:0};
+  const moje = S.zadania.filter(z => !z.pula);
+  const dzis = moje.filter(z => z.dzien === S.dzis || ["do_zrobienia","do_poprawki"].includes(z.stan));
+  const d = new Date(Date.parse(S.dzis+"T12:00:00"));
+  let h = '<div class="wiersz"><div><div class="mal">'+d.toLocaleDateString("pl-PL",{weekday:"long", day:"numeric", month:"long"})+'</div><h1>Cześć, '+esc(S.ja.imie)+'</h1></div><span class="pigu">'+IK.gw+' '+(ja.saldo-ja.zarezerwowane)+' pkt</span></div>';
+  for (const pora of ["rano","popoludnie","wieczor"]) {
+    const r = dzis.filter(z => z.pora===pora && z.dzien===S.dzis);
+    if (!r.length) continue;
+    const zr = r.filter(z => z.stan!=="do_zrobienia" && z.stan!=="do_poprawki").length;
+    h += '<div class="karta" style="margin-top:12px"><div class="wiersz"><b>'+PORA[pora]+'</b><b class="ok-ic">'+zr+' z '+r.length+'</b></div><div class="pasek" style="margin:10px 0"><div style="width:'+Math.round(100*zr/r.length)+'%"></div></div>'
+      + r.map(z => '<div class="wiersz" style="min-height:40px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.stan==="do_zrobienia"?"":STAN[z.stan])+'</span></div>').join("")
+      + (ja.seria ? '<div class="mal">Seria: '+ja.seria+' dni z rzędu.</div>' : "") + '</div>';
+  }
+  const reszta = dzis.filter(z => !z.pora || z.dzien!==S.dzis);
+  h += '<h3>Na dziś</h3>';
+  if (!reszta.length) h += '<div class="karta mal">Nic więcej na dziś. Możesz wziąć coś z puli.</div>';
+  h += '<div class="lista">' + reszta.map((z,i) => kartaDziecka(z, i===0 && ["do_zrobienia","do_poprawki"].includes(z.stan))).join("") + '</div>';
+  return h;
+}
+function kartaDziecka(z, rozwin){
+  const otw = ["do_zrobienia","do_poprawki"].includes(z.stan);
+  let h = '<div class="karta '+(rozwin?"wazna":"")+'"><div class="wiersz" style="align-items:flex-start"><div><a href="#z'+z.id+'" style="font-size:18px;font-weight:700;color:inherit;text-decoration:none">'+esc(z.tytul)+'</a><div class="mal">'+(z.zleca?"od: "+esc(z.zleca)+" · ":"")+z.punkty+' pkt · '+WER[z.weryfikacja].toLowerCase()+'</div></div>'
+    + (otw ? '<span class="pigu '+(z.po_terminie?"zle":"")+'">'+zostalo(z.termin)+'</span>' : '<span class="pigu ok">'+STAN[z.stan]+'</span>') + '</div>';
+  if (z.stan==="do_poprawki" && z.slowo) h += '<div class="wpis uw-ic">'+IK.uw+'<span style="color:var(--tekst)">'+esc(z.slowo)+'</span></div>';
+  if (rozwin) h += kroki(z) + '<div style="margin-top:10px"><a class="btn glowny" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;background:var(--akcent);color:#fff;border-radius:12px;min-height:50px" href="#z'+z.id+'">'+(z.weryfikacja==="minutnik"?"Otwórz minutnik":z.weryfikacja==="zaufanie"?"Zrobione":IK.aparat+" Zrobione – zrób zdjęcie")+'</a></div>';
+  if ((z.stan==="zatwierdzone"||z.stan==="czesciowo") && z.slowo) h += '<div class="mal" style="margin-top:6px">'+esc(z.zatwierdzil)+': „'+esc(z.slowo)+'”</div>';
+  return h + '</div>';
+}
+function kroki(z, tylkoOdczyt){
+  if (!z.kroki.length) return S.ai && z.stan==="do_zrobienia" ? '<div class="mal" style="margin-top:6px">Kroki pojawią się za chwilę.</div>' : "";
+  return '<div style="margin-top:8px">' + z.kroki.map((k,i) => '<label class="krok"><input type="checkbox" data-krok="'+z.id+':'+i+'" '+(k.z?"checked":"")+' '+(tylkoOdczyt?"disabled":"")+'>'+esc(k.t)+'</label>').join("") + '</div>';
+}
+function widokPula(){
+  const p = S.zadania.filter(z => z.pula);
+  return '<h1>Pula zadań</h1><p class="mal">Weź coś dodatkowo – za punkty.</p>' + (p.length ? p.map(z => '<div class="karta"><div class="wiersz"><div><b>'+esc(z.tytul)+'</b><div class="mal">'+z.punkty+' pkt · '+WER[z.weryfikacja].toLowerCase()+'</div>'+(z.opis?'<div class="mal">'+esc(z.opis)+'</div>':"")+'</div><button data-wez="'+z.id+'">Biorę</button></div></div>').join("") : '<div class="karta mal">Pula jest pusta.</div>');
+}
+
+/* ---------- jedno zadanie ---------- */
+function widokZadania(id){
+  const z = S.zadania.find(x => x.id === id);
+  if (!z) return '<div class="karta">Tego zadania już nie ma na liście. <a href="#">Wróć</a></div>';
+  const ja = dziecko(), d = dz(z.dziecko_id);
+  const przed = z.zdjecia.filter(p => p.rodzaj==="przed").slice(-1)[0], po = z.zdjecia.filter(p => p.rodzaj==="po");
+  const otw = ["do_zrobienia","do_poprawki"].includes(z.stan) && !z.pula;
+  let h = '<div class="wiersz" style="justify-content:flex-start"><a class="btn" href="#" aria-label="Wstecz" style="display:flex;align-items:center;width:46px;justify-content:center">&#8592;</a><div><h2>'+esc(z.tytul)+'</h2><div class="mal">'+(ja?"":esc(d.imie)+" · ")+(z.zleca?"zleca "+esc(z.zleca)+" · ":"")+z.punkty+' pkt · '+(z.termin?"termin "+kiedy(z.termin):"bez terminu")+'</div></div></div>';
+  h += '<div class="karta" style="margin-top:12px"><div class="wiersz"><span class="pigu '+(z.stan==="zatwierdzone"?"ok":z.po_terminie?"zle":"")+'">'+(z.po_terminie?"po terminie":STAN[z.stan])+'</span><span class="mal">'+WER[z.weryfikacja]+'</span></div>'
+    + (z.opis ? '<p style="margin:10px 0 0">'+esc(z.opis)+'</p>' : "") + kroki(z, !ja || !otw) + '</div>';
+  if (z.slowo) h += '<div class="karta"><div class="mal">'+esc(z.zatwierdzil || "Rodzic")+'</div>'+esc(z.slowo)+'</div>';
+  // zdjęcia
+  if (z.weryfikacja!=="minutnik" || z.zdjecia.length) {
+    const pokPo = po.slice(-1)[0];
+    h += '<div class="zdj"><div><div class="mal">Przed</div>'+(przed?'<img src="/api/zdjecie/'+przed.id+'" alt="Zdjęcie przed">':'<div class="pusto">'+(ja&&otw?"możesz dodać":"brak")+'</div>')+'</div>'
+      + '<div><div class="mal">Po'+(po.length>1?" ("+po.length+")":"")+'</div>'+(pokPo?'<img src="/api/zdjecie/'+pokPo.id+'" alt="Zdjęcie po">':'<div class="pusto">'+(ja&&otw?"zrób zdjęcie":"brak")+'</div>')+'</div></div>';
+    if (ja && otw) h += '<div class="rzad"><label class="btn" style="display:flex;align-items:center;justify-content:center">Przed<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':przed" class="ukryj"></label><label class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;border:2px solid var(--akcent)">'+IK.aparat+' Po<input type="file" accept="image/*" capture="environment" data-foto="'+z.id+':po" class="ukryj"></label>'+(pokPo?'<button data-usunfoto="'+pokPo.id+'">Usuń ostatnie</button>':"")+'</div>';
+  }
+  // ocena AI
+  if (z.ocena_stan==="czeka") h += '<div class="karta mal">Komputer w domu ogląda zdjęcie…</div>';
+  else if (z.ocena && z.ocena.werdykt) {
+    const w = WERD[z.ocena.werdykt] || [z.ocena.werdykt,""];
+    h += '<div class="karta"><div class="wiersz"><span class="mal" style="font-weight:600">'+(ja?"Szybkie sprawdzenie":"Ocena AI (komputer w domu)")+'</span><span class="pigu '+w[1]+'">'+w[0]+'</span></div>'
+      + z.ocena.punkty.map(p => '<div class="wpis '+(p.ok?"ok-ic":"uw-ic")+'">'+(p.ok?IK.ok:IK.uw)+'<span style="color:var(--tekst)">'+esc(p.tekst)+'</span></div>').join("")
+      + (ja && z.ocena.dla_dziecka ? '<div class="mal">'+esc(z.ocena.dla_dziecka)+'</div>' : "")
+      + (ja ? '<div class="mal">Możesz poprawić i zrobić zdjęcie jeszcze raz albo wysłać tak.</div>' : '<div class="mal">AI tylko podpowiada. Decyzja należy do Ciebie.</div>') + '</div>';
+  } else if (z.ocena_stan==="blad" && !ja) h += '<div class="karta mal">Ocena AI się nie udała – oceń sam.</div>';
+  if (z.komentarz) h += '<div class="karta"><div class="mal">'+(ja?"Twój dopisek":esc(d.imie)+" dopisała/dopisał")+'</div>„'+esc(z.komentarz)+'”</div>';
+  // akcje dziecka
+  if (ja && otw) {
+    if (z.weryfikacja==="minutnik" && z.minuty) {
+      if (!z.start) h += '<button class="glowny" data-start="'+z.id+'">Start minutnika · '+z.minuty+' min</button>';
+      else h += '<div class="karta" style="text-align:center"><div class="mal">Minutnik</div><div id="minutnik" data-koniec="'+(Date.parse(z.start)+z.minuty*60000)+'" style="font-size:40px;font-weight:700">…</div></div>';
+    }
+    h += '<label class="pole" for="kom">Chcesz coś dopisać?</label><input type="text" id="kom" maxlength="300" value="">'
+      + '<div class="mal" style="text-align:center;margin:12px 0 8px">Zdjęcie zostaje w domu. Decyduje rodzic.</div><button class="glowny" data-wyslij="'+z.id+'">Wyślij</button>';
+  }
+  if (z.pula && ja) h += '<button class="glowny" data-wez="'+z.id+'">Biorę to zadanie</button>';
+  // akcje rodzica
+  if (!ja && z.stan==="wyslane" && d.prawa?.zatwierdza) {
+    h += '<label class="pole" for="slowo">Słowo do dziecka (zobaczy je przy zadaniu)</label><input type="text" id="slowo" maxlength="300" placeholder="np. Super, dziękuję!">'
+      + '<div style="margin-top:12px"><button class="glowny" data-dec="'+z.id+':zatwierdz">Zatwierdź · +'+z.punkty+' pkt</button></div>'
+      + '<div class="rzad" style="margin-top:8px"><button data-dec="'+z.id+':poprawka">Do poprawki</button><button data-dec="'+z.id+':czesciowo">Częściowo · +'+Math.floor(z.punkty/2)+'</button></div>';
+  }
+  if (!ja && d.prawa?.zleca && !["zatwierdzone","czesciowo"].includes(z.stan)) h += '<div style="margin-top:20px"><button data-usunzad="'+z.id+'" style="width:100%;color:var(--zle)">Usuń zadanie</button></div>';
+  return h;
+}
+
+/* ---------- rodzic ---------- */
+function widokZatwierdz(){
+  const z = S.zadania.filter(x => x.stan==="wyslane" && dz(x.dziecko_id).prawa?.zatwierdza);
+  const w = S.wymiany.filter(x => x.stan==="czeka" && dz(x.dziecko_id).prawa?.zatwierdza);
+  const n = S.nagrody.filter(x => x.stan==="propozycja" && dz(x.dziecko_id).prawa?.zatwierdza);
+  let h = '<h1>Do zatwierdzenia</h1><p class="mal">Cześć, '+esc(S.ja.imie)+'.</p>';
+  if (!z.length && !w.length && !n.length) h += '<div class="karta mal">Nic nie czeka. Tu pojawi się zadanie, gdy dziecko je wyśle.</div>';
+  h += z.map(x => {
+    const po = x.zdjecia.filter(p => p.rodzaj==="po").slice(-1)[0];
+    const wd = x.ocena && x.ocena.werdykt ? WERD[x.ocena.werdykt] : null;
+    return '<a href="#z'+x.id+'" class="karta" style="display:flex;gap:12px;align-items:center;color:inherit;text-decoration:none">'+(po?'<img src="/api/zdjecie/'+po.id+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:10px">':"")+'<div style="flex:1"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.tytul)+'</b><div class="mal">wysłane '+kiedy(x.wyslane)+' · '+x.punkty+' pkt</div></div>'+(wd?'<span class="pigu '+wd[1]+'">'+wd[0]+'</span>':x.ocena_stan==="czeka"?'<span class="mal">AI…</span>':"")+'</a>';
+  }).join("");
+  if (w.length) h += '<h3>Wymiana punktów</h3>' + w.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">'+x.koszt+' pkt · ma '+dz(x.dziecko_id).saldo+'</div><div class="rzad" style="margin-top:8px"><button data-wym="'+x.id+':nie">Jeszcze nie</button><button class="wyb" data-wym="'+x.id+':tak">Zgoda</button></div></div>').join("");
+  if (n.length) h += '<h3>Propozycje nagród</h3>' + n.map(x => '<div class="karta"><b>'+esc(dz(x.dziecko_id).imie)+': '+esc(x.nazwa)+'</b><div class="mal">proponuje '+x.koszt+' pkt'+(x.cel?" · jako duży cel":"")+'</div><div class="rzad" style="margin-top:8px"><button data-nagr="'+x.id+':nie">Nie</button><button class="wyb" data-nagr="'+x.id+':tak">Dodaj</button></div></div>').join("");
+  const dzis = S.zadania.filter(x => x.dzien===S.dzis && !x.pula);
+  if (dzis.length) h += '<h3>Dziś u dzieci</h3>' + S.dzieci.map(d => { const r = dzis.filter(x => x.dziecko_id===d.id); if (!r.length) return ""; const zr = r.filter(x => !["do_zrobienia","do_poprawki"].includes(x.stan)).length; return '<div class="karta"><div class="wiersz"><b>'+esc(d.imie)+'</b><span class="mal">'+zr+' z '+r.length+'</span></div><div class="pasek" style="margin-top:8px"><div style="width:'+Math.round(100*zr/r.length)+'%"></div></div>'+r.filter(x=>x.po_terminie).map(x=>'<div class="mal uw-ic" style="margin-top:6px">po terminie: <a href="#z'+x.id+'">'+esc(x.tytul)+'</a></div>').join("")+'</div>'; }).join("");
+  return h;
+}
+let F = {dziecko:null, wer:"zdjecie", pora:"", dni:"", pula:false};
+function widokZlec(){
+  const moje = S.dzieci.filter(d => d.prawa.zleca);
+  if (!moje.length) return '<h1>Nowe zadanie</h1><div class="karta mal">Nie zlecasz zadań żadnemu dziecku. Uprawnienia ustawia administrator.</div>';
+  if (!moje.find(d => d.id===F.dziecko)) F.dziecko = moje[0].id;
+  const d0 = new Date(Date.parse(S.teraz)); d0.setHours(Math.max(d0.getHours()+3, 18)); d0.setMinutes(0);
+  const domTerm = S.dzis + "T" + String(Math.min(d0.getHours(),21)).padStart(2,"0") + ":00";
+  return '<h1>Nowe zadanie</h1>'
+   + '<label class="pole">Dla kogo</label><div class="rzad">'+moje.map(d => '<button data-f="dziecko:'+d.id+'" class="'+(F.dziecko===d.id?"wyb":"")+'">'+esc(d.imie)+'</button>').join("")+'</div>'
+   + '<label class="pole" for="tyt">Co trzeba zrobić</label><input type="text" id="tyt" maxlength="120" placeholder="np. Posprzątać biurko">'
+   + '<label class="pole" for="opis">Czego oczekuję</label><textarea id="opis" maxlength="600" placeholder="np. Pusty blat, książki na półce."></textarea>'
+   + (S.ai ? '<div class="mal">AI rozpisze to na kroki i porówna ze zdjęciem.</div>' : '<label class="pole" for="kroki">Kroki (każdy w nowej linii, można pominąć)</label><textarea id="kroki"></textarea>')
+   + '<label class="pole">Jak potwierdzi, że zrobione</label><div class="siatka">'+Object.keys(WER).map(k => '<button data-f="wer:'+k+'" class="'+(F.wer===k?"wyb":"")+'">'+WER[k]+'</button>').join("")+'</div>'
+   + (F.wer==="minutnik" ? '<label class="pole" for="min">Ile minut</label><input type="number" id="min" min="1" max="240" value="20">' : "")
+   + (F.wer==="zaufanie" ? '<div class="mal" style="margin-top:6px">Co piąte takie zadanie losowo poprosi o zdjęcie.</div>' : "")
+   + '<label class="pole">Powtarzanie</label><div class="rzad">'+[["","Raz"],["12345","Dni szkolne"],["1234567","Codziennie"]].map(([v,t]) => '<button data-f="dni:'+v+'" class="'+(F.dni===v?"wyb":"")+'">'+t+'</button>').join("")+'</div>'
+   + '<div class="rzad" style="margin-top:8px">'+DNI.map((t,i) => '<button data-dzien="'+(i+1)+'" class="'+(F.dni.includes(String(i+1))?"wyb":"")+'" style="min-width:0;padding:0">'+t+'</button>').join("")+'</div>'
+   + '<div class="rzad">'
+   + (F.dni ? '<div><label class="pole" for="godz">Do godziny</label><input type="time" id="godz" value="20:00"></div>' : '<div style="flex:2"><label class="pole" for="term">Termin</label><input type="datetime-local" id="term" value="'+domTerm+'"></div>')
+   + '<div><label class="pole" for="pkt">Punkty</label><input type="number" id="pkt" min="0" max="1000" value="10"></div></div>'
+   + '<label class="pole">Pora dnia (rutyna)</label><div class="siatka">'+Object.keys(PORA).map(k => '<button data-f="pora:'+k+'" class="'+(F.pora===k?"wyb":"")+'">'+PORA[k]+'</button>').join("")+'</div>'
+   + (F.dni ? "" : '<label class="krok" style="margin-top:10px"><input type="checkbox" id="pula" '+(F.pula?"checked":"")+'>Do puli – dziecko samo zdecyduje, czy weźmie</label>')
+   + '<div style="margin-top:16px"><button class="glowny" id="zlec">Zleć zadanie</button></div>';
+}
+function widokDzieci(){
+  if (!S.dzieci.length) return '<h1>Dzieci</h1><div class="karta mal">Nie masz przypisanych dzieci.</div>';
+  return '<h1>Dzieci</h1>' + S.dzieci.map(d => {
+    const sz = (S.szablony||[]).filter(s => s.dziecko_id===d.id);
+    const otw = S.zadania.filter(z => z.dziecko_id===d.id && ["do_zrobienia","do_poprawki"].includes(z.stan) && !z.pula);
+    const pula = S.zadania.filter(z => z.dziecko_id===d.id && z.pula);
+    return '<div class="karta"><div class="wiersz"><h2>'+esc(d.imie)+'</h2><span class="pigu">'+IK.gw+' '+d.saldo+' pkt</span></div><div class="mal">w tygodniu +'+d.tydzien+' · seria '+d.seria+' dni · '+(d.prawa.zatwierdza?"zatwierdzasz":"tylko podgląd")+'</div>'
+     + (otw.length ? '<h3>Otwarte</h3>' + otw.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+(z.po_terminie?"po terminie":kiedy(z.termin))+'</span></div>').join("") : "")
+     + (pula.length ? '<h3>W puli</h3>' + pula.map(z => '<div class="wiersz" style="min-height:36px"><a href="#z'+z.id+'">'+esc(z.tytul)+'</a><span class="mal">'+z.punkty+' pkt</span></div>').join("") : "")
+     + (sz.length ? '<h3>Powtarzane</h3>' + sz.map(s => '<div class="wiersz" style="min-height:40px"><span>'+esc(s.tytul)+' <span class="mal">· '+s.dni.split("").map(i=>DNI[i-1]).join(" ")+' do '+s.godzina+(s.pora?" · "+PORA[s.pora].toLowerCase():"")+'</span></span>'+(d.prawa.zleca?'<button data-wyl="'+s.id+'" style="min-height:36px">Wyłącz</button>':"")+'</div>').join("") : "")
+     + (d.prawa.zatwierdza ? '<h3>Premia albo odjęcie punktów</h3><div class="rzad"><input type="number" id="pk'+d.id+'" placeholder="+10 / -10" style="flex:1"><input type="text" id="pp'+d.id+'" placeholder="za co" style="flex:2"><button data-premia="'+d.id+'" style="flex:0 0 auto">Dodaj</button></div>' : "")
+     + '</div>';
+  }).join("");
+}
+function widokNagrody(){
+  let h = '<h1>'+(dziecko()?"Moje nagrody":"Nagrody")+'</h1>';
+  for (const d of S.dzieci) {
+    const n = S.nagrody.filter(x => x.dziecko_id===d.id && x.stan==="aktywna");
+    const wolne = d.saldo - d.zarezerwowane;
+    const cel = n.find(x => x.cel), male = n.filter(x => !x.cel);
+    if (!dziecko()) h += '<h3>'+esc(d.imie)+'</h3>';
+    h += '<div class="karta wiersz"><div><div class="mal">Masz</div><div style="font-size:32px;font-weight:700;color:var(--pom)">'+wolne+' pkt</div>'+(d.zarezerwowane?'<div class="mal">'+d.zarezerwowane+' czeka na zgodę</div>':"")+'</div><div class="mal" style="text-align:right">w tym tygodniu +'+d.tydzien+'<br>seria '+d.seria+' dni</div></div>';
+    if (cel) {
+      const proc = Math.min(100, Math.round(100*wolne/cel.koszt));
+      const tempo = d.tydzien > 0 ? Math.ceil(Math.max(0, cel.koszt-wolne)/d.tydzien) : null;
+      h += '<div class="karta wazna"><div class="mal" style="font-weight:600">Duży cel</div><div class="wiersz" style="margin:6px 0"><b style="font-size:18px">'+esc(cel.nazwa)+'</b><b class="ok-ic">'+wolne+' / '+cel.koszt+'</b></div><div class="pasek"><div style="width:'+proc+'%"></div></div>'
+        + (tempo ? '<div class="mal" style="margin-top:6px">Przy tym tempie: około '+tempo+' tyg.</div>' : "")
+        + (dziecko() && wolne>=cel.koszt ? '<button class="glowny" style="margin-top:10px" data-wymien="'+cel.id+'">Wymieniam!</button>' : "")
+        + (!dziecko() && d.prawa.zleca ? '<button data-usunnagr="'+cel.id+'" style="margin-top:8px">Usuń cel</button>' : "") + '</div>';
+    }
+    h += '<div class="karta">' + (male.length ? male.map(x => '<div class="wiersz" style="min-height:56px;border-bottom:1px solid var(--linia2)"><span>'+esc(x.nazwa)+'</span>'+(dziecko()?'<button data-wymien="'+x.id+'" '+(wolne<x.koszt?"disabled":"")+'>'+x.koszt+' pkt</button>':'<span class="wiersz"><span class="mal">'+x.koszt+' pkt</span>'+(d.prawa.zleca?'<button data-usunnagr="'+x.id+'" aria-label="Usuń nagrodę" style="min-height:36px">Usuń</button>':"")+'</span>')+'</div>').join("") : '<div class="mal">Jeszcze nie ma nagród.</div>') + '</div>';
+    if (dziecko()) h += '<div class="mal">Wymiana punktów czeka na zgodę rodzica.</div>';
+    if (dziecko() || d.prawa.zleca) h += '<details class="karta"><summary style="min-height:36px;font-weight:600">'+(dziecko()?"Zaproponuj własną nagrodę":"Dodaj nagrodę")+'</summary><div class="rzad" style="margin-top:8px"><input type="text" id="nn'+d.id+'" placeholder="nazwa" style="flex:3"><input type="number" id="nk'+d.id+'" placeholder="pkt" style="flex:1"></div><label class="krok"><input type="checkbox" id="nc'+d.id+'">Duży cel</label><button class="glowny" data-nowanagr="'+d.id+'">'+(dziecko()?"Wyślij propozycję":"Dodaj")+'</button></details>';
+    const hist = S.wymiany.filter(x => x.dziecko_id===d.id && x.stan!=="czeka");
+    if (hist.length) h += '<div class="mal">Ostatnio: '+hist.slice(0,3).map(x => esc(x.nazwa)+" ("+(x.stan==="zatwierdzona"?"tak":"nie")+")").join(", ")+'</div>';
+  }
+  return h;
+}
+function widokOsoby(){
+  const dor = S.osoby.filter(o => o.rola==="dorosly"), dzi = S.osoby.filter(o => o.rola==="dziecko");
+  const op = (a,b) => S.opieka.find(x => x.dorosly_id===a && x.dziecko_id===b);
+  let h = '<h1>Dzieci i opiekunowie</h1><p class="mal">Każdy opiekun widzi tylko swoje dzieci. Z – zleca, A – zatwierdza; zaznaczony opiekun bez Z i A tylko podgląda.'+(S.ha?"":" Powiadomienia: brak połączenia z Home Assistant.")+'</p>';
+  for (const c of dzi) {
+    h += '<div class="karta"><div class="wiersz"><h2>'+esc(c.imie)+'</h2><button data-link="'+c.id+'" style="min-height:36px">Link</button></div>'
+      + dor.map(a => { const o = op(a.id,c.id); return '<div class="wiersz" style="min-height:44px;border-top:1px solid var(--linia2)"><label class="krok"><input type="checkbox" data-op="'+a.id+':'+c.id+':jest" '+(o?"checked":"")+'>'+esc(a.imie)+(a.admin?' <span class="mal">(admin)</span>':"")+'</label><span class="prawo"><label><input type="checkbox" data-op="'+a.id+':'+c.id+':zleca" '+(o&&o.zleca?"checked":"")+' '+(o?"":"disabled")+'>Z</label><label><input type="checkbox" data-op="'+a.id+':'+c.id+':zatwierdza" '+(o&&o.zatwierdza?"checked":"")+' '+(o?"":"disabled")+'>A</label></span></div>'; }).join("")
+      + '</div>';
+  }
+  h += '<h3>Osoby</h3>' + S.osoby.map(o => '<div class="karta"><div class="wiersz"><b>'+esc(o.imie)+' <span class="mal">· '+(o.rola==="dziecko"?"dziecko":"dorosły")+(o.admin?", admin":"")+'</span></b><button data-link="'+o.id+'" style="min-height:36px">Link</button></div>'
+      + '<label class="pole" for="pw'+o.id+'">Powiadomienia (usługa notify w HA, np. mobile_app_telefon)</label><div class="rzad"><input type="text" id="pw'+o.id+'" value="'+esc(o.powiadom)+'" style="flex:3"><button data-pw="'+o.id+'" style="flex:1">Zapisz</button></div>'
+      + '<div class="rzad" style="margin-top:8px"><button data-nowykod="'+o.id+'">Nowy link (stary przestanie działać)</button>'+(o.id!==S.ja.id?'<button data-usunos="'+o.id+'" style="color:var(--zle)">Usuń</button>':"")+'</div></div>').join("");
+  h += '<details class="karta" open><summary style="min-height:36px;font-weight:600">Dodaj osobę</summary><label class="pole" for="noim">Imię</label><input type="text" id="noim" maxlength="40"><div class="rzad" style="margin-top:8px"><button data-nowa="dziecko">Dziecko</button><button data-nowa="dorosly">Dorosły</button></div></details>'
+    + '<div id="linkwyn"></div>';
+  return h;
+}
+
+/* ---------- zdarzenia ---------- */
+async function zmniejsz(plik){
+  const url = URL.createObjectURL(plik);
+  try {
+    const img = await new Promise((ok, zle) => { const i = new Image(); i.onload = () => ok(i); i.onerror = zle; i.src = url; });
+    const sk = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*sk); c.height = Math.round(img.naturalHeight*sk);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(ok => c.toBlob(ok, "image/jpeg", 0.82));
+  } finally { URL.revokeObjectURL(url); }
+}
+function pokazLink(r, kto){
+  $("#linkwyn") ? ($("#linkwyn").innerHTML = '<div class="karta"><b>Link dla: '+esc(kto)+'</b><p class="mal">Otwórz go na telefonie tej osoby i dodaj stronę do ekranu początkowego. Nie wysyłaj go nikomu innemu.</p><input type="text" readonly value="'+esc(location.origin + r.link.replace(/^https?:\/\/[^/]+/, ""))+'" onclick="this.select()"></div>', $("#linkwyn").scrollIntoView()) : toast(r.link);
+}
+function podepnij(){
+  const A = $("#app");
+  A.querySelectorAll("[data-krok]").forEach(e => e.onchange = () => { const [z,i] = e.dataset.krok.split(":"); akcja("/api/zadanie/"+z+"/kroki", {i:+i, z:e.checked}); });
+  A.querySelectorAll("[data-wez]").forEach(e => e.onclick = async () => { await akcja("/api/zadanie/"+e.dataset.wez+"/wez", {}, "Wzięte – powodzenia!"); idz("z"+e.dataset.wez); });
+  A.querySelectorAll("[data-start]").forEach(e => e.onclick = () => akcja("/api/zadanie/"+e.dataset.start+"/start", {}, "Minutnik ruszył"));
+  A.querySelectorAll("[data-foto]").forEach(e => e.onchange = async () => {
+    const [z, r] = e.dataset.foto.split(":"); if (!e.files[0]) return;
+    toast("Wysyłam zdjęcie…");
+    try { const b = await zmniejsz(e.files[0]); await akcja("/api/zadanie/"+z+"/zdjecie/"+r, b, r==="po" && S.ai ? "Zdjęcie dodane – komputer je ogląda" : "Zdjęcie dodane", "image/jpeg"); } catch(er) {}
+  });
+  A.querySelectorAll("[data-usunfoto]").forEach(e => e.onclick = () => akcja("/api/zdjecie/"+e.dataset.usunfoto+"/usun", {}, "Usunięte"));
+  A.querySelectorAll("[data-wyslij]").forEach(e => e.onclick = async () => {
+    try { await akcja("/api/zadanie/"+e.dataset.wyslij+"/wyslij", {komentarz: ($("#kom")||{}).value || ""}, "Wysłane – brawo!"); idz(""); } catch(er) {}
+  });
+  A.querySelectorAll("[data-dec]").forEach(e => e.onclick = async () => { const [z,d] = e.dataset.dec.split(":"); await akcja("/api/zadanie/"+z+"/decyzja", {decyzja:d, slowo:($("#slowo")||{}).value||""}, d==="poprawka"?"Odesłane do poprawki":"Zatwierdzone"); idz(""); });
+  A.querySelectorAll("[data-usunzad]").forEach(e => e.onclick = async () => { if (e.dataset.pewne) { await akcja("/api/zadanie/"+e.dataset.usunzad+"/usun", {}, "Usunięte"); idz(""); } else { e.dataset.pewne = 1; e.textContent = "Na pewno usunąć? Dotknij jeszcze raz"; } });
+  A.querySelectorAll("[data-wym]").forEach(e => e.onclick = () => { const [w,d] = e.dataset.wym.split(":"); akcja("/api/wymiana/"+w+"/decyzja", {decyzja:d}, d==="tak"?"Zgoda – punkty odjęte":"Odrzucone"); });
+  A.querySelectorAll("[data-nagr]").forEach(e => e.onclick = () => { const [n,d] = e.dataset.nagr.split(":"); akcja("/api/nagroda/"+n+"/decyzja", {decyzja:d}, d==="tak"?"Nagroda dodana":"Odrzucona"); });
+  A.querySelectorAll("[data-usunnagr]").forEach(e => e.onclick = () => akcja("/api/nagroda/"+e.dataset.usunnagr+"/decyzja", {decyzja:"usun"}, "Usunięta"));
+  A.querySelectorAll("[data-wymien]").forEach(e => e.onclick = () => akcja("/api/wymiana", {nagroda_id:+e.dataset.wymien}, "Wysłane do rodzica"));
+  A.querySelectorAll("[data-nowanagr]").forEach(e => e.onclick = () => { const d = e.dataset.nowanagr; akcja("/api/nagroda", {dziecko_id:+d, nazwa:$("#nn"+d).value, koszt:+$("#nk"+d).value, cel:$("#nc"+d).checked}, dziecko()?"Propozycja wysłana":"Dodane"); });
+  A.querySelectorAll("[data-wyl]").forEach(e => e.onclick = () => akcja("/api/szablon/"+e.dataset.wyl+"/wylacz", {}, "Powtarzanie wyłączone"));
+  A.querySelectorAll("[data-premia]").forEach(e => e.onclick = () => { const d = e.dataset.premia; akcja("/api/punkty", {dziecko_id:+d, ile:+$("#pk"+d).value, powod:$("#pp"+d).value}, "Zapisane"); });
+  A.querySelectorAll("[data-f]").forEach(e => e.onclick = () => { zachowajFormularz(); const [k, ...v] = e.dataset.f.split(":"); F[k] = k==="dziecko" ? +v.join(":") : v.join(":"); rysuj(); przywrocFormularz(); });
+  A.querySelectorAll("[data-dzien]").forEach(e => e.onclick = () => { zachowajFormularz(); const n = e.dataset.dzien; F.dni = F.dni.includes(n) ? F.dni.replace(n,"") : [...F.dni+n].sort().join(""); rysuj(); przywrocFormularz(); });
+  if ($("#pula")) $("#pula").onchange = () => { F.pula = $("#pula").checked; };
+  if ($("#zlec")) $("#zlec").onclick = async () => {
+    const b = {dziecko_id:F.dziecko, tytul:$("#tyt").value, opis:$("#opis").value, weryfikacja:F.wer, pora:F.pora, punkty:+$("#pkt").value,
+      minuty: $("#min") ? +$("#min").value : 0, kroki: $("#kroki") ? $("#kroki").value.split("\n").map(s=>s.trim()).filter(Boolean) : []};
+    if (F.dni) { b.dni = F.dni; b.godzina = $("#godz").value; } else { b.termin = $("#term").value; b.pula = F.pula; }
+    try { await akcja("/api/zadanie", b, F.pula ? "Dodane do puli" : "Zlecone"); F.pula = false; zapis = {}; idz("dzieci"); } catch(er) {}
+  };
+  // administrator
+  A.querySelectorAll("[data-op]").forEach(e => e.onchange = () => {
+    const [a, c, co] = e.dataset.op.split(":");
+    const z = A.querySelector('[data-op="'+a+':'+c+':zleca"]'), t = A.querySelector('[data-op="'+a+':'+c+':zatwierdza"]');
+    if (co==="jest") akcja("/api/opieka", e.checked ? {dorosly_id:+a, dziecko_id:+c, zleca:true, zatwierdza:true} : {dorosly_id:+a, dziecko_id:+c, usun:true}, "Zapisane");
+    else akcja("/api/opieka", {dorosly_id:+a, dziecko_id:+c, zleca:z.checked, zatwierdza:t.checked}, "Zapisane");
+  });
+  A.querySelectorAll("[data-link]").forEach(e => e.onclick = () => { const o = S.osoby.find(x => x.id===+e.dataset.link); pokazLink(o, o.imie); });
+  A.querySelectorAll("[data-pw]").forEach(e => e.onclick = () => akcja("/api/osoba/"+e.dataset.pw, {powiadom:$("#pw"+e.dataset.pw).value}, "Zapisane"));
+  A.querySelectorAll("[data-nowykod]").forEach(e => e.onclick = async () => { const o = S.osoby.find(x => x.id===+e.dataset.nowykod); const r = await akcja("/api/osoba/"+o.id, {nowy_kod:true}, "Nowy link gotowy"); pokazLink(r, o.imie); });
+  A.querySelectorAll("[data-usunos]").forEach(e => e.onclick = () => { if (e.dataset.pewne) akcja("/api/osoba/"+e.dataset.usunos, {usun:true}, "Usunięta"); else { e.dataset.pewne = 1; e.textContent = "Na pewno? Dotknij jeszcze raz"; } });
+  A.querySelectorAll("[data-nowa]").forEach(e => e.onclick = async () => { const im = $("#noim").value; const r = await akcja("/api/osoba", {imie:im, rola:e.dataset.nowa}, "Dodane"); pokazLink(r, im); });
+  minutnik();
+}
+let zapis = {};
+function zachowajFormularz(){ ["tyt","opis","kroki","pkt","min","term","godz"].forEach(i => { if ($("#"+i)) zapis[i] = $("#"+i).value; }); }
+function przywrocFormularz(){ for (const i in zapis) if ($("#"+i)) $("#"+i).value = zapis[i]; }
+function minutnik(){
+  const e = $("#minutnik"); if (!e) return;
+  const t = () => { if (!document.body.contains(e)) return; const s = Math.max(0, Math.round((+e.dataset.koniec - Date.now())/1000)); e.textContent = s ? Math.floor(s/60)+":"+String(s%60).padStart(2,"0") : "Koniec!"; if (s) setTimeout(t, 1000); };
+  t();
+}
+// odświeżanie: częściej, gdy AI ocenia; nie w trakcie pisania
+setInterval(() => {
+  const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName);
+  if (!pisze && !czekaOdp && document.visibilityState==="visible" && widok!=="zlec") odswiez();
+}, 20000);
+setInterval(() => { if (S && S.zadania.some(z => z.ocena_stan==="czeka") && !czekaOdp) { const pisze = document.activeElement && ["INPUT","TEXTAREA"].includes(document.activeElement.tagName); if (!pisze) odswiez(); } }, 4000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState==="visible") odswiez(); });
+odswiez();
+</script>
+</body>
+</html>

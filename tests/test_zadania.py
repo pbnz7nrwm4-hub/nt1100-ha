@@ -1,0 +1,300 @@
+"""Zadania dzieci: pełny przebieg przez HTTP z atrapą Ollamy (AI) i atrapą Home Assistanta (powiadomienia)."""
+import datetime as dt
+import json
+import os
+import sys
+import tempfile
+import threading
+import time
+import unittest
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+T = tempfile.mkdtemp(prefix="zadania-test-")
+POWIADOMIENIA = []
+AI = {"pytania": []}
+JPG = b"\xff\xd8\xff\xe0" + b"0" * 2000
+
+
+class Atrapa(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        d = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.startswith("/api/services/notify/"):
+            assert self.headers["Authorization"] == "Bearer tok"
+            POWIADOMIENIA.append((self.path.rsplit("/", 1)[1], d))
+            odp = b"[]"
+        else:
+            AI["pytania"].append(d)
+            if d.get("images"):
+                r = {"werdykt": "raczej zrobione", "punkty": [{"ok": True, "tekst": "Pusty blat"},
+                                                              {"ok": False, "tekst": "Kabel z lewej"}],
+                     "dla_dziecka": "Prawie idealnie!"}
+            else:
+                r = {"kroki": ["Książki na półkę", "Kable zwinąć", "Wytrzeć blat"]}
+            odp = json.dumps({"response": json.dumps(r, ensure_ascii=False)}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(odp)))
+        self.end_headers()
+        self.wfile.write(odp)
+
+
+atr = ThreadingHTTPServer(("127.0.0.1", 0), Atrapa)
+threading.Thread(target=atr.serve_forever, daemon=True).start()
+ADR_ATR = "http://127.0.0.1:%d" % atr.server_address[1]
+with open(os.path.join(T, "ha_token"), "w") as f:
+    f.write("tok")
+os.environ.update({"ZD_KATALOG": T, "ZD_HA_URL": ADR_ATR, "ZD_HA_TOKEN": os.path.join(T, "ha_token"),
+                   "ZD_AI_URL": ADR_ATR, "ZD_ADRES": "http://dom:8092", "ZD_LOSOWE": "0"})
+sys.path.insert(0, os.path.join(HERE, "..", "zadania"))
+import zadania as Z  # noqa: E402
+
+srv = ThreadingHTTPServer(("127.0.0.1", 0), Z.H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+URL = "http://127.0.0.1:%d" % srv.server_address[1]
+
+
+def zapytaj(kod, sciezka, dane=None, typ="application/json"):
+    h = {"X-Zadania-Kod": kod} if kod else {}
+    body = None
+    if dane is not None:
+        body = dane if isinstance(dane, bytes) else json.dumps(dane).encode()
+        h["Content-Type"] = typ
+    req = urllib.request.Request(URL + sciezka, data=body, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, (json.loads(r.read()) if "json" in r.headers.get("Content-Type", "") else r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def czekaj(f, s=5):
+    k = time.time() + s
+    while time.time() < k:
+        if f():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+class TestZadania(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Z.db()
+        with Z.BLOKADA:
+            a = Z.ex("INSERT INTO osoby(imie,rola,admin,kod) VALUES('Admin','dorosly',1,'kodadmin00')")
+        cls.adm = "kodadmin00"
+        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziecko A", "rola": "dziecko", "powiadom": "notify.mobile_app_a"})
+        cls.a_id, cls.a = r["id"], r["link"].rsplit("/", 1)[1]
+        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziecko B", "rola": "dziecko"})
+        cls.b_id, cls.b = r["id"], r["link"].rsplit("/", 1)[1]
+        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Mama", "rola": "dorosly", "powiadom": "mobile_app_mama"})
+        cls.m_id, cls.m = r["id"], r["link"].rsplit("/", 1)[1]
+        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Inny rodzic", "rola": "dorosly"})
+        cls.i_id, cls.i = r["id"], r["link"].rsplit("/", 1)[1]
+        _, r = zapytaj(cls.adm, "/api/osoba", {"imie": "Dziadek", "rola": "dorosly"})
+        cls.d_id, cls.d = r["id"], r["link"].rsplit("/", 1)[1]
+        assert r["link"].startswith("http://dom:8092/k/")
+        # Mama: A zleca+zatwierdza; Inny rodzic: B; Dziadek: A tylko podgląd; Admin: A zatwierdza (bez zlecania)
+        for dor, dz, zl, za in ((cls.m_id, cls.a_id, 1, 1), (cls.i_id, cls.b_id, 1, 1), (cls.d_id, cls.a_id, 0, 0),
+                                (1, cls.a_id, 0, 1)):
+            s, _ = zapytaj(cls.adm, "/api/opieka", {"dorosly_id": dor, "dziecko_id": dz, "zleca": zl, "zatwierdza": za})
+            assert s == 200
+
+    def test_1_logowanie_linkiem(self):
+        req = urllib.request.Request(URL + "/k/" + self.a)
+
+        class Bez(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        try:
+            urllib.request.build_opener(Bez).open(req)
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 302)
+            self.assertIn("zd=" + self.a, e.headers["Set-Cookie"])
+        self.assertEqual(zapytaj(None, "/api/stan")[0], 401)
+        self.assertEqual(zapytaj("zlykodzlykod", "/api/stan")[0], 401)
+        s, r = zapytaj(None, "/")
+        self.assertEqual(s, 200)
+        self.assertIn(b"Zadania", r)
+
+    def test_2_role(self):
+        _, st = zapytaj(self.m, "/api/stan")
+        self.assertEqual([d["imie"] for d in st["dzieci"]], ["Dziecko A"])
+        _, st = zapytaj(self.i, "/api/stan")
+        self.assertEqual([d["imie"] for d in st["dzieci"]], ["Dziecko B"])
+        self.assertNotIn("osoby", st)
+        # Inny rodzic nie zleca dziecku A, dziadek tylko podgląda
+        self.assertEqual(zapytaj(self.i, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "x"})[0], 403)
+        self.assertEqual(zapytaj(self.d, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "x"})[0], 403)
+        _, st = zapytaj(self.d, "/api/stan")
+        self.assertEqual(st["dzieci"][0]["prawa"], {"zleca": False, "zatwierdza": False})
+        # dziecko nie zleca, nie zarządza osobami
+        self.assertEqual(zapytaj(self.a, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "x"})[0], 403)
+        self.assertEqual(zapytaj(self.m, "/api/osoba", {"imie": "x", "rola": "dziecko"})[0], 403)
+
+    def test_3_pelny_przebieg_ze_zdjeciem(self):
+        POWIADOMIENIA.clear()
+        termin = (dt.datetime.now() + dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M")
+        s, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Posprzątać biurko",
+                                                "opis": "Pusty blat", "termin": termin, "punkty": 20})
+        self.assertEqual(s, 200, r)
+        zid = r["zadanie_id"]
+        self.assertTrue(czekaj(lambda: POWIADOMIENIA))
+        self.assertEqual(POWIADOMIENIA[0][0], "mobile_app_a")
+        self.assertEqual(POWIADOMIENIA[0][1]["data"]["url"], "http://dom:8092/#z%d" % zid)
+        # AI rozpisuje kroki
+        self.assertTrue(czekaj(lambda: len(Z.q1("SELECT kroki FROM zadania WHERE id=?", zid)["kroki"]) > 5))
+        _, st = zapytaj(self.a, "/api/stan")
+        z = [x for x in st["zadania"] if x["id"] == zid][0]
+        self.assertEqual(len(z["kroki"]), 3)
+        self.assertNotIn("wymaga_zdjecia", z)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/kroki" % zid, {"i": 0, "z": True})[0], 200)
+        # B nie widzi zadania A
+        self.assertEqual(zapytaj(self.b, "/api/zadanie/%d/kroki" % zid, {"i": 0, "z": True})[0], 403)
+        # bez zdjęcia nie wyśle
+        s, r = zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})
+        self.assertEqual((s, r.get("potrzebne_zdjecie")), (409, True))
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/zdjecie/po" % zid, b"nie zdjecie", "image/jpeg")[0], 415)
+        s, r = zapytaj(self.a, "/api/zadanie/%d/zdjecie/po" % zid, JPG, "image/jpeg")
+        self.assertEqual(s, 200)
+        pid = r["id"]
+        self.assertTrue(czekaj(lambda: Z.q1("SELECT ocena_stan FROM zadania WHERE id=?", zid)["ocena_stan"] == "gotowa"))
+        _, st = zapytaj(self.m, "/api/stan")
+        z = [x for x in st["zadania"] if x["id"] == zid][0]
+        self.assertEqual(z["ocena"]["werdykt"], "raczej_zrobione")
+        self.assertEqual(len(z["ocena"]["punkty"]), 2)
+        self.assertIn("images", AI["pytania"][-1])
+        self.assertIn("Pusty blat", AI["pytania"][-1]["prompt"])
+        # zdjęcie widzą: dziecko, mama, dziadek; nie widzi inny rodzic
+        self.assertEqual(zapytaj(self.d, "/api/zdjecie/%d" % pid)[0], 200)
+        self.assertEqual(zapytaj(self.i, "/api/zdjecie/%d" % pid)[0], 404)
+        POWIADOMIENIA.clear()
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {"komentarz": "kabel od lampki"})[0], 200)
+        self.assertTrue(czekaj(lambda: POWIADOMIENIA))
+        self.assertEqual(POWIADOMIENIA[0][0], "mobile_app_mama")   # admin bez usługi powiadomień – tylko mama
+        # dziadek (podgląd) nie zatwierdzi
+        self.assertEqual(zapytaj(self.d, "/api/zadanie/%d/decyzja" % zid, {"decyzja": "zatwierdz"})[0], 403)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/zdjecie/po" % zid, JPG, "image/jpeg")[0], 409)
+        s, r = zapytaj(self.m, "/api/zadanie/%d/decyzja" % zid, {"decyzja": "zatwierdz", "slowo": "Super!"})
+        self.assertEqual((s, r["punkty"]), (200, 20))
+        self.assertEqual(zapytaj(self.m, "/api/zadanie/%d/decyzja" % zid, {"decyzja": "zatwierdz"})[0], 409)
+        self.assertEqual(Z.saldo(self.a_id), 20)
+        self.assertEqual(zapytaj(self.m, "/api/zadanie/%d/usun" % zid, {})[0], 409)
+
+    def test_4_poprawka_i_czesciowo(self):
+        _, r = zapytaj(self.i, "/api/zadanie", {"dziecko_id": self.b_id, "tytul": "Zeszyt angielski", "weryfikacja": "zeszyt",
+                                                "punkty": 15, "kroki": ["Ćwiczenie 3"]})
+        zid = r["zadanie_id"]
+        zapytaj(self.b, "/api/zadanie/%d/zdjecie/po" % zid, JPG, "image/jpeg")
+        self.assertEqual(zapytaj(self.b, "/api/zadanie/%d/wyslij" % zid, {})[0], 200)
+        zapytaj(self.i, "/api/zadanie/%d/decyzja" % zid, {"decyzja": "poprawka", "slowo": "Brakuje ćw. 4"})
+        self.assertEqual(Z.q1("SELECT stan FROM zadania WHERE id=?", zid)["stan"], "do_poprawki")
+        self.assertEqual(zapytaj(self.b, "/api/zadanie/%d/wyslij" % zid, {})[0], 200)
+        _, r = zapytaj(self.i, "/api/zadanie/%d/decyzja" % zid, {"decyzja": "czesciowo"})
+        self.assertEqual(r["punkty"], 7)
+        self.assertEqual(Z.saldo(self.b_id), 7)
+
+    def test_5_zaufanie_losowe_i_minutnik(self):
+        _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Pościel", "weryfikacja": "zaufanie",
+                                                "punkty": 2, "kroki": ["x"]})
+        zid = r["zadanie_id"]
+        with Z.BLOKADA:
+            Z.ex("UPDATE zadania SET wymaga_zdjecia=1 WHERE id=?", zid)
+        s, r = zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})
+        self.assertEqual((s, r.get("losowe")), (409, True))
+        with Z.BLOKADA:
+            Z.ex("UPDATE zadania SET wymaga_zdjecia=0 WHERE id=?", zid)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})[0], 200)
+        _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Czytanie", "weryfikacja": "minutnik",
+                                                "minuty": 20, "kroki": ["x"]})
+        zid = r["zadanie_id"]
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})[0], 409)
+        zapytaj(self.a, "/api/zadanie/%d/start" % zid, {})
+        s, r = zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})
+        self.assertEqual(s, 409)
+        self.assertIn("zostalo", r)
+        start = Z.iso(Z.teraz() - dt.timedelta(minutes=21))
+        with Z.BLOKADA:
+            Z.ex("UPDATE zadania SET start=? WHERE id=?", start, zid)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})[0], 200)
+
+    def test_6_powtarzane_i_pula(self):
+        _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Zęby", "pora": "rano", "dni": "1234567",
+                                                "godzina": "08:00", "weryfikacja": "zaufanie", "punkty": 1, "kroki": ["x"]})
+        self.assertTrue(r["szablon_id"] and r["zadanie_id"])
+        self.assertEqual(Z.wygeneruj(), [])          # drugi raz nie dubluje
+        jutro = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+        self.assertEqual(len(Z.wygeneruj(jutro)), 1)
+        _, st = zapytaj(self.a, "/api/stan")
+        self.assertFalse([z for z in st["zadania"] if z["dzien"] == jutro])   # jutrzejszych jeszcze nie widać
+        zapytaj(self.m, "/api/szablon/%d/wylacz" % r["szablon_id"], {})
+        self.assertEqual(Z.wygeneruj((dt.date.today() + dt.timedelta(days=2)).isoformat()), [])
+        _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Odkurzyć auto", "pula": True,
+                                                "punkty": 30, "kroki": ["x"]})
+        zid = r["zadanie_id"]
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wyslij" % zid, {})[0], 409)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wez" % zid, {})[0], 200)
+        self.assertEqual(zapytaj(self.a, "/api/zadanie/%d/wez" % zid, {})[0], 409)
+        self.assertEqual(Z.q1("SELECT dzien FROM zadania WHERE id=?", zid)["dzien"], Z.dzis())
+
+    def test_7_nagrody_i_wymiana(self):
+        with Z.BLOKADA:
+            Z.ex("INSERT INTO punkty(dziecko_id,ile,powod,ts) VALUES(?,?,?,?)", self.a_id, 100, "test", Z.iso(Z.teraz()))
+        s0 = Z.saldo(self.a_id)
+        _, r = zapytaj(self.m, "/api/nagroda", {"dziecko_id": self.a_id, "nazwa": "Bajka", "koszt": 30})
+        nid = r["id"]
+        self.assertEqual(zapytaj(self.i, "/api/nagroda", {"dziecko_id": self.a_id, "nazwa": "x", "koszt": 1})[0], 403)
+        _, r = zapytaj(self.a, "/api/nagroda", {"nazwa": "Rower", "koszt": 5000, "cel": True})
+        self.assertEqual(Z.q1("SELECT stan FROM nagrody WHERE id=?", r["id"])["stan"], "propozycja")
+        zapytaj(self.m, "/api/nagroda/%d/decyzja" % r["id"], {"decyzja": "tak", "koszt": 1000})
+        self.assertEqual(Z.q1("SELECT koszt, stan FROM nagrody WHERE id=?", r["id"]), {"koszt": 1000, "stan": "aktywna"})
+        self.assertEqual(zapytaj(self.a, "/api/wymiana", {"nagroda_id": r["id"]})[0], 409)   # za mało punktów
+        _, w = zapytaj(self.a, "/api/wymiana", {"nagroda_id": nid})
+        _, st = zapytaj(self.a, "/api/stan")
+        self.assertEqual(st["dzieci"][0]["zarezerwowane"], 30)
+        self.assertEqual(zapytaj(self.d, "/api/wymiana/%d/decyzja" % w["id"], {"decyzja": "tak"})[0], 403)
+        zapytaj(self.m, "/api/wymiana/%d/decyzja" % w["id"], {"decyzja": "tak"})
+        self.assertEqual(Z.saldo(self.a_id), s0 - 30)
+        self.assertEqual(zapytaj(self.m, "/api/wymiana/%d/decyzja" % w["id"], {"decyzja": "tak"})[0], 409)
+
+    def test_8_seria_i_przypomnienie(self):
+        nowe = Z.ex("INSERT INTO osoby(imie,rola,kod,powiadom) VALUES('C','dziecko','kodc000000','mobile_app_c')")
+        d = dt.date.today()
+        for i, stan in ((1, "zatwierdzone"), (2, "wyslane"), (4, "zatwierdzone"), (9, "do_zrobienia")):
+            Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan) VALUES(?,?,?,?)", nowe, "t",
+                 (d - dt.timedelta(days=i)).isoformat(), stan)
+        self.assertEqual(Z.seria(nowe), 3)   # dzień 3 bez zadań nie przerywa; dzień 9 dalej niż 3 puste dni
+        POWIADOMIENIA.clear()
+        Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan,termin) VALUES(?,?,?,?,?)", nowe, "Pies", d.isoformat(),
+             "do_zrobienia", Z.iso(Z.teraz() + dt.timedelta(minutes=30)))
+        self.assertEqual(Z.przypomnienia(), 1)
+        self.assertEqual(Z.przypomnienia(), 0)
+        self.assertTrue(czekaj(lambda: POWIADOMIENIA))
+
+    def test_9_osoby_i_nowy_link(self):
+        _, r = zapytaj(self.adm, "/api/osoba/%d" % self.d_id, {"nowy_kod": True})
+        nowy = r["link"].rsplit("/", 1)[1]
+        self.assertEqual(zapytaj(self.d, "/api/stan")[0], 401)
+        self.assertEqual(zapytaj(nowy, "/api/stan")[0], 200)
+        self.assertEqual(zapytaj(self.adm, "/api/osoba/1", {"usun": True})[0], 409)
+        self.assertEqual(zapytaj(self.adm, "/api/opieka", {"dorosly_id": self.a_id, "dziecko_id": self.b_id})[0], 400)
+        _, st = zapytaj(self.adm, "/api/stan")
+        self.assertTrue(st["ja"]["admin"])
+        self.assertIn("osoby", st)
+        self.assertTrue(st["ha"])
+
+    def test_bez_ai(self):
+        o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})
+        self.assertEqual(o["werdykt"], "niepewne")
+        self.assertEqual(o["punkty"], [{"ok": True, "tekst": "a"}])
+        self.assertEqual(Z.termin_ok("2026-11-16"), "2026-11-16T20:00:00")
+        self.assertRaises(Z.Blad, Z.termin_ok, "jutro")
+
+
+if __name__ == "__main__":
+    unittest.main()
