@@ -3,6 +3,11 @@
 Tankowania, ładowania, koszty i terminy pojazdów w jednym panelu Home Assistant – jak aplikacja
 Fuelio, ale ładowania auta z wtyczką wpisują się same.
 
+## Zmiany w 1.9.1
+- **Opony już na pojeździe**: przy „+ Komplet” zaznacz „Te opony są już na pojeździe” i wpisz, od kiedy (data),
+  opcjonalnie przebieg z licznika w dniu założenia i bieżnik. Nie trzeba udawać wymiany i nic nie trafia do kosztów.
+  Dla kompletu bez żadnej daty jest też przycisk „Wpisz, od kiedy jest na pojeździe”.
+
 ## Zmiany w 1.9.0
 - **Opony** (Terminy → Opony): komplety (zimowe, letnie, całoroczne; w motocyklu przód i tył osobno) i tylko daty
   wymian. Przebieg każdego kompletu liczy się sam z odczytów licznika (tankowania, koszty, telemetria, ręczne odczyty).
