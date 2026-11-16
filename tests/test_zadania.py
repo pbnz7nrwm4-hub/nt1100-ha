@@ -29,6 +29,14 @@ class Atrapa(BaseHTTPRequestHandler):
             POWIADOMIENIA.append((self.path.rsplit("/", 1)[1], d))
             odp = b"[]"
         else:
+            oai = self.path.endswith("/chat/completions")
+            if oai:   # API zgodne z OpenAI → ten sam słownik co Ollama
+                AI["klucz"] = self.headers.get("Authorization")
+                m = d["messages"][0]["content"]
+                if isinstance(m, list):
+                    d = {"prompt": m[0]["text"], "images": [x["image_url"]["url"] for x in m[1:]]}
+                else:
+                    d = {"prompt": m}
             AI["pytania"].append(d)
             if "dziennika" in d["prompt"]:
                 r = {"zadania": [{"przedmiot": "Matematyka", "tytul": "Zad. 3 i 4 str. 52", "opis": "zeszyt ćwiczeń",
@@ -45,7 +53,9 @@ class Atrapa(BaseHTTPRequestHandler):
                      "dla_dziecka": "Prawie idealnie!"}
             else:
                 r = {"kroki": ["Książki na półkę", "Kable zwinąć", "Wytrzeć blat"]}
-            odp = json.dumps({"response": json.dumps(r, ensure_ascii=False)}).encode()
+            t = json.dumps(r, ensure_ascii=False)
+            odp = json.dumps({"choices": [{"message": {"content": "```json\n" + t + "\n```"}}]} if oai
+                             else {"response": t}).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(odp)))
         self.end_headers()
@@ -403,6 +413,22 @@ class TestZadania(unittest.TestCase):
         self.assertTrue({"punkty", "seria", "dzis", "dzis_zrobione", "tydzien_punkty"} <= set(r["dzieci"][0]))
         self.assertNotIn("kod", json.dumps(r))
         self.assertEqual(zapytaj(None, "/api/podsumowanie", nag={"X-Zadania-Klucz": "x"})[0], 401)   # nie przez dodatek
+
+    def test_e_ai_openai(self):
+        """llama-swap na Macu: …/v1/chat/completions, klucz z pliku, obraz jako data:, odpowiedź w ```json."""
+        kl = os.path.join(T, "ai_klucz")
+        with open(kl, "w") as f:
+            f.write("sekret\n")
+        stare = (Z.AI_URL, Z.AI_KLUCZ)
+        Z.AI_URL, Z.AI_KLUCZ = ADR_ATR + "/v1", kl
+        try:
+            o = Z.ai_zapytaj("Oceń zadanie", ["QUJD"])
+            self.assertEqual(o["dla_dziecka"], "Prawie idealnie!")
+            self.assertEqual(AI["klucz"], "Bearer sekret")
+            self.assertTrue(AI["pytania"][-1]["images"][0].startswith("data:image/jpeg;base64,QUJD"))
+            self.assertEqual(Z.ai_zapytaj("Rozpisz")["kroki"][0], "Książki na półkę")
+        finally:
+            Z.AI_URL, Z.AI_KLUCZ = stare
 
     def test_bez_ai(self):
         o = Z.normalizuj_ocene({"werdykt": "coś dziwnego", "punkty": [{"ok": 1, "tekst": "a"}, "zły"]})

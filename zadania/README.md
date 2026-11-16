@@ -16,7 +16,7 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
 - **Role**: każde dziecko ma swoich opiekunów; każdy opiekun: zleca, zatwierdza albo tylko podgląda.
   Administrator dodaje osoby i daje każdej osobisty link.
 - **Powiadomienia** przez Home Assistanta (nowe zadanie, do zatwierdzenia, decyzja, godzina przed terminem).
-- **AI (opcjonalnie)**: serwer Ollama w domu z modelem widzącym zdjęcia. Rozpisuje zadanie na kroki i ocenia zdjęcie.
+- **AI (opcjonalnie)**: lokalny serwer z modelem widzącym zdjęcia (Ollama albo API zgodne z OpenAI, np. llama-swap). Rozpisuje zadanie na kroki i ocenia zdjęcie.
   AI tylko podpowiada, decyduje rodzic. Bez AI wszystko działa, rodzic ocenia sam.
 
 ## Wersja 1.1
@@ -50,8 +50,9 @@ Potem w aplikacji: **Osoby** → dodaj dzieci i dorosłych, przy każdym dziecku
    (Narzędzia deweloperskie → Akcje → wpisz „notify.”).
 
 ## Lokalne AI
-W `/etc/zadania/zadania.env` ustaw `ZD_AI_URL=http://<adres serwera Ollama>:11434` i `ZD_AI_MODEL` (model widzący zdjęcia),
-potem `systemctl restart zadania`.
+W kontenerze uruchom `zadania-ai` i podaj adres, model i klucz API (klucz nie pokazuje się na ekranie, trafia do
+`/etc/zadania/ai_klucz`). Adres kończący się na `/v1` = API zgodne z OpenAI (llama-swap, llama.cpp, LM Studio),
+inny = Ollama (`http://<adres>:11434`). Polecenie sprawdza, czy model odpowiada, i restartuje usługę. Puste = AI wyłączone.
 
 ## Obsługa
 - Awaryjnie, gdy nikt z administratorów nie może wejść: `zadania-pin "Imię"` (kasuje PIN, wypisuje link).

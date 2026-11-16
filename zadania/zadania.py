@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.1.0"
+WERSJA = "1.2.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -43,7 +43,8 @@ PORT = int(os.environ.get("ZD_PORT", "8092"))
 ADRES = os.environ.get("ZD_ADRES", "").rstrip("/")          # adres strony w linkach (np. http://<ip>:8092)
 HA_URL = os.environ.get("ZD_HA_URL", "").rstrip("/")
 HA_TOKEN_PLIK = os.environ.get("ZD_HA_TOKEN", "/etc/zadania/ha_token")
-AI_URL = os.environ.get("ZD_AI_URL", "").rstrip("/")         # serwer Ollama, np. http://<mac>:11434
+AI_URL = os.environ.get("ZD_AI_URL", "").rstrip("/")         # Ollama (http://<mac>:11434) albo zgodny z OpenAI (…/v1)
+AI_KLUCZ = os.environ.get("ZD_AI_KLUCZ", "/etc/zadania/ai_klucz")  # plik z kluczem API (tylko dla …/v1)
 AI_MODEL = os.environ.get("ZD_AI_MODEL", "gemma3:12b")
 AI_TIMEOUT = int(os.environ.get("ZD_AI_TIMEOUT", "240"))
 LOSOWE = float(os.environ.get("ZD_LOSOWE", "0.2"))           # odsetek zadań „na zaufanie” z losowym zdjęciem
@@ -363,22 +364,57 @@ def osoba(i):
     return q1("SELECT * FROM osoby WHERE id=?", i)
 
 
-# ---------- AI (Ollama) ----------
+# ---------- AI (Ollama albo API zgodne z OpenAI) ----------
 def ai_wlaczone():
     return bool(AI_URL)
 
 
+def ai_klucz():
+    try:
+        with open(AI_KLUCZ, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def ai_json(tekst):
+    """Odpowiedź modelu → słownik; znosi ```json … ``` i tekst wokół obiektu."""
+    t = (tekst or "").strip()
+    try:
+        return json.loads(t)
+    except ValueError:
+        i, j = t.find("{"), t.rfind("}")
+        if i < 0 or j <= i:
+            raise
+        return json.loads(t[i:j + 1])
+
+
 def ai_zapytaj(prompt, obrazy=(), format_json=True):
-    dane = {"model": AI_MODEL, "prompt": prompt, "stream": False, "options": {"temperature": 0.2}}
-    if format_json:
-        dane["format"] = "json"
-    if obrazy:
-        dane["images"] = list(obrazy)
-    req = urllib.request.Request(AI_URL + "/api/generate", data=json.dumps(dane).encode(),
-                                 headers={"Content-Type": "application/json"})
-    odp = json.loads(urllib.request.urlopen(req, timeout=AI_TIMEOUT).read().decode())
-    tekst = odp.get("response", "")
-    return json.loads(tekst) if format_json else tekst
+    if AI_URL.endswith("/v1"):   # llama-swap / llama.cpp / LM Studio (API zgodne z OpenAI)
+        tresc = [{"type": "text", "text": prompt}]
+        tresc += [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + o}} for o in obrazy]
+        dane = {"model": AI_MODEL, "temperature": 0.2, "max_tokens": 1500,
+                "messages": [{"role": "user", "content": tresc if obrazy else prompt}]}
+        if format_json:
+            dane["response_format"] = {"type": "json_object"}
+        h = {"Content-Type": "application/json"}
+        k = ai_klucz()
+        if k:
+            h["Authorization"] = "Bearer " + k
+        req = urllib.request.Request(AI_URL + "/chat/completions", data=json.dumps(dane).encode(), headers=h)
+        odp = json.loads(urllib.request.urlopen(req, timeout=AI_TIMEOUT).read().decode())
+        tekst = ((odp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    else:                         # Ollama
+        dane = {"model": AI_MODEL, "prompt": prompt, "stream": False, "options": {"temperature": 0.2}}
+        if format_json:
+            dane["format"] = "json"
+        if obrazy:
+            dane["images"] = list(obrazy)
+        req = urllib.request.Request(AI_URL + "/api/generate", data=json.dumps(dane).encode(),
+                                     headers={"Content-Type": "application/json"})
+        odp = json.loads(urllib.request.urlopen(req, timeout=AI_TIMEOUT).read().decode())
+        tekst = odp.get("response", "")
+    return ai_json(tekst) if format_json else tekst
 
 
 WERDYKTY = ("zrobione", "raczej_zrobione", "niepewne", "nie_zrobione")

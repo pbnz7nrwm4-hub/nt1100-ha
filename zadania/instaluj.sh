@@ -2,7 +2,7 @@
 # Zadania dzieci w kontenerze (Debian) – instalacja i aktualizacje. Jako root w kontenerze:
 #   bash instaluj.sh "Imię administratora" http://<adres HA>:8123 [port]      (port domyślnie 8092)
 # Ponowne uruchomienie niczego nie psuje: zostawia bazę, zdjęcia i ustawienia (nowego administratora nie dodaje).
-# Połączenie z Home Assistantem (powiadomienia): zadania-ha-token. Lokalne AI: ZD_AI_URL w /etc/zadania/zadania.env.
+# Połączenie z Home Assistantem (powiadomienia): zadania-ha-token. Lokalne AI (ocena zdjęć, zrzuty, poprawki): zadania-ai.
 set -euo pipefail
 ADMIN="${1:-}"
 HA="${2:-}"
@@ -39,9 +39,11 @@ ZD_PORT=$PORT
 ZD_ADRES=http://$IP:$PORT
 ZD_HA_URL=$HA
 ZD_HA_TOKEN=/etc/zadania/ha_token
-# Lokalne AI (Ollama, model z widzeniem). Puste = bez oceny AI, rodzic ocenia sam.
+# Lokalne AI z widzeniem: Ollama (http://<mac>:11434) albo API zgodne z OpenAI (http://<mac>:8080/v1).
+# Puste = bez AI, rodzic ocenia sam. Ustawia polecenie zadania-ai.
 ZD_AI_URL=
-ZD_AI_MODEL=gemma3:12b
+ZD_AI_MODEL=gemma4-12b
+ZD_AI_KLUCZ=/etc/zadania/ai_klucz
 TZ=Europe/Warsaw
 EOT
   chown root:zadania "$ENV"
@@ -85,6 +87,30 @@ echo "Zapisane. Powiadomienia pójdą przez Home Assistanta."
 EOT
 chmod 750 /usr/local/sbin/zadania-ha-token
 ln -sf /usr/local/sbin/zadania-ha-token /usr/local/bin/zadania-ha-token
+
+# Podłączenie lokalnego AI (adres, model, klucz API – klucz wpisywany bez pokazywania): zadania-ai
+cat > /usr/local/sbin/zadania-ai <<EOT
+#!/bin/bash
+set -euo pipefail
+ENV=$ENV
+grep -q '^ZD_AI_KLUCZ=' "\$ENV" || echo 'ZD_AI_KLUCZ=/etc/zadania/ai_klucz' >> "\$ENV"
+. "\$ENV"
+read -rp "Adres serwera AI (np. http://<adres Maca>:8080/v1, puste = wyłącz AI) [\${ZD_AI_URL}]: " U; U=\${U:-\$ZD_AI_URL}
+read -rp "Model [\${ZD_AI_MODEL}]: " M; M=\${M:-\$ZD_AI_MODEL}
+read -rsp "Klucz API (Enter = bez zmian): " K; echo
+sed -i "s|^ZD_AI_URL=.*|ZD_AI_URL=\$U|; s|^ZD_AI_MODEL=.*|ZD_AI_MODEL=\$M|" "\$ENV"
+if [ -n "\$K" ]; then umask 027; printf '%s' "\$K" > /etc/zadania/ai_klucz; chown root:zadania /etc/zadania/ai_klucz; chmod 640 /etc/zadania/ai_klucz; fi
+if [ -n "\$U" ]; then
+  H=(); [ -s /etc/zadania/ai_klucz ] && H=(-H "Authorization: Bearer \$(cat /etc/zadania/ai_klucz)")
+  case "\$U" in */v1) T="\$U/models";; *) T="\$U/api/tags";; esac
+  if curl -fsS -m 10 "\${H[@]}" "\$T" | grep -q "\$M"; then echo "AI odpowiada, model \$M jest dostępny."
+  else echo "UWAGA: serwer AI nie odpowiada albo nie ma modelu \$M – sprawdź adres, klucz i nazwę."; fi
+fi
+systemctl restart zadania
+echo "Zapisane."
+EOT
+chmod 750 /usr/local/sbin/zadania-ai
+ln -sf /usr/local/sbin/zadania-ai /usr/local/bin/zadania-ai
 
 # Przypomnienie linku osoby (np. gdy ktoś zgubił): zadania-link "Imię"
 cat > /usr/local/sbin/zadania-link <<EOT
