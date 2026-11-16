@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.3.0"
+WERSJA = "1.4.0"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS ha_konta(id TEXT PRIMARY KEY, nazwa TEXT, ts TEXT);
 """
 KOLUMNY = (("osoby", "pin_hash", "TEXT DEFAULT ''"), ("osoby", "pin_sol", "TEXT DEFAULT ''"),
            ("osoby", "ha_user", "TEXT DEFAULT ''"), ("osoby", "pin_bledy", "INTEGER DEFAULT 0"),
-           ("osoby", "pin_blokada", "TEXT DEFAULT ''"), ("osoby", "rok_ur", "INTEGER DEFAULT 0"))
+           ("osoby", "pin_blokada", "TEXT DEFAULT ''"), ("osoby", "rok_ur", "INTEGER DEFAULT 0"),
+           ("zadania", "pomoc", "TEXT DEFAULT ''"), ("zadania", "proby", "INTEGER DEFAULT 0"))
 
 
 class Blad(Exception):
@@ -568,6 +569,10 @@ def zadanie_dla(z, ja):
         z["ocena"] = json.loads(z["ocena"]) if z["ocena"] else None
     except ValueError:
         z["ocena"] = None
+    try:
+        z["pomoc"] = json.loads(z["pomoc"]) if z.get("pomoc") else None
+    except ValueError:
+        z["pomoc"] = None
     if ja["rola"] == "dziecko":
         z.pop("wymaga_zdjecia", None)   # losowe sprawdzenie – dziecko dowiaduje się przy wysyłaniu
     zl = osoba(z["zleca_id"]) if z.get("zleca_id") else None
@@ -745,6 +750,8 @@ def a_zdjecie(ja, zid, rodzaj, dane):
         with open(os.path.join(ZDJ, plik), "wb") as f:
             f.write(dane)
         pid = ex("INSERT INTO zdjecia(zadanie_id,rodzaj,plik,ts) VALUES(?,?,?,?)", zid, rodzaj, plik, iso(teraz()))
+        if rodzaj == "po":
+            ex("UPDATE zadania SET proby=proby+1 WHERE id=?", zid)   # ile razy dziecko robiło zdjęcie „po” (wysiłek)
         if rodzaj == "po" and ai_wlaczone():
             ex("UPDATE zadania SET ocena_stan='czeka' WHERE id=?", zid)
     if rodzaj == "po":
@@ -1058,6 +1065,48 @@ def a_doprecyzuj(ja, b):
             "dlaczego": tekst(o.get("dlaczego"), 200)}
 
 
+def a_pomoc(ja, zid):
+    """„Pomóż mi zacząć”: AI podpowiada dziecku pierwszy krok. Nie robi zadania za dziecko. Najwyżej 3 razy na zadanie."""
+    with BLOKADA:
+        z = zadanie_moje(ja, zid, "dziecko")
+        if z["stan"] not in ("do_zrobienia", "do_poprawki"):
+            raise Blad(409, "To zadanie jest już wysłane.")
+        stara = json.loads(z["pomoc"]) if z["pomoc"] else {}
+        ile = int(stara.get("ile") or 0)
+        if ile >= 3:
+            raise Blad(409, "Podpowiedź była już 3 razy. Zapytaj rodzica.")
+        c = osoba(z["dziecko_id"])
+    if not ai_wlaczone():
+        raise Blad(409, "Komputer w domu jest teraz wyłączony. Zapytaj rodzica.")
+    wiek = (teraz().year - c["rok_ur"]) if c and c["rok_ur"] else None
+    kroki = "; ".join(k.get("t", "") for k in json.loads(z["kroki"] or "[]"))
+    prompt = ("Jesteś życzliwym pomocnikiem dziecka" + (" w wieku %d lat" % wiek if wiek else "") + ". Dziecko ma zadanie i nie wie, "
+              "jak się za nie zabrać. NIE rozwiązuj zadania i nie podawaj odpowiedzi do pracy domowej. Pomóż tylko zacząć. "
+              "Zadanie: " + z["tytul"] + ". Czego oczekuje rodzic: " + (z["opis"] or "(brak opisu)") + ". "
+              "Kroki od rodzica: " + (kroki or "(brak)") + ". "
+              + ("Rodzic odesłał do poprawki z uwagą: " + z["slowo"] + ". " if z["stan"] == "do_poprawki" and z["slowo"] else "")
+              + "Odpowiedz wyłącznie JSON po polsku, prostymi słowami, bez zdrobnień dla nastolatka: "
+              "{\"pierwszy_krok\": \"jedna mała rzecz na 2 minuty, od której zacząć\", "
+              "\"wskazowki\": [\"najwyżej 3 krótkie wskazówki\"], \"minuty\": ile minut zajmie całość (liczba), "
+              "\"otucha\": \"jedno krótkie zdanie zachęty\"}")
+    try:
+        o = ai_zapytaj(prompt)
+    except Exception as e:  # noqa: BLE001
+        raise Blad(502, "Komputer w domu nie odpowiedział. Spróbuj za chwilę. (%s)" % str(e)[:80])
+    if not isinstance(o, dict) or not str(o.get("pierwszy_krok") or "").strip():
+        raise Blad(502, "Nie udało się przygotować podpowiedzi. Spróbuj jeszcze raz.")
+    try:
+        mn = max(0, min(240, int(o.get("minuty") or 0)))
+    except (TypeError, ValueError):
+        mn = 0
+    pomoc = {"pierwszy_krok": tekst(o.get("pierwszy_krok"), 200),
+             "wskazowki": [tekst(x, 160) for x in (o.get("wskazowki") or [])[:3] if str(x).strip()],
+             "minuty": mn, "otucha": tekst(o.get("otucha"), 160), "ile": ile + 1, "ts": iso(teraz())}
+    with BLOKADA:
+        ex("UPDATE zadania SET pomoc=? WHERE id=?", json.dumps(pomoc, ensure_ascii=False), zid)
+    return pomoc
+
+
 def a_pin(ja, b):
     pin = pin_poprawny_format(b.get("pin"))
     with BLOKADA:
@@ -1171,6 +1220,7 @@ def petla_tla():
 TRASY_POST = [
     (r"^/api/zadanie$", lambda ja, m, b, raw: a_zadanie(ja, b)),
     (r"^/api/zadanie/(\d+)/kroki$", lambda ja, m, b, raw: a_kroki(ja, int(m[1]), b)),
+    (r"^/api/zadanie/(\d+)/pomoc$", lambda ja, m, b, raw: a_pomoc(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/wez$", lambda ja, m, b, raw: a_wez(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/start$", lambda ja, m, b, raw: a_start(ja, int(m[1]))),
     (r"^/api/zadanie/(\d+)/zdjecie/(przed|po)$", lambda ja, m, b, raw: a_zdjecie(ja, int(m[1]), m[2], raw)),
