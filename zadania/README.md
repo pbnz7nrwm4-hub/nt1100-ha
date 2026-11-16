@@ -19,6 +19,16 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
 - **AI (opcjonalnie)**: serwer Ollama w domu z modelem widzącym zdjęcia. Rozpisuje zadanie na kroki i ocenia zdjęcie.
   AI tylko podpowiada, decyduje rodzic. Bez AI wszystko działa, rodzic ocenia sam.
 
+## Wersja 1.1
+- **PIN**: pierwsze wejście z osobistego linku – ustawiasz PIN (4–6 cyfr); potem wybierasz imię i wpisujesz PIN.
+  Po 5 błędach logowanie tej osoby blokuje się na 15 minut. Zapomniany PIN kasuje administrator albo opiekun dziecka
+  (przycisk „Skasuj PIN”); w aplikacji HA nowy PIN ustawia się bez starego.
+- **Aplikacja Home Assistant** (dodatek „Zadania dzieci” z tego repozytorium): panel w menu HA, działa też poza domem.
+  Konto HA przypisuje administrator w Osobach – wtedy bez PIN-u.
+- **Katalog**: 60 gotowych zadań w trzech poziomach (6–9, 10–12, 13+); poziom podpowiada rok urodzenia dziecka.
+- **Ze zrzutu ekranu**: zrzut z dziennika szkolnego albo zdjęcie kartki – AI wypisuje zadania i terminy, rodzic wybiera.
+- **Popraw z AI**: czego brakuje w poleceniu, lepszy opis, kroki, punkty i forma potwierdzenia z uzasadnieniem.
+
 ## Instalacja w kontenerze
 Proxmox → Shell, potem `pct enter 140`, i w kontenerze:
 
@@ -31,9 +41,11 @@ Na końcu wypisze link administratora. Otwórz go na swoim telefonie i nie wklej
 Potem w aplikacji: **Osoby** → dodaj dzieci i dorosłych, przy każdym dziecku zaznacz opiekunów (Z – zleca, A – zatwierdza),
 **Link** → otwórz go na telefonie danej osoby, Udostępnij → „Do ekranu początkowego”.
 
-## Powiadomienia
-1. Home Assistant → profil → Bezpieczeństwo → token długoterminowy.
-2. W kontenerze: `zadania-ha-token` i wklej token (nie pokazuje się na ekranie).
+## Panel w aplikacji Home Assistant i powiadomienia
+1. HA → Ustawienia → Dodatki → Sklep → repozytorium tego projektu → **Zadania dzieci** → Zainstaluj.
+2. W aplikacji Zadania (administrator): **Osoby → Aplikacja Home Assistant** – skopiuj adres i klucz.
+3. Dodatek → Konfiguracja: wklej adres i klucz, dodaj token długoterminowy HA (profil → Bezpieczeństwo). Zapisz, uruchom.
+   Token trafia do aplikacji sam (powiadomienia). Bez dodatku token można wpisać w kontenerze: `zadania-ha-token`.
 3. W aplikacji, **Osoby**: przy każdej osobie wpisz usługę powiadomień, np. `mobile_app_iphone_zosi`
    (Narzędzia deweloperskie → Akcje → wpisz „notify.”).
 
@@ -42,8 +54,9 @@ W `/etc/zadania/zadania.env` ustaw `ZD_AI_URL=http://<adres serwera Ollama>:1143
 potem `systemctl restart zadania`.
 
 ## Obsługa
+- Awaryjnie, gdy nikt z administratorów nie może wejść: `zadania-pin "Imię"` (kasuje PIN, wypisuje link).
 - Zgubiony link: `zadania-link "Imię"` albo w aplikacji **Osoby** → Nowy link (stary przestaje działać).
 - Kopia bazy co noc: `/var/lib/zadania/kopie/` (30 ostatnich). Zdjęcia zakończonych zadań kasują się po 90 dniach (`ZD_ZDJECIA_DNI`).
 - Aktualizacje same co godzinę z gałęzi main. Ręcznie: `zadania-aktualizuj`.
 - Dziennik: `journalctl -u zadania -n 50`.
-- Bez logowania hasłem: kto ma link osoby, działa jako ta osoba. Strona działa tylko w sieci domowej.
+- Bezpośrednio (adres kontenera) strona działa tylko w sieci domowej; spoza domu – przez aplikację HA.

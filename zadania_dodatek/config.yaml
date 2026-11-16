@@ -1,0 +1,24 @@
+name: Zadania dzieci
+version: "1.1.0"
+slug: zadania
+description: Panel aplikacji Zadania dzieci (kontener w domu) w aplikacji Home Assistant – działa też poza domem
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:checkbox-marked-circle-outline
+panel_title: Zadania
+panel_admin: false
+hassio_api: true
+options:
+  adres_aplikacji: ""
+  klucz_aplikacji: ""
+  token_ha: ""
+schema:
+  adres_aplikacji: "str?"
+  klucz_aplikacji: "password?"
+  token_ha: "password?"

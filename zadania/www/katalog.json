@@ -1,0 +1,602 @@
+[
+{
+"od": 6,
+"kategoria": "Pokój",
+"tytul": "Pościelić łóżko",
+"opis": "Kołdra wyprostowana, poduszka na miejscu.",
+"punkty": 2,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "rano"
+},
+{
+"od": 6,
+"kategoria": "Pokój",
+"tytul": "Odłożyć zabawki na miejsce",
+"opis": "Podłoga wolna, zabawki w pudełkach.",
+"punkty": 5,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Pokój",
+"tytul": "Ubrania do kosza na pranie",
+"opis": "Brudne ubrania w koszu, czyste na półce.",
+"punkty": 3,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Pokój",
+"tytul": "Przygotować ubranie na jutro",
+"opis": "Ubranie na krześle przed snem.",
+"punkty": 2,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Szkoła",
+"tytul": "Spakować plecak na jutro",
+"opis": "Książki i zeszyty według planu, piórnik, drugie śniadanie z lodówki rano.",
+"punkty": 3,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Szkoła",
+"tytul": "Czytanie 15 minut",
+"opis": "Dowolna książka, na głos albo po cichu.",
+"punkty": 5,
+"weryfikacja": "minutnik",
+"minuty": 15,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Szkoła",
+"tytul": "Praca domowa",
+"opis": "Zadanie z zeszytu zrobione starannie.",
+"punkty": 8,
+"weryfikacja": "zeszyt",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Szkoła",
+"tytul": "Ćwiczenie pisania – jedna strona",
+"opis": "Szlaczki albo przepisanie zdania, starannie.",
+"punkty": 5,
+"weryfikacja": "zeszyt",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Higiena",
+"tytul": "Umyć zęby rano",
+"opis": "Dwie minuty.",
+"punkty": 1,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "rano"
+},
+{
+"od": 6,
+"kategoria": "Higiena",
+"tytul": "Umyć zęby wieczorem",
+"opis": "Dwie minuty.",
+"punkty": 1,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Higiena",
+"tytul": "Kąpiel i piżama",
+"opis": "Umyty, w piżamie, ręcznik na wieszaku.",
+"punkty": 2,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 6,
+"kategoria": "Kuchnia",
+"tytul": "Nakryć do stołu",
+"opis": "Talerze, sztućce i serwetki dla wszystkich.",
+"punkty": 4,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Kuchnia",
+"tytul": "Sprzątnąć swój talerz po posiłku",
+"opis": "Talerz i kubek do zlewu albo zmywarki.",
+"punkty": 2,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Kuchnia",
+"tytul": "Wyjąć sztućce ze zmywarki",
+"opis": "Sztućce w szufladzie, posegregowane.",
+"punkty": 4,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Dom",
+"tytul": "Podlać kwiatki",
+"opis": "Wszystkie doniczki z listy, bez rozlewania.",
+"punkty": 3,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Dom",
+"tytul": "Ustawić buty w przedpokoju",
+"opis": "Buty parami na półce.",
+"punkty": 2,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Dom",
+"tytul": "Pomóc rozpakować zakupy",
+"opis": "Zakupy w lodówce i szafkach.",
+"punkty": 4,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Dom",
+"tytul": "Nakarmić zwierzaka",
+"opis": "Miska z jedzeniem i świeża woda.",
+"punkty": 3,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 6,
+"kategoria": "Samodzielność",
+"tytul": "Ubrać się samodzielnie rano",
+"opis": "Bez przypominania.",
+"punkty": 2,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "rano"
+},
+{
+"od": 6,
+"kategoria": "Samodzielność",
+"tytul": "Ruch na dworze 30 minut",
+"opis": "Rower, piłka, spacer.",
+"punkty": 5,
+"weryfikacja": "minutnik",
+"minuty": 30,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Pokój",
+"tytul": "Posprzątać biurko",
+"opis": "Pusty blat, książki na półce, kable zwinięte.",
+"punkty": 10,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Pokój",
+"tytul": "Odkurzyć swój pokój",
+"opis": "Podłoga i pod łóżkiem.",
+"punkty": 10,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Pokój",
+"tytul": "Zmienić pościel",
+"opis": "Nowa pościel założona, stara do prania.",
+"punkty": 12,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Pokój",
+"tytul": "Poskładać i schować pranie",
+"opis": "Swoje ubrania poskładane w szafie.",
+"punkty": 8,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Szkoła",
+"tytul": "Praca domowa ze wszystkich przedmiotów",
+"opis": "Wszystko z planu na jutro zrobione.",
+"punkty": 12,
+"weryfikacja": "zeszyt",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Szkoła",
+"tytul": "Nauka do sprawdzianu 30 minut",
+"opis": "Notatki albo fiszki, bez telefonu.",
+"punkty": 12,
+"weryfikacja": "minutnik",
+"minuty": 30,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Szkoła",
+"tytul": "Czytanie lektury 30 minut",
+"opis": "Fragment lektury szkolnej.",
+"punkty": 10,
+"weryfikacja": "minutnik",
+"minuty": 30,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Szkoła",
+"tytul": "Angielski – słówka 20 minut",
+"opis": "Aplikacja albo fiszki.",
+"punkty": 8,
+"weryfikacja": "minutnik",
+"minuty": 20,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Kuchnia",
+"tytul": "Rozładować zmywarkę",
+"opis": "Wszystko na swoim miejscu.",
+"punkty": 6,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Kuchnia",
+"tytul": "Załadować zmywarkę i włączyć",
+"opis": "Naczynia ułożone, tabletka, program.",
+"punkty": 6,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Kuchnia",
+"tytul": "Przygotować sobie drugie śniadanie",
+"opis": "Kanapka i owoc do szkoły.",
+"punkty": 5,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "rano"
+},
+{
+"od": 10,
+"kategoria": "Kuchnia",
+"tytul": "Wytrzeć stół i blat po kolacji",
+"opis": "Czysto i sucho.",
+"punkty": 4,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 10,
+"kategoria": "Dom",
+"tytul": "Wynieść śmieci i posegregować",
+"opis": "Plastik, papier, szkło, zmieszane.",
+"punkty": 6,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Dom",
+"tytul": "Wytrzeć kurze w salonie",
+"opis": "Półki, stolik, parapety.",
+"punkty": 8,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Dom",
+"tytul": "Wyprowadzić psa",
+"opis": "Spacer 20 minut.",
+"punkty": 6,
+"weryfikacja": "minutnik",
+"minuty": 20,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Dom",
+"tytul": "Umyć umywalkę w łazience",
+"opis": "Umywalka i kran bez osadu.",
+"punkty": 8,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Higiena",
+"tytul": "Prysznic i porządek w łazience",
+"opis": "Ręcznik na wieszaku, rzeczy na miejscu.",
+"punkty": 3,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 10,
+"kategoria": "Samodzielność",
+"tytul": "Spakować się na trening",
+"opis": "Strój, buty, woda – bez przypominania.",
+"punkty": 4,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Samodzielność",
+"tytul": "Ruch 45 minut",
+"opis": "Rower, basen, gra na boisku.",
+"punkty": 8,
+"weryfikacja": "minutnik",
+"minuty": 45,
+"pora": ""
+},
+{
+"od": 10,
+"kategoria": "Samodzielność",
+"tytul": "Pomóc młodszemu rodzeństwu w lekcjach",
+"opis": "15 minut wspólnej nauki.",
+"punkty": 8,
+"weryfikacja": "minutnik",
+"minuty": 15,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Pokój",
+"tytul": "Generalne sprzątanie pokoju",
+"opis": "Biurko, szafa, podłoga, kurze, śmieci wyniesione.",
+"punkty": 25,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Pokój",
+"tytul": "Pranie swoich ubrań",
+"opis": "Posegregowane, uprane, rozwieszone.",
+"punkty": 12,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Pokój",
+"tytul": "Uporządkować szafę",
+"opis": "Za małe ubrania odłożone do oddania.",
+"punkty": 15,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Szkoła",
+"tytul": "Plan nauki na tydzień",
+"opis": "Sprawdziany i terminy wpisane w kalendarz.",
+"punkty": 10,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Szkoła",
+"tytul": "Nauka do sprawdzianu 45 minut",
+"opis": "Bez telefonu w pokoju.",
+"punkty": 15,
+"weryfikacja": "minutnik",
+"minuty": 45,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Szkoła",
+"tytul": "Praca domowa – wszystkie przedmioty",
+"opis": "Zrobione przed 19:00.",
+"punkty": 12,
+"weryfikacja": "zeszyt",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Szkoła",
+"tytul": "Angielski 30 minut",
+"opis": "Słówka, czytanie albo serial z napisami po angielsku.",
+"punkty": 10,
+"weryfikacja": "minutnik",
+"minuty": 30,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Kuchnia",
+"tytul": "Ugotować prosty obiad",
+"opis": "Np. makaron z sosem dla całej rodziny, kuchnia posprzątana po.",
+"punkty": 30,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Kuchnia",
+"tytul": "Śniadanie dla rodziny w weekend",
+"opis": "Nakryte, podane, posprzątane.",
+"punkty": 20,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "rano"
+},
+{
+"od": 13,
+"kategoria": "Kuchnia",
+"tytul": "Lista zakupów na tydzień",
+"opis": "Sprawdzone lodówka i szafki.",
+"punkty": 8,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Kuchnia",
+"tytul": "Umyć naczynia po obiedzie",
+"opis": "Wszystko umyte i wytarte.",
+"punkty": 8,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Dom",
+"tytul": "Umyć łazienkę",
+"opis": "Umywalka, lustro, toaleta, podłoga.",
+"punkty": 25,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Dom",
+"tytul": "Odkurzyć i umyć podłogi na piętrze",
+"opis": "Wszystkie pokoje i korytarz.",
+"punkty": 25,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Dom",
+"tytul": "Zrobić małe zakupy",
+"opis": "Według listy, paragon do sprawdzenia.",
+"punkty": 12,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Dom",
+"tytul": "Umyć okno w swoim pokoju",
+"opis": "Szyba bez smug, parapet czysty.",
+"punkty": 15,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Dom",
+"tytul": "Pomóc w ogrodzie albo garażu",
+"opis": "Grabienie, zamiatanie – według ustaleń.",
+"punkty": 15,
+"weryfikacja": "minutnik",
+"minuty": 45,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Samodzielność",
+"tytul": "Odebrać młodsze rodzeństwo",
+"opis": "Ze szkoły albo z zajęć, o czasie.",
+"punkty": 15,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Samodzielność",
+"tytul": "Telefon odłożony o 21:30",
+"opis": "Telefon w kuchni na ładowarce.",
+"punkty": 5,
+"weryfikacja": "zdjecie",
+"minuty": 0,
+"pora": "wieczor"
+},
+{
+"od": 13,
+"kategoria": "Samodzielność",
+"tytul": "Ruch 60 minut",
+"opis": "Trening, rower, bieganie.",
+"punkty": 10,
+"weryfikacja": "minutnik",
+"minuty": 60,
+"pora": ""
+},
+{
+"od": 13,
+"kategoria": "Samodzielność",
+"tytul": "Zaplanować weekendowe wyjście",
+"opis": "Miejsce, dojazd, koszt – propozycja dla rodziny.",
+"punkty": 10,
+"weryfikacja": "zaufanie",
+"minuty": 0,
+"pora": ""
+}
+]
