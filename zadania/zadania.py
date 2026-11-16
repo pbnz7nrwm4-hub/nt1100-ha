@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.8.0"
+WERSJA = "1.8.1"
 KAT = os.path.expanduser(os.environ.get("ZD_KATALOG", "/var/lib/zadania"))
 BAZA = os.path.join(KAT, "zadania.db")
 ZDJ = os.path.join(KAT, "zdjecia")
@@ -1361,7 +1361,68 @@ def ponaglenia():
 
 # ---------- nauka z AI (1.6): przepytaj mnie, wytłumacz, test ----------
 TRYBY_NAUKI = {"przepytaj": 5, "test": 10, "wytlumacz": 0}
-MAT_MAX = 6000      # znaków materiału (kontekst modelu 16k)
+KAWALEK = 5000      # tyle znaków materiału model dostaje naraz (kontekst 16k: materiał + polecenie + odpowiedź)
+MAT_MAX = 250000    # zabezpieczenie bazy (~50 stron zeszytu); stron do jednej nauki można dodać dowolnie dużo
+STRONA = "\n\n=== strona %d ===\n\n"
+
+
+def kawalki(mat):
+    """Materiał → kawałki do ~KAWALEK znaków, dzielone na granicach stron (długą stronę tnie po akapitach/długości)."""
+    strony = [x.strip() for x in re.split(r"\n*=== strona \d+ ===\n*", mat or "") if x.strip()]
+    czesci = []
+    for st in strony:
+        while len(st) > KAWALEK:
+            i = st.rfind("\n", 0, KAWALEK)
+            i = i if i > KAWALEK // 2 else KAWALEK
+            czesci.append(st[:i].strip())
+            st = st[i:].strip()
+        if st:
+            czesci.append(st)
+    wynik, biez = [], ""
+    for c in czesci:
+        if biez and len(biez) + len(c) + 2 > KAWALEK:
+            wynik.append(biez)
+            biez = ""
+        biez = (biez + "\n\n" + c).strip()
+    if biez:
+        wynik.append(biez)
+    return wynik
+
+
+def podzial_pytan(dl, ile):
+    """Ile pytań z każdego kawałka: proporcjonalnie do długości, każdy użyty kawałek co najmniej 1, razem `ile`."""
+    if len(dl) >= ile:
+        krok = len(dl) / ile
+        return {int(i * krok): 1 for i in range(ile)}
+    cale = sum(dl)
+    w = {i: max(1, round(ile * d / cale)) for i, d in enumerate(dl)}
+    while sum(w.values()) > ile:
+        k = max((i for i in w if w[i] > 1), key=lambda i: w[i])
+        w[k] -= 1
+    while sum(w.values()) < ile:
+        k = max(w, key=lambda i: dl[i] / w[i])
+        w[k] += 1
+    return w
+
+
+def slowa(t):
+    return set(x[:5] for x in re.findall(r"\w{4,}", (t or "").lower()))
+
+
+def material_do_pytania(mat, pytanie):
+    """„Wytłumacz”: do modelu idą kawałki materiału najbardziej pasujące do pytania (najwyżej ~KAWALEK znaków)."""
+    k = kawalki(mat)
+    if len(k) <= 1:
+        return mat
+    sl = slowa(pytanie)
+    ranking = sorted(range(len(k)), key=lambda i: -len(sl & slowa(k[i])))
+    wybrane, dl = [], 0
+    for i in ranking:
+        if wybrane and dl + len(k[i]) > KAWALEK * 1.2:
+            break
+        wybrane.append(i)
+        dl += len(k[i])
+    return "\n\n[…]\n\n".join(k[i] for i in sorted(wybrane))
 POZA = "To nie wynika z Twoich materiałów – sprawdź w podręczniku albo zapytaj nauczyciela."
 
 
@@ -1374,6 +1435,7 @@ def nauka_dla(n, ja):
     minuty = max(0, int((dt.datetime.fromisoformat(koniec) - dt.datetime.fromisoformat(n["start"])).total_seconds() // 60))
     w = {"id": n["id"], "dziecko_id": n["dziecko_id"], "temat": n["temat"], "tryb": n["tryb"], "start": n["start"],
          "koniec": n["koniec"], "strony": n["strony"], "ma_material": bool(n["material"]), "minuty": minuty,
+         "znakow": len(n["material"] or ""),
          "ile": len(pyt), "odpowiedzi": len(odp), "dobrze": sum(1 for p in odp if p["ocena"] == "dobrze"),
          "czesciowo": sum(1 for p in odp if p["ocena"] == "czesciowo"),
          "poza": sum(1 for p in pyt if p.get("poza")) + sum(1 for r in d.get("rozmowa") or [] if r.get("poza")),
@@ -1382,6 +1444,8 @@ def nauka_dla(n, ja):
         w["pytania"] = [{"p": p["p"], "poza": bool(p.get("poza")), "moja": p.get("moja", ""), "ocena": p.get("ocena", ""),
                          "komentarz": p.get("komentarz", ""), "wzor": p.get("odp", "") if p.get("ocena") else ""} for p in pyt]
         w["rozmowa"] = d.get("rozmowa") or []
+        ost = re.split(r"\n*=== strona \d+ ===\n*", n["material"] or "")[-1].strip()
+        w["ostatnia"] = (ost[:280] + "…") if len(ost) > 280 else ost   # podgląd: co komputer odczytał z ostatniej strony
     return w
 
 
@@ -1425,13 +1489,13 @@ def a_nauka(ja, b):
 
 
 def a_nauka_strona(ja, nid, dane):
-    """Zdjęcie notatek albo strony podręcznika → model przepisuje treść (najwyżej 3 strony na naukę)."""
+    """Zdjęcie notatek albo strony podręcznika → model przepisuje treść. Stron dowolnie dużo (model czyta potem po kawałku)."""
     if not dane or len(dane) > MAX_ZDJ or dane[:3] != b"\xff\xd8\xff":
         raise Blad(415, "To nie wygląda na zdjęcie.")
     with BLOKADA:
         n = nauka_moja(ja, nid)
-        if n["strony"] >= 3:
-            raise Blad(409, "Najwyżej 3 strony na jedną naukę.")
+        if len(n["material"] or "") >= MAT_MAX:
+            raise Blad(409, "Materiału jest już bardzo dużo. Podziel naukę na dwie części.")
         if json.loads(n["dane"] or "{}").get("pytania"):
             raise Blad(409, "Pytania są już ułożone. Zacznij nową naukę z nowym materiałem.")
     o = ai_nauka("Na zdjęciu jest strona podręcznika albo notatki ucznia. Przepisz wiernie całą treść po polsku (tekst, wzory, "
@@ -1442,9 +1506,24 @@ def a_nauka_strona(ja, nid, dane):
         raise Blad(422, "Nie umiem odczytać tej strony. Zrób zdjęcie z bliska, przy dobrym świetle.")
     with BLOKADA:
         n = nauka_moja(ja, nid)
-        mat = (n["material"] + "\n\n" + tresc).strip()[:MAT_MAX]
+        mat = (n["material"] + (STRONA % (n["strony"] + 1)) + tresc).strip()[:MAT_MAX]
         ex("UPDATE nauka SET material=?, strony=strony+1, ruch=? WHERE id=?", mat, iso(teraz()), nid)
     return {"strony": n["strony"] + 1, "znakow": len(mat), "czytelne": bool(o.get("czytelne", True))}
+
+
+def a_nauka_strona_usun(ja, nid):
+    """Usuwa ostatnią dodaną stronę (np. źle odczytaną), dopóki nie ma pytań."""
+    with BLOKADA:
+        n = nauka_moja(ja, nid)
+        if json.loads(n["dane"] or "{}").get("pytania"):
+            raise Blad(409, "Pytania są już ułożone.")
+        if not n["strony"]:
+            raise Blad(409, "Nie ma stron do usunięcia.")
+        znak = (STRONA % n["strony"]).strip()
+        i = (n["material"] or "").rfind(znak)
+        mat = (n["material"][:i] if i >= 0 else "").strip()
+        ex("UPDATE nauka SET material=?, strony=strony-1, ruch=? WHERE id=?", mat, iso(teraz()), nid)
+    return {"strony": n["strony"] - 1}
 
 
 def a_nauka_pytania(ja, nid):
@@ -1458,16 +1537,22 @@ def a_nauka_pytania(ja, nid):
         if d.get("pytania"):
             return nauka_dla(n, ja)
         c = osoba(ja["id"])
+    def uloz(zrodlo, ile_tu, k):
+        o = ai_nauka("Jesteś cierpliwym korepetytorem ucznia" + wiek_tekst(c) + ". Temat: " + n["temat"] + ". " + zrodlo
+                     + "Ułóż %d krótkich pytań sprawdzających zrozumienie (nie tylko daty i definicje), od łatwiejszych do trudniejszych. "
+                     "Odpowiedz wyłącznie JSON po polsku: {\"pytania\": [{\"p\": \"pytanie\", \"odp\": \"wzorcowa krótka odpowiedź\"}]}" % ile_tu)
+        return [{"p": tekst(x.get("p"), 300), "odp": tekst(x.get("odp"), 500), "poza": not n["material"], "k": k}
+                for x in (o.get("pytania") or [])[:ile_tu] if isinstance(x, dict) and str(x.get("p") or "").strip()]
+    pyt = []
     if n["material"]:
-        zrodlo = ("Układaj pytania WYŁĄCZNIE z poniższego materiału ucznia. Jeśli materiału jest za mało na %d pytań, ułóż mniej. "
-                  "MATERIAŁ:\n%s\nKONIEC MATERIAŁU. " % (ile, n["material"]))
+        # Długi materiał: pytania z każdej części po kolei (model widzi naraz tylko ~KAWALEK znaków).
+        k = kawalki(n["material"])
+        for i, ile_tu in sorted(podzial_pytan([len(x) for x in k], ile).items()):
+            czesc = (" To część %d z %d materiału." % (i + 1, len(k))) if len(k) > 1 else ""
+            pyt += uloz("Układaj pytania WYŁĄCZNIE z poniższego materiału ucznia." + czesc + " Jeśli materiału jest za mało na %d "
+                        "pytań, ułóż mniej. MATERIAŁ:\n%s\nKONIEC MATERIAŁU. " % (ile_tu, k[i]), ile_tu, i)
     else:
-        zrodlo = "Uczeń nie dał materiału, więc układasz pytania z własnej wiedzy o temacie (poziom szkoły podstawowej). "
-    o = ai_nauka("Jesteś cierpliwym korepetytorem ucznia" + wiek_tekst(c) + ". Temat: " + n["temat"] + ". " + zrodlo
-                 + "Ułóż %d krótkich pytań sprawdzających zrozumienie (nie tylko daty i definicje), od łatwiejszych do trudniejszych. "
-                 "Odpowiedz wyłącznie JSON po polsku: {\"pytania\": [{\"p\": \"pytanie\", \"odp\": \"wzorcowa krótka odpowiedź\"}]}" % ile)
-    pyt = [{"p": tekst(x.get("p"), 300), "odp": tekst(x.get("odp"), 500), "poza": not n["material"]}
-           for x in (o.get("pytania") or [])[:ile] if isinstance(x, dict) and str(x.get("p") or "").strip()]
+        pyt = uloz("Uczeń nie dał materiału, więc układasz pytania z własnej wiedzy o temacie (poziom szkoły podstawowej). ", ile, None)
     if not pyt:
         raise Blad(502, "Nie udało się ułożyć pytań. Spróbuj jeszcze raz.")
     with BLOKADA:
@@ -1491,9 +1576,12 @@ def a_nauka_odpowiedz(ja, nid, b):
         if pyt[i].get("ocena"):
             raise Blad(409, "Na to pytanie już odpowiedziałaś/eś.")
         c = osoba(ja["id"])
+    k = kawalki(n["material"])
+    ki = pyt[i].get("k")
+    fragment = k[ki] if isinstance(ki, int) and 0 <= ki < len(k) else material_do_pytania(n["material"], pyt[i]["p"])
     o = ai_nauka("Jesteś życzliwym korepetytorem ucznia" + wiek_tekst(c) + ". Sprawdź odpowiedź ucznia. Pytanie: " + pyt[i]["p"]
                  + " Odpowiedź wzorcowa: " + pyt[i]["odp"] + " Odpowiedź ucznia: " + moja + " "
-                 + ("Fragment materiału ucznia:\n" + n["material"][:3000] + "\n" if n["material"] else "")
+                 + ("Fragment materiału ucznia:\n" + fragment + "\n" if n["material"] else "")
                  + "Oceniaj sens, nie dosłowne brzmienie ani literówki. Odpowiedz wyłącznie JSON po polsku: "
                  "{\"ocena\": \"dobrze|czesciowo|zle\", \"komentarz\": \"1–2 zdania: co dobrze, czego zabrakło, bez wyśmiewania\"}")
     ocena = o.get("ocena") if o.get("ocena") in ("dobrze", "czesciowo", "zle") else "czesciowo"
@@ -1519,7 +1607,8 @@ def a_nauka_pytanie(ja, nid, b):
             raise Blad(409, "To już 15 pytań w tej nauce. Zacznij nową.")
         c = osoba(ja["id"])
     o = ai_nauka("Jesteś cierpliwym korepetytorem ucznia" + wiek_tekst(c) + ". Temat: " + n["temat"] + ". "
-                 + ("MATERIAŁ UCZNIA:\n" + n["material"] + "\nKONIEC MATERIAŁU. Najpierw szukaj odpowiedzi w materiale. "
+                 + ("MATERIAŁ UCZNIA" + (" (fragmenty pasujące do pytania)" if len(kawalki(n["material"])) > 1 else "") + ":\n"
+                    + material_do_pytania(n["material"], pyt) + "\nKONIEC MATERIAŁU. Najpierw szukaj odpowiedzi w materiale. "
                     if n["material"] else "Uczeń nie dał materiału. ")
                  + "Pytanie ucznia: " + pyt + " Wytłumacz prostymi słowami, krok po kroku, z jednym przykładem. Jeśli to zadanie "
                  "do rozwiązania, pokaż sposób na PODOBNYM przykładzie, nie podawaj gotowego wyniku. Odpowiedz wyłącznie JSON po polsku: "
@@ -1803,6 +1892,7 @@ TRASY_POST = [
     (r"^/api/zadanie/(\d+)/niedamrady$", lambda ja, m, b, raw: a_nie_dam_rady(ja, int(m[1]), b)),
     (r"^/api/zadanie/(\d+)/prosba$", lambda ja, m, b, raw: a_prosba(ja, int(m[1]), b)),
     (r"^/api/nauka$", lambda ja, m, b, raw: a_nauka(ja, b)),
+    (r"^/api/nauka/(\d+)/strona_usun$", lambda ja, m, b, raw: a_nauka_strona_usun(ja, int(m[1]))),
     (r"^/api/nauka/(\d+)/strona$", lambda ja, m, b, raw: a_nauka_strona(ja, int(m[1]), raw)),
     (r"^/api/nauka/(\d+)/pytania$", lambda ja, m, b, raw: a_nauka_pytania(ja, int(m[1]))),
     (r"^/api/nauka/(\d+)/odpowiedz$", lambda ja, m, b, raw: a_nauka_odpowiedz(ja, int(m[1]), b)),

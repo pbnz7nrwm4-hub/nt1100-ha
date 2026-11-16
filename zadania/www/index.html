@@ -342,9 +342,12 @@ function widokSesja(id){
   if (!n) return '<h1>Nauka</h1><div class="karta mal">Nie ma takiej nauki.</div>';
   const cz = t => NS.czeka===t;
   let h = '<div class="wiersz" style="justify-content:flex-start;gap:12px"><a class="btn" href="#nauka" aria-label="Wróć" style="display:flex;align-items:center;justify-content:center;min-width:46px;min-height:46px;border:1px solid var(--linia);border-radius:12px;text-decoration:none;color:inherit">←</a><div><h2>'+esc(n.temat)+'</h2><div class="mal">'+TRYB[n.tryb][0]+(n.minuty?' · '+n.minuty+' min':"")+'</div></div></div>';
-  const mozeMat = !n.ile && n.strony < 3 && !n.koniec;
-  h += '<div class="karta" style="margin-top:12px"><div class="wiersz"><b>Materiały</b><span class="mal">'+(n.strony ? n.strony+" z 3 stron" : n.ma_material ? "notatki wpisane" : "brak")+'</span></div>'
+  const mozeMat = !n.ile && !n.koniec;
+  const lstr = k => k===1 ? "1 strona" : k%10>=2 && k%10<=4 && (k%100<12 || k%100>14) ? k+" strony" : k+" stron";
+  h += '<div class="karta" style="margin-top:12px"><div class="wiersz"><b>Materiały</b><span class="mal">'+(n.strony ? lstr(n.strony) : n.ma_material ? "notatki wpisane" : "brak")+'</span></div>'
     + (n.ma_material ? "" : '<div class="mal" style="margin-top:6px">Zrób zdjęcie notatek albo strony z podręcznika. Bez materiału komputer pyta z własnej wiedzy i może nie trafić w to, co było na lekcji.</div>')
+    + (n.strony && n.ostatnia ? '<details style="margin-top:8px"><summary class="mal">Co komputer odczytał ze strony '+n.strony+'</summary><div class="mal" style="margin-top:6px;white-space:pre-wrap">'+esc(n.ostatnia)+'</div><div class="mal" style="margin-top:6px">Jeśli to nie to, co na zdjęciu, usuń tę stronę i zrób zdjęcie jeszcze raz, z bliska i przy dobrym świetle.</div>'+(mozeMat?'<button data-nusun="'+n.id+'" style="width:100%;margin-top:8px;min-height:40px">Usuń stronę '+n.strony+'</button>':"")+'</details>' : "")
+    + (mozeMat && n.strony && !cz("strona") ? '<div style="margin-top:12px;font-weight:600">Masz jeszcze strony do tej nauki?</div><div class="mal">Możesz dodać ich dowolnie dużo. Komputer przeczyta wszystkie.</div>' : "")
     + (mozeMat ? '<label class="btn" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;min-height:46px;border:2px solid var(--akcent);border-radius:12px">'+IK.aparat+' '+(cz("strona")?"Komputer czyta stronę…":n.strony?"Dodaj kolejną stronę":"Zrób zdjęcie strony")+'<input type="file" accept="image/*" capture="environment" data-nstrona="'+n.id+'" class="ukryj"></label>' : "") + '</div>';
   if (n.tryb==="wytlumacz") {
     h += (n.rozmowa||[]).map(r => '<div class="karta"><div class="mal" style="font-weight:600">Pytasz</div><div>'+esc(r.p)+'</div><div class="mal" style="font-weight:600;margin-top:8px">Odpowiedź</div><div>'+esc(r.o)+'</div>'+(r.poza?'<div class="wpis uw-ic" style="margin-top:8px">'+IK.uw+'<span style="color:var(--tekst)"><b>Uwaga:</b> '+POZA+'</span></div>':"")+'</div>').join("");
@@ -352,7 +355,7 @@ function widokSesja(id){
     else h += '<div class="karta mal">Nauka zakończona. Zadanych pytań: '+n.pytan_dziecka+'.</div>';
     return h;
   }
-  if (!n.ile) return h + '<button class="glowny" data-nuloz="'+n.id+'" style="margin-top:12px">'+(cz("pytania")?"Komputer układa pytania…":"Ułóż pytania")+'</button>';
+  if (!n.ile) return h + '<button class="glowny" data-nuloz="'+n.id+'" style="margin-top:12px">'+(cz("pytania")?"Komputer układa pytania…"+(n.znakow>5000?" Przy dłuższym materiale to potrwa chwilę.":""):n.strony?"To wszystko – ułóż pytania":"Ułóż pytania")+'</button>';
   const test = n.tryb==="test", koniec = n.odpowiedzi >= n.ile;
   if (koniec) h += '<div class="karta wazna" style="text-align:center"><div class="mal">Wynik</div><div style="font-size:36px;font-weight:700">'+n.dobrze+' z '+n.ile+'</div>'+(n.czesciowo?'<div class="mal">i '+n.czesciowo+' prawie dobrze</div>':"")+'<div class="mal" style="margin-top:6px">'+(n.dobrze===n.ile?"Komplet. Świetna robota.":"Przeczytaj jeszcze raz to, co poszło gorzej, i spróbuj jutro.")+'</div></div>';
   n.pytania.forEach((p, i) => {
@@ -638,6 +641,7 @@ function podepnij(){
   A.querySelectorAll("[data-ntryb]").forEach(e => e.onclick = () => { const t = ($("#ntemat")||{}).value || ""; NS.tryb = e.dataset.ntryb; rysuj(); $("#ntemat").value = t; });
   if ($("#nstart")) $("#nstart").onclick = async () => { try { const r = await api("api/nauka", {temat:$("#ntemat").value, tryb:NS.tryb}); await odswiez(); idz("n"+r.id); } catch(er) { toast(er.message); } };
   A.querySelectorAll("[data-nstrona]").forEach(e => e.onchange = () => { WYBOR = 0; const f = e.files[0]; if (!f) return; const id = e.dataset.nstrona; const n = (S.nauka||[]).find(x => x.id === +id) || {temat:""}; nAI("strona", async () => { const b = await zmniejsz(f, 2000); await wyslijFoto("api/nauka/"+id+"/strona", b, "Nauka: "+n.temat); toast("Strona przeczytana"); }); });
+  A.querySelectorAll("[data-nusun]").forEach(e => e.onclick = () => { if (!e.dataset.pewne) { e.dataset.pewne = 1; e.textContent = "Na pewno usunąć? Dotknij jeszcze raz"; return; } akcja("api/nauka/"+e.dataset.nusun+"/strona_usun", {}, "Strona usunięta"); });
   A.querySelectorAll("[data-nuloz]").forEach(e => e.onclick = () => nAI("pytania", () => api("api/nauka/"+e.dataset.nuloz+"/pytania", {})));
   A.querySelectorAll("[data-nodp]").forEach(e => e.onclick = () => { const [id,i] = e.dataset.nodp.split(":"); const t = $("#nodp").value; nAI("odp", () => api("api/nauka/"+id+"/odpowiedz", {i:+i, tekst:t})); });
   A.querySelectorAll("[data-npytaj]").forEach(e => e.onclick = () => { const t = $("#npyt").value; nAI("pytanie", () => api("api/nauka/"+e.dataset.npytaj+"/pytanie", {tekst:t})); });
