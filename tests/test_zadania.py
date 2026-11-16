@@ -26,7 +26,10 @@ class Atrapa(BaseHTTPRequestHandler):
         odp = json.dumps([{"domain": "light", "services": {"turn_on": {}}},
                           {"domain": "notify", "services": {"mobile_app_mama": {}, "persistent_notification": {},
                                                             "mobile_app_a": {}}}]).encode()
-        self.send_response(200 if self.path == "/api/services" else 404)
+        if self.path == "/api/tags":
+            odp = json.dumps({"models": [{"name": "gemma3:12b"}]}).encode()
+        ok = self.path in ("/api/services", "/api/tags") or (self.path == "/api/" and self.headers.get("Authorization") == "Bearer nowy")
+        self.send_response(200 if ok else 401 if self.path == "/api/" else 404)
         self.send_header("Content-Length", str(len(odp)))
         self.end_headers()
         self.wfile.write(odp)
@@ -606,6 +609,47 @@ class TestZadania(unittest.TestCase):
         self.assertEqual(o["punkty"], [{"ok": True, "tekst": "a"}])
         self.assertEqual(Z.termin_ok("2026-11-16"), "2026-11-16T20:00:00")
         self.assertRaises(Z.Blad, Z.termin_ok, "jutro")
+
+    def test_j_ustawienia_i_podglad(self):
+        """Ustawienia w aplikacji zamiast konsoli; „Zobacz jako dziecko”; aktualizacja na prośbę."""
+        self.assertEqual(zapytaj(self.m, "/api/ustawienia", {"ai_model": "x"})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/ustawienia", {"ai_url": "ftp://zle adres"})[0], 400)
+        stary_ai, stary_ha = Z.AI_URL, Z.HA_URL
+        s, r = zapytaj(self.adm, "/api/ustawienia", {"ai_url": stary_ai + "/", "ai_model": "nie-ma-takiego", "ha_token": "nowy"})
+        self.assertEqual((s, r["ai"]["ok"], r["ha"]["ok"]), (200, False, True), r)
+        self.assertIn("nie ma modelu", r["ai"]["tekst"])
+        self.assertEqual(Z.ha_token(), "nowy")
+        self.assertEqual(os.stat(os.path.join(T, "ha_token")).st_mode & 0o777, 0o600)
+        s, r = zapytaj(self.adm, "/api/ustawienia", {"ai_model": "gemma3:12b", "ai_klucz": "sekret"})
+        self.assertEqual((r["ai"]["ok"], Z.ai_klucz(), Z.AI_URL), (True, "sekret", stary_ai), r)
+        u = zapytaj(self.adm, "/api/stan")[1]["ustawienia"]
+        self.assertEqual((u["ai_klucz"], u["ha_token"], u["ai_model"]), (True, True, "gemma3:12b"))
+        self.assertNotIn("sekret", json.dumps(zapytaj(self.adm, "/api/stan")[1]))
+        self.assertNotIn("ustawienia", zapytaj(self.m, "/api/stan")[1])
+        s, r = zapytaj(self.adm, "/api/ustawienia", {"ai_url": ""})          # puste = AI wyłączone
+        self.assertEqual((Z.ai_wlaczone(), r["ai"]["ok"]), (False, False))
+        zapytaj(self.adm, "/api/ustawienia", {"ai_url": stary_ai, "ai_klucz_usun": True, "ha_token": "tok"})
+        self.assertEqual((Z.ai_wlaczone(), Z.ai_klucz(), Z.HA_URL), (True, "", stary_ha))
+        # aktualizacja: bez jednostki systemowej przycisk nie działa, z nią zostawia plik-znacznik
+        self.assertEqual(zapytaj(self.adm, "/api/aktualizuj", {})[0], 409)
+        Z.AKT_JEDNOSTKA = os.path.join(T, "zdjecia")
+        self.assertEqual(zapytaj(self.m, "/api/aktualizuj", {})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/aktualizuj", {})[0], 200)
+        self.assertTrue(os.path.exists(os.path.join(T, "aktualizuj")))
+        # podgląd jako dziecko
+        self.assertEqual(zapytaj(self.m, "/api/podglad", {"dziecko_id": self.a_id})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/podglad", {"dziecko_id": self.m_id})[0], 400)
+        self.assertEqual(zapytaj(self.adm, "/api/podglad", {"dziecko_id": self.a_id})[0], 200)
+        ja = zapytaj(self.adm, "/api/stan")[1]["ja"]
+        self.assertEqual((ja["id"], ja["rola"], ja["podglad"], ja["admin"]), (self.a_id, "dziecko", True, False))
+        self.assertEqual(zapytaj(self.adm, "/api/osoba", {"imie": "X", "rola": "dziecko"})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/pin", {"pin": "1234"})[0], 403)
+        self.assertEqual(zapytaj(self.adm, "/api/przypomnienie", {"tekst": "Próba", "kiedy": Z.dzis()})[0], 200)
+        self.assertEqual(zapytaj(self.adm, "/api/podglad/koniec", {})[0], 200)
+        self.assertEqual(zapytaj(self.adm, "/api/stan")[1]["ja"]["admin"], True)
+        with Z.BLOKADA:   # podgląd wygasa sam
+            Z.ex("UPDATE osoby SET podglad=? WHERE id=1", "%d|2020-01-01T00:00:00" % self.a_id)
+        self.assertEqual(zapytaj(self.adm, "/api/stan")[1]["ja"]["admin"], True)
 
 
 if __name__ == "__main__":

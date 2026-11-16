@@ -31,6 +31,9 @@ komputer w domu podpowiada ocenę, rodzic zatwierdza i przyznaje punkty. Dane i 
   „Pierwsze kroki” dla administratora, telefon do powiadomień wybierany z listy z HA, podsumowanie tygodnia w niedzielę o 18:00.
 - **Od 1.4/1.5**: „Pomóż mi zacząć” (AI podpowiada dziecku pierwszy krok), licznik prób, „Dziś nie dam rady” z decyzją rodzica,
   zgłoszenie własnego zadania, własne przypomnienia dziecka, ponaglenie rodzica po 2 h, punkty jako kieszonkowe (opcja).
+- **Od 1.7**: ekran „Ustawienia” dla administratora (link na dole strony) zastępuje polecenia w konsoli: adres i model AI,
+  adres i token Home Assistanta, sprawdzenie połączeń, „Zobacz jako dziecko”, „Sprawdź i zaktualizuj teraz”. Ustawienia z
+  aplikacji mają pierwszeństwo przed plikiem instalatora. Po zmianie instalatora aktualizacja uruchamia go sama.
 - **Od 1.6**: zakładka „Nauka” u dziecka – „Przepytaj mnie”, „Wytłumacz mi”, „Test przed sprawdzianem”. Dziecko robi zdjęcie
   notatek (do 3 stron), AI pyta i sprawdza tylko na ich podstawie; bez materiałów korzysta z własnej wiedzy i wyraźnie to
   oznacza („to nie wynika z Twoich materiałów”). Rodzic widzi temat, czas i wynik, bez treści odpowiedzi.
