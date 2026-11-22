@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.7.4
+
+Na telefonie przy przewijaniu panelu Tras przyklejone są tylko Dokąd, Po drodze, Opcje (i rodzaje miejsc); karty Planuj, Moje trasy, W trasie się przewijają, bo zabierały jedną trzecią wysokości panelu. Na komputerze bez zmian.
+
 ## Zmiany w 1.7.3
 
 Dymek miejsca na mapie otwiera się w widocznej części mapy: poza panelem Tras (komputer: z lewej, telefon: od dołu) i paskiem „Dokąd jedziesz?”. Przyklejone przyciski na górze panelu nie prześwitują już listą.
