@@ -133,6 +133,8 @@ class Stacja(unittest.TestCase):
         self.assertEqual(dz[0]["restarty"], 0)
         self.assertEqual(dz[0]["klatki_min"], [600, 720])
         self.assertEqual(dz[0]["ram_min_kb"], 111)
+        self.assertEqual(dz[0]["ram_min_od_s"], 20)   # 1.0.9: najniższe min po raz pierwszy w 20. s od startu
+        self.assertIsNone(dz[0]["ram_roznica_kb"])    # brak starszego dziennika z pamięcią
         t = urllib.request.urlopen(self.url + "claude/" + dz[0]["plik"]).read().decode()
         self.assertIn("wersja 2.15.0", t)
         self.assertIn("klatki/min 600–720", t)
@@ -174,6 +176,26 @@ class Stacja(unittest.TestCase):
         self.assertIn("abc", tk)
         # „Pokaż Claude” mieści się w jednej wiadomości
         self.assertLess(len(S.dla_claude(dz[0]["plik"])), 9500)
+
+
+class RamRoznica(unittest.TestCase):
+    def test_roznica_wobec_poprzedniego(self):
+        """1.0.9: RAM min wobec starszego dziennika i moment pierwszego spadku (prośba wątku zgodności map 22.11)."""
+        stare = S.DZIENNIKI
+        S.DZIENNIKI = tempfile.mkdtemp(prefix="stacja-dz-")
+        try:
+            for nazwa, mt, ram in (("demo-a.txt", 1000, (240, 235, 235)), ("demo-b.txt", 2000, (240, 130, 106))):
+                with open(os.path.join(S.DZIENNIKI, nazwa), "w") as f:
+                    f.write("NT1100 Ekran 2.19.0\n" + "".join(
+                        "pamiec %d s: ram 200 KB blok 100 KB min %d KB, psram 30000 KB, klatki 60, demo 50.0 km/h\n" % (10 * (i + 1), r)
+                        for i, r in enumerate(ram)))
+                os.utime(os.path.join(S.DZIENNIKI, nazwa), (mt, mt))
+            dz = S.dzienniki()
+            self.assertEqual([d["plik"] for d in dz], ["demo-b.txt", "demo-a.txt"])
+            self.assertEqual((dz[0]["ram_min_kb"], dz[0]["ram_min_od_s"], dz[0]["ram_roznica_kb"]), (106, 30, 106 - 235))
+            self.assertEqual((dz[1]["ram_min_kb"], dz[1]["ram_min_od_s"], dz[1]["ram_roznica_kb"]), (235, 20, None))
+        finally:
+            S.DZIENNIKI = stare
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.8"
+WERSJA = "1.0.9"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -457,9 +457,12 @@ def podsumowanie(p):
             minuty = max(0, round((st.st_mtime - time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))) / 60))
         except (ValueError, OverflowError):
             pass
+    # 1.0.9: kiedy (sekundy od startu ekranu) minimum RAM po raz pierwszy zeszło do swojej najniższej wartości
+    ram_min = min(int(x) for _, x, _ in pam) if pam else None
+    ram_od = next((int(sek) for sek, x, _ in pam if int(x) == ram_min), None) if pam else None
     return {"plik": os.path.basename(p), "kb": round(st.st_size / 1024, 1), "wersja": wer[-1] if wer else None,
             "starty": starty, "restarty": max(0, starty - 1), "awarie": len(RE_AWARIA.findall(t)), "minut": minuty,
-            "klatki_min": [min(kl), max(kl)] if kl else None, "ram_min_kb": min(int(x) for _, x, _ in pam) if pam else None,
+            "klatki_min": [min(kl), max(kl)] if kl else None, "ram_min_kb": ram_min, "ram_min_od_s": ram_od,
             "kiedy": time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))}
 
 
@@ -470,6 +473,10 @@ def dzienniki(n=30):
             out.append(podsumowanie(p))
         except OSError:
             pass
+    # różnica RAM min względem poprzedniego dziennika z odczytem pamięci (starszy = następny na liście)
+    for i, x in enumerate(out):
+        pop = next((y["ram_min_kb"] for y in out[i + 1:] if y["ram_min_kb"] is not None), None)
+        x["ram_roznica_kb"] = x["ram_min_kb"] - pop if x["ram_min_kb"] is not None and pop is not None else None
     return out
 
 
