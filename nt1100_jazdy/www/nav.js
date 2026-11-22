@@ -63,7 +63,7 @@ document.head.append(css);
 /* 1.5.26: formularz Start/Cel, wyszukiwarka na cały ekran, pinezki, zakładki panelu */
 const css2=document.createElement('style');
 css2.textContent=[
-'.nstabs{margin:0 0 12px;position:sticky;top:0;z-index:5;background:var(--card);padding-top:2px}.nsub{position:sticky;top:var(--st1,52px);z-index:4;background:var(--card);margin-top:0}.nstk2{position:sticky;top:var(--st2,100px);z-index:3;background:var(--card);padding-bottom:4px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
+'.seg.nstabs{margin:0;position:sticky;top:0;z-index:5;background:var(--card);padding-top:2px;box-shadow:0 12px 0 var(--card)}.seg.nsub{position:sticky;top:var(--st1,52px);z-index:4;margin:0;box-shadow:0 8px 0 var(--card)}.nstk2{position:sticky;top:var(--st2,100px);z-index:3;background:var(--card);padding:6px 0 4px}.nstk2 h2{margin:0 0 6px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
 '.nhead{align-items:center;margin-bottom:8px}.nhead>b{font-size:19px;font-weight:700}',
 '.nvseg{display:flex;background:var(--card2);border-radius:999px;padding:3px;gap:2px}.nvseg button{border:0;background:none;border-radius:999px;padding:5px 11px;font-size:13px;color:var(--mut)}.nvseg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 3px #0003}',
 '.nmode{margin:0 0 10px}.nmode button{font-size:14px}',
@@ -240,7 +240,9 @@ function plannerCard(V){let k=el('div','card');V.append(k);
   P.alongEmpty=el('p','mut','Policz albo wybierz trasę, a tu pojawią się miejsca po drodze: ciekawe miejsca, stacje, jedzenie.');ap.prepend(P.alongEmpty);
   P.along=el('div');P.along.hidden=true;ap.append(P.along);subTab(NV.sub||'to');
   renderVehicle(true);renderDrive();renderMode()}
-function stickyVars(){if(!P.sc||!P.tabs)return;const t=P.tabs.offsetHeight+12;P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+2:0))+'px')}
+// 1.7.3: dymek miejsca ma się otwierać w widocznej części mapy: poza panelem (komputer: z lewej, telefon: u dołu) i paskiem szukania
+const POPOPT={maxWidth:300,get autoPanPaddingTopLeft(){const d=window.innerWidth>=900;return L.point(d?460:16,80)},get autoPanPaddingBottomRight(){const d=window.innerWidth>=900;return L.point(16,d?16:sheetPx()+16)}};
+function stickyVars(){if(!P.sc||!P.tabs)return;const t=P.tabs.offsetHeight+12;P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+8:0))+'px')}
 function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
@@ -435,7 +437,7 @@ function showRoute(r){clearPlan();if(!NV.map||!r.pts)return;const ll=r.pts.map(p
 async function togglePoi(){NV.poiOn=!NV.poiOn;P.leg.hidden=!NV.poiOn;P.poiBtn.textContent=NV.poiOn?'Ukryj POI':'Pokaż POI z mapy (fotoradary, stacje, widoki)';if(NV.poiOn)await loadPoi();else if(NV.poi){NV.poi.remove();NV.poi=null}}
 async function loadPoi(){if(!NV.map)return;const b=NV.map.getBounds();if(NV.map.getZoom()<9){if(NV.poi)NV.poi.clearLayers();P.legHint.textContent='przybliż mapę, żeby zobaczyć punkty';return}P.legHint.textContent='';
   try{const j=await J('api/nav/poi?bbox='+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(x=>x.toFixed(4)).join(','));if(j.too_big)P.legHint.textContent='przybliż mapę, żeby zobaczyć punkty';else if(j.points.length>=400)P.legHint.textContent='pokazano część punktów – przybliż, żeby zobaczyć wszystkie';if(!NV.poi)NV.poi=L.layerGroup().addTo(NV.map);NV.poi.clearLayers();
-    for(const p of j.points){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:6,color:'#fff',weight:1.5,fillColor:k[1],fillOpacity:.95}).bindPopup(popupHtml(p,k)+'<br><a href="#" data-add="1">dodaj jako punkt trasy</a>');
+    for(const p of j.points){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:6,color:'#fff',weight:1.5,fillColor:k[1],fillOpacity:.95}).bindPopup(popupHtml(p,k)+'<br><a href="#" data-add="1">dodaj jako punkt trasy</a>',POPOPT);
       m.on('popupopen',e=>{const a=e.popup.getElement().querySelector('[data-add]');if(a)a.onclick=ev=>{ev.preventDefault();addPt({lat:p.lat,lon:p.lon,name:p.name||k[0]});m.closePopup()}});stationPrice(m,p);NV.poi.addLayer(m)}}catch(e){}}
 
 /* ---- POI: wspólne */
@@ -449,7 +451,7 @@ function insertWaypoint(p,ll){if(NV.pts.length<2){addPt(p);return}const a=NV.pts
 function stationPrice(m,p){if(p.kind!==10)return;m.on('popupopen',async e=>{const box=e.popup.getElement();const c=box&&box.querySelector('.leaflet-popup-content');if(!c)return;
   const show=()=>{if(p._price&&!c.querySelector('.fprice')){const d=el('div','fprice');d.append('⛽ Pb95 ');d.append(el('b',null,p._price.text));c.append(d)}};
   if(p._price===undefined){p._price=null;const r=await fuelPrices([p]);p._price=r[0]||null}show()})}
-function poiMarker(layer,p,extra){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:8,color:'#fff',weight:2,fillColor:k[1],fillOpacity:1}).bindPopup(popupHtml(p,k)+(extra?'<br>'+extra:''));stationPrice(m,p);layer.addLayer(m);return m}
+function poiMarker(layer,p,extra){const k=KIND[p.kind]||['punkt','#888'];const m=L.circleMarker([p.lat,p.lon],{radius:8,color:'#fff',weight:2,fillColor:k[1],fillOpacity:1}).bindPopup(popupHtml(p,k)+(extra?'<br>'+extra:''),POPOPT);stationPrice(m,p);layer.addLayer(m);return m}
 // lista POI: wiersze z nazwą, odległością i przyciskami
 function poiRows(box,points,opt){box.textContent='';if(!points.length){box.append(el('p','mut',opt.empty));return}
   for(const p of points){const k=KIND[p.kind]||['punkt','#888'];const r=el('div','npo');const dot=el('i');dot.style.background=k[1];const tx=el('div','tx');tx.append(el('span',null,p.name||k[0]));
