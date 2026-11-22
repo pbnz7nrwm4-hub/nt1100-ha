@@ -156,6 +156,54 @@ def pmtiles(root):
     return o
 
 
+def _plik_info(p):
+    try:
+        st = os.stat(p)
+        return {"bajty": st.st_size, "t": int(st.st_mtime)}
+    except OSError:
+        return None
+
+
+def info_mapy(root):
+    """Tylko odczyt: co jest w kontenerze (wersja mapy, wiek danych OSM, rozmiar, wolne miejsce, stan budowy)."""
+    out = {"t": int(time.time()), "mapa": None, "osm": None, "kafelki": None, "stan": None}
+    try:
+        with open(os.path.join(root, "mapa", "manifest.json")) as f:
+            m = json.load(f)
+        out["mapa"] = {k: m.get(k) for k in ("format", "wersja", "built", "bytes", "bbox", "source")}
+        out["mapa"]["czesci"] = [k for k in ("graph", "addr", "lod1", "lod2", "lod3", "lod4", "znaki", "wys", "siec") if k in m]
+    except (OSError, ValueError):
+        pass
+    out["osm"] = _plik_info(os.path.join(os.path.dirname(root.rstrip("/")), "dane", "mapa.osm.pbf")) \
+        or _plik_info(os.path.join(root, "..", "dane", "mapa.osm.pbf"))
+    out["kafelki"] = _plik_info(os.path.join(root, "kafelki.pmtiles"))
+    try:
+        with open(os.path.join(root, "stan.json")) as f:
+            out["stan"] = json.load(f)
+    except (OSError, ValueError):
+        pass
+    try:
+        v = os.statvfs(root)
+        out["wolne_bajty"] = v.f_bavail * v.f_frsize
+    except OSError:
+        pass
+    return out
+
+
+STRONA_INFO = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Mapa tras</title><style>body{font:16px system-ui;margin:16px;max-width:520px}td{padding:4px 12px 4px 0}
+.z{color:#080}.o{color:#b60}.c{color:#b00}</style><h2>Mapa tras</h2><div id=a>ładuję…</div>
+<script>
+const mb=b=>b==null?'-':(b/1048576).toFixed(0)+' MB',dni=t=>t?Math.floor((Date.now()/1000-t)/86400):null;
+fetch('/info.json').then(r=>r.json()).then(i=>{const m=i.mapa,o=i.osm,s=i.stan,d=o?dni(o.t):null;
+let h='<table>';
+h+='<tr><td>Wersja mapy<td>'+(m?m.wersja+' (format '+m.format+')':'brak')+'<tr><td>Zbudowana<td>'+(m?m.built:'-')
++'<tr><td>Rozmiar<td>'+(m?mb(m.bytes):'-')+'<tr><td>Dane OSM<td>'+(d==null?'-':'<span class='+(d>60?'c':d>35?'o':'z')+'>'+d+' dni temu</span>')
++'<tr><td>Wolne miejsce<td>'+mb(i.wolne_bajty)+'<tr><td>Teraz<td>'+(s?(s.pracuje?s.etap+(s.krok?' ('+s.krok+'/'+s.z+')':''):(s.ok===false?'<span class=c>'+s.etap+'</span>':'nic nie trwa')):'-')+'</table>';
+document.getElementById('a').innerHTML=h}).catch(e=>document.getElementById('a').textContent='błąd: '+e);
+</script>"""
+
+
 class H(SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -183,6 +231,10 @@ class H(SimpleHTTPRequestHandler):
             info["dem"] = os.path.isdir(os.path.join(self.directory, "dem", "12"))
             body = json.dumps(info).encode()
             return self._send(200, body, "application/json")
+        if path == "/info.json":
+            return self._send(200, json.dumps(info_mapy(self.directory)).encode(), "application/json")
+        if path in ("/info", "/info/"):
+            return self._send(200, STRONA_INFO.encode(), "text/html; charset=utf-8")
         m = TILE.match(path)
         if m:
             pm = pmtiles(self.directory)
