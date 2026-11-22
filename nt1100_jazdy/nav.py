@@ -986,7 +986,7 @@ class Nav:
         """Siatka 0,1° → miejsca [{n,g,lat,lon,t,o}] albo None, gdy paczki nie ma na serwerze map."""
         c = getattr(self, "_ciekawe", None)
         now = time.time()
-        if c and now - c[0] < (6 * 3600 if c[1] is not None else 300):
+        if c and now - c[0] < 300:
             return c[1]
         grid = None
         url = self.settings()["map_url"]
