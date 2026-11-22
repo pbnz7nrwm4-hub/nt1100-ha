@@ -11,7 +11,7 @@ Strona (Ingress, bez klucza):
   POST /api/nav/plan, /api/nav/send, /api/nav/gpx, /api/nav/current, /api/nav/delete,
        /api/nav/settings, /api/nav/map/sync, /api/nav/goto, /api/nav/home, /api/nav/fav (ulubione), /api/nav/drive (jazda autem: korki), /api/nav/via (zjazd do miejsca)
 Ekran (port 8098, klucz w X-Klucz albo ?klucz=):
-  GET  /api/nav/ping, /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz, graf .ntg.gz, adresy .nta.gz),
+  GET  /api/nav/ping, /api/nav/dziennik-ekranu?plik&kb (1.6.1: ogon kopii dziennika z karty), /api/nav/route.ntr?id, /api/nav/route.json?id, /api/nav/mapa/<plik> (też <kwadrat>.ntt.gz, graf .ntg.gz, adresy .nta.gz),
        /api/nav/traffic, /api/nav/fw, /api/nav/fw/bin, /api/nav/goto?text (skrót iOS),
        /api/nav/search?q&lat&lon (szukanie celu przez hotspot)
   POST /api/nav/reroute, /api/nav/log, /api/nav/via (zjazd do miejsca i powrót na trasę),
@@ -1184,6 +1184,28 @@ def screen_get(h, path, q):
     if not screen_authorized(h, q):
         SRV.log("Odrzucono ekran: zly klucz (", h.client_address[0], ")")
         return h.send(401, {"ok": False, "error": "zly klucz"}) or True
+    if path == "/api/nav/dziennik-ekranu":
+        # 1.6.1: odczyt kopii dzienników z karty ekranu (ogon pliku) – bez wyjmowania karty
+        name = str(q.get("plik") or "")
+        d = os.path.join(NAV.dir, "dziennik-ekranu")
+        if not name:
+            out = {}
+            for n in SCREEN_LOGS:
+                p = os.path.join(d, n)
+                if os.path.exists(p):
+                    out[n] = {"bytes": os.path.getsize(p), "t": int(os.path.getmtime(p))}
+            return h.send(200, {"ok": True, "pliki": out}) or True
+        if name not in SCREEN_LOGS:
+            return h.send(400, {"ok": False, "error": "zly plik"}) or True
+        kb = max(1, min(int(SRV.num(q.get("kb")) or 64), 1024))
+        p = os.path.join(d, name)
+        if not os.path.exists(p):
+            return h.send(404, {"ok": False, "error": "brak pliku"}) or True
+        size = os.path.getsize(p)
+        with open(p, "rb") as f:
+            f.seek(max(0, size - kb * 1024))
+            data = f.read()
+        return h.send(200, data, "text/plain; charset=utf-8") or True
     try:
         if path == "/api/nav/ping":
             note_screen(h, q)

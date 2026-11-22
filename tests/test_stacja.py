@@ -145,6 +145,22 @@ class Stacja(unittest.TestCase):
         self.assertIn("Packet content transfer stopped", b)
         self.assertIn("Writing at 0x20000", b)
         self.assertNotIn("0x10000 (1", b)
+        # 7. dziennik z karty: polecenie DZIENNIK na porcie, odpowiedź w pliku „demo-karta-…”
+        def ekran():
+            got = b""
+            while b"DZIENNIK" not in got:
+                got += os.read(M, 64)
+            os.write(M, b"szum\n=== KARTA POCZATEK ===\n=== plik awarie.txt (5 B, od 0) ===\npc 4001 ra 4002\n=== plik funkcje.txt (3 B, od 0) ===\nabc\n=== KARTA KONIEC ===\n")
+        th = threading.Thread(target=ekran, daemon=True)
+        th.start()
+        S.STAN["komunikat"] = ""
+        self.assertTrue(S.pobierz_karte())
+        th.join(2)
+        nk = sorted(f for f in os.listdir(S.DZIENNIKI) if f.startswith("demo-karta-"))
+        self.assertTrue(nk)
+        tk = S.dla_claude(nk[-1])
+        self.assertIn("pc 4001 ra 4002", tk)
+        self.assertIn("abc", tk)
         # „Pokaż Claude” mieści się w jednej wiadomości
         self.assertLess(len(S.dla_claude(dz[0]["plik"])), 9500)
 

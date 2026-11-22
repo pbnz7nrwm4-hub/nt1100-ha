@@ -68,3 +68,5 @@ Nagranie przy wgrywaniu startuje dopiero po esptool – otwarty port w czasie re
 ## Bez ekranu
 
 `python3 tests/test_stacja.py` – port to pty, esptool to atrapa, repozytorium budów to lokalny serwer.
+
+**1.0.6:** przycisk **„Pobierz dziennik z karty ekranu”** (sekcja Demo). Stacja wysyła ekranowi polecenie `DZIENNIK` na USB (ekran 2.17.0 lub nowszy) i zapisuje końcówki `awarie.txt`, `funkcje.txt` i `pamiec.txt` jako dziennik „demo-karta-…” z „Pokaż Claude”. Nie działa w trakcie nagrywania ani wgrywania; karty nie trzeba wyjmować.
