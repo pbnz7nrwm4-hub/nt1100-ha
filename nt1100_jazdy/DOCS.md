@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.7.3
+
+Dymek miejsca na mapie otwiera się w widocznej części mapy: poza panelem Tras (komputer: z lewej, telefon: od dołu) i paskiem „Dokąd jedziesz?”. Przyklejone przyciski na górze panelu nie prześwitują już listą.
+
 ## Zmiany w 1.7.2
 
 Przy przewijaniu panelu Tras na górze zostają przyciski kart (Planuj, Moje trasy, W trasie), części (Dokąd, Po drodze, Opcje) oraz
