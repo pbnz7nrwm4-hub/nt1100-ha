@@ -125,6 +125,13 @@ def czekaj(f, s=5):
     return False
 
 
+def _termin_dzis(teraz, godzin):
+    """Termin za kilka godzin, ale nie po północy: zadanie z dniem jutrzejszym nie wchodzi do dzisiejszego stanu
+    (test padał po godz. 21 czasu CI)."""
+    koniec = teraz.replace(hour=23, minute=59, second=0, microsecond=0)
+    return min(teraz + dt.timedelta(hours=godzin), koniec).strftime("%Y-%m-%dT%H:%M")
+
+
 class TestZadania(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -186,7 +193,7 @@ class TestZadania(unittest.TestCase):
 
     def test_3_pelny_przebieg_ze_zdjeciem(self):
         POWIADOMIENIA.clear()
-        termin = (dt.datetime.now() + dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M")
+        termin = _termin_dzis(dt.datetime.now(), 3)
         s, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Posprzątać biurko",
                                                 "opis": "Pusty blat", "termin": termin, "punkty": 20, "ai_kroki": True})
         self.assertEqual(s, 200, r)
@@ -506,7 +513,7 @@ class TestZadania(unittest.TestCase):
         """Nie dam rady → jutro; własne zgłoszenie z punktami od rodzica; ponaglenie po 2 h; kieszonkowe; przypomnienia."""
         with open(os.path.join(T, "ha_token"), "w") as f:
             f.write("tok")
-        termin = (Z.teraz() + dt.timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M")
+        termin = _termin_dzis(Z.teraz(), 5)
         _, r = zapytaj(self.m, "/api/zadanie", {"dziecko_id": self.a_id, "tytul": "Odkurzyć", "weryfikacja": "zaufanie",
                                                  "termin": termin})
         zid = r["zadanie_id"]
