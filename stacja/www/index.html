@@ -100,7 +100,8 @@ function render(){const se=$("#sel");if(se)WYB=se.value;const d=D,naj=d.najnowsz
   <ol><li>Kliknij „Ratuj ekran”.</li><li>Przytrzymaj RESET ok. 2 s, aż zielona dioda szybko miga.</li><li>Stacja sama czeka na ekran (do 90 s) i wgrywa ostatnią dobrze wgraną wersję.</li></ol>
   <button type="button" class="b-out" id="br" ${zaj?"disabled":""}>Ratuj ekran</button></section>
  <section class="card" style="order:4"><div class="hd">${IKO.mapa}<h2>Mapa</h2><span class="tag">fala 2</span></div>
-  <p class="note">Wynik synchronizacji mapy i pełna mapa na nową kartę. Ruszy po 3 udanych wgraniach i 3 nagraniach przez stację (teraz ${d.fala2.wgran} i ${d.fala2.nagran}).</p></section>
+  <p class="note">Wynik synchronizacji mapy i pełna mapa na nową kartę. Ruszy po 3 udanych wgraniach i 3 nagraniach przez stację (teraz ${d.fala2.wgran} i ${d.fala2.nagran}).</p>
+  <p class="note"><a href="http://192.168.1.29:8988/info" target="_blank" rel="noopener">Mapa tras: wersja, wiek danych, Buduj kandydata</a></p></section>
  </div>
  <section class="card"><div class="hd" style="flex-wrap:wrap"><h2>Budowa</h2><span class="tag" style="margin-left:0">fala 2</span><span>${naj?`Ostatnia: ${esc(naj.wersja)}${naj.wynik?" · wynik "+esc(naj.wynik):""}${naj.czas?" · "+esc(kiedy(naj.czas)):""}${naj.commit?" · commit "+esc(naj.commit):""}`:"Brak budów"}</span></div>
   <p class="note">Przycisk „Buduj z gałęzi” dojdzie w fali 2. Na razie budowa jak dotąd, przez „buduj” w czacie.</p></section>
