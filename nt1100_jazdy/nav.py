@@ -979,6 +979,63 @@ class Nav:
         out.sort(key=lambda x: (x["km"], x["off_m"]))
         return out[:limit]
 
+    # ---- 1.6.2: paczka „Ciekawe miejsca” (Wikipedia) z serwera map: miejsca.json, pamiętane 6 h
+    P_CIEKAWE = 90
+
+    def ciekawe(self):
+        """Siatka 0,1° → miejsca [{n,g,lat,lon,t,o}] albo None, gdy paczki nie ma na serwerze map."""
+        c = getattr(self, "_ciekawe", None)
+        now = time.time()
+        if c and now - c[0] < (6 * 3600 if c[1] is not None else 300):
+            return c[1]
+        grid = None
+        url = self.settings()["map_url"]
+        if url:
+            try:
+                d = http_json(url + "/miejsca.json", timeout=20)
+                grid = {}
+                for m in d.get("miejsca", []):
+                    grid.setdefault((int(m["lat"] * 10), int(m["lon"] * 10)), []).append(m)
+            except Exception:
+                grid = None
+        self._ciekawe = (now, grid)
+        return grid
+
+    def ciekawe_along(self, route, max_m=5000.0, limit=150):
+        """Ciekawe miejsca do max_m od trasy, po kilometrze trasy; None = paczki nie ma."""
+        grid = self.ciekawe()
+        if grid is None:
+            return None
+        pts = [(float(p[0]), float(p[1])) for p in route.get("pts") or []]
+        if len(pts) < 2:
+            return []
+        cum = route.get("cum") or cum_dist(pts)
+        found = {}
+        i, n = 0, len(pts)
+        while i < n:
+            ky, kx = int(pts[i][0] * 10), int(pts[i][1] * 10)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    for m in grid.get((ky + dy, kx + dx), ()):
+                        d = ntt.dist_m(pts[i], (m["lat"], m["lon"]))
+                        if d <= max_m + 1000 and (m["t"] not in found or found[m["t"]][0] > d):
+                            found[m["t"]] = (d, i, m)
+            step = 1
+            while i + step < n and cum[i + step] - cum[i] < 1000:
+                step += 1
+            i += step
+        out = []
+        for d0, i0, m in found.values():
+            j, d = nearest_index(pts, (m["lat"], m["lon"]), max(0, i0 - 60), 120)
+            if d > max_m:
+                continue
+            out.append({"lat": m["lat"], "lon": m["lon"], "kind": self.P_CIEKAWE, "name": m.get("n") or m["t"],
+                        "km": round(cum[j] / 1000.0, 1), "off_m": int(d), "idx": j, "opis": m.get("o", ""),
+                        "grupa": m.get("g", ""),
+                        "wiki": "https://pl.wikipedia.org/wiki/" + urllib.parse.quote(m["t"].replace(" ", "_"))})
+        out.sort(key=lambda x: (x["km"], x["off_m"]))
+        return out[:limit]
+
     # ---- silnik tras (GraphHopper)
     def engine_ok(self):
         return bool(self.settings()["engine_url"])

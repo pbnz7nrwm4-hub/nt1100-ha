@@ -19,6 +19,12 @@ import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import pakiety as PAK
+except ImportError:   # starszy kontener bez pakiety.py: strona działa, paczki ukryte
+    PAK = None
+
 
 # ---------------------------------------------------------------- PMTiles v3 (tylko odczyt)
 
@@ -190,6 +196,15 @@ def info_mapy(root):
         out["kandydat"]["jest"] = os.path.isdir(os.path.join(root, "mapa.kandydat"))
     except (OSError, ValueError):
         out["kandydat"] = None
+    if PAK:
+        out["pakiety"] = PAK.wczytaj(os.path.join(root, "..", "pakiety.json"))
+        out["pakiety_opis"] = {"poi": PAK.POI_GRUPY}
+    try:
+        with open(os.path.join(root, "miejsca.json")) as f:
+            mj = json.load(f)
+        out["miejsca"] = {k: mj.get(k) for k in ("built", "n", "bez_opisu", "inny_jezyk", "grupy")}
+    except (OSError, ValueError):
+        out["miejsca"] = None
     try:
         v = os.statvfs(root)
         out["wolne_bajty"] = v.f_bavail * v.f_frsize
@@ -209,7 +224,25 @@ def akcja(root, path, d):
     if p is not None and p.poll() is None:
         return {"ok": False, "blad": "budowa już trwa"}
     kand = os.path.join(www, "mapa.kandydat")
+    if path == "/api/pakiety":
+        if not PAK:
+            return {"ok": False, "blad": "kontener bez obsługi paczek"}
+        p = PAK.popraw(d.get("pakiety"))
+        tmp = os.path.join(kat, "pakiety.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(p, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(kat, "pakiety.json"))
+        return {"ok": True, "komunikat": "wybór paczek zapisany; wejdzie przy następnej budowie", "pakiety": p}
     if path == "/api/buduj":
+        co = str(d.get("co", "ekran"))
+        if co in ("miejsca", "przegladarka"):
+            _BUDOWA["p"] = subprocess.Popen([os.path.join(kat, "bin", "aktualizuj.sh"),
+                                             "--miejsca" if co == "miejsca" else "--kafelki"],
+                                            stdout=open("/var/log/nt1100-trasy.log", "a"), stderr=subprocess.STDOUT,
+                                            start_new_session=True)
+            return {"ok": True, "komunikat": "budowa ruszyła: " + ("ciekawe miejsca" if co == "miejsca" else "mapa do przeglądarki")}
+        if co != "ekran":
+            return {"ok": False, "blad": "nieznany rodzaj budowy"}
         arg = []
         bb = str(d.get("bbox", "")).strip()
         if bb:
@@ -256,16 +289,18 @@ body{font:17px/1.4 system-ui;margin:0;background:var(--b);color:var(--t)}main{ma
 h1{font-size:24px;margin:8px 0}h2{font-size:18px;margin:0 0 6px}.m{color:var(--m);font-size:14px}.z{color:var(--z)}.o{color:var(--o)}.c{color:var(--c)}
 .w{font-size:20px;font-weight:600}button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--l);background:var(--b);color:var(--t)}
 button.g{background:var(--a);color:#fff;border-color:var(--a)}input{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--l);background:var(--b);color:var(--t);width:100%;box-sizing:border-box}
-label{display:block;margin:6px 0}input[type=radio]{width:auto;margin-right:6px}dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 0}dt{color:var(--m)}dd{margin:0}
+label{display:block;margin:6px 0}h3{font-size:16px;margin:14px 0 2px}input[type=checkbox]{width:auto;margin-right:6px}input[type=radio]{width:auto;margin-right:6px}dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 0}dt{color:var(--m)}dd{margin:0}
 </style><main><h1>Mapa tras</h1><div id=a class=m>ładuję…</div></main>
 <script>
 const mb=b=>b==null?'–':b>=1073741824?(b/1073741824).toFixed(1)+' GB':(b/1048576).toFixed(0)+' MB',
 dni=t=>t?Math.floor((Date.now()/1000-t)/86400):null,E=x=>String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-let pin='';
+let pin='',kom='';
 function zapytajPin(){if(!pin)pin=prompt('PIN do budowy mapy')||'';return pin}
 async function akcja(a,extra){const p=zapytajPin();if(!p)return;
  const r=await fetch('/api/'+a,{method:'POST',body:JSON.stringify(Object.assign({pin:p},extra||{}))});
- if(r.status==403)pin='';const j=await r.json();document.getElementById('w').textContent=j.komunikat||j.blad;load()}
+ if(r.status==403)pin='';const j=await r.json();kom=j.komunikat||j.blad;load()}
+function zapiszPaczki(){const v=k=>[...document.querySelectorAll('.'+k+':checked')].map(x=>x.value);
+ akcja('pakiety',{pakiety:{poi:v('ppoi'),budynki:v('pbud').length>0,miejsca:v('pmj').length>0,miejsca_grupy:v('pmg')}})}
 function buduj(){const own=document.getElementById('own').checked;akcja('buduj',own?{bbox:document.getElementById('bb').value}:{})}
 function load(){fetch('/info.json').then(r=>r.json()).then(i=>{
  const m=i.mapa,o=i.osm,s=i.stan,k=i.kandydat,d=o?dni(o.t):null,pr=s&&s.pracuje;
@@ -278,7 +313,17 @@ function load(){fetch('/info.json').then(r=>r.json()).then(i=>{
   +'<p class=m>Stara mapa działa dalej. Zatwierdzenie zamienia ją na nową (stara zostaje jako kopia).</p><button class=g onclick="akcja(&quot;zatwierdz&quot;)"'+(k.ok?'':' disabled')+'>Zatwierdź</button> <button onclick="akcja(&quot;odrzuc&quot;)">Odrzuć</button></div>';
  if(!pr)h+='<div class=k><h2>Zbuduj nową mapę</h2><label><input type=radio name=z checked onclick="document.getElementById(&quot;own&quot;).checked=false"> Cała Polska <span class=m>(tak jak dziś)</span></label>'
   +'<label><input type=radio id=own name=z> Własny obszar <span class=m>(mniejsza i szybsza mapa)</span></label><input id=bb placeholder="4 liczby: S,W,N,E, np. 49.5,18,50.5,20"><p class=m>Budowa trwa od pół godziny do godziny. Powstaje mapa „na próbę” obok obecnej, ekran jej nie widzi, dopóki nie zatwierdzisz. PIN zapytam przy kliknięciu.</p><button class=g onclick="buduj()">Zbuduj nową mapę</button></div>';
- h+='<div id=w class=m></div>';document.getElementById('a').innerHTML=h;
+ const P=i.pakiety,PO=(i.pakiety_opis||{}).poi||{},mj=i.miejsca,MG=(mj&&mj.grupy)||{zamki:'Zamki, pałace, ruiny',muzea:'Muzea',widoki:'Punkty widokowe i wieże',przyroda:'Jaskinie, wodospady, skały',zabytki:'Zabytki i atrakcje'};
+ if(P&&!pr){const cb=(kl,v,on,txt)=>'<label><input type=checkbox class="'+kl+'" value="'+v+'"'+(on?' checked':'')+'> '+E(txt)+'</label>';
+  h+='<div class=k><h2>Paczki: co ma być w mapie</h2><p class=m>Zaznacz, czego potrzebujesz, i zapisz. Każda paczka ma swój przycisk budowy.</p>'
+  +'<h3>Punkty na mapie ekranu</h3><p class=m>Stacje paliw, fotoradary i światła są zawsze. Mniej punktów to lżejsza mapa. Wchodzi przy budowie nowej mapy ekranu (wyżej).</p>'
+  +Object.keys(PO).map(g=>cb('ppoi',g,P.poi.includes(g),PO[g])).join('')
+  +'<h3>Ciekawe miejsca z Wikipedii</h3><p class=m>Zamki, muzea, widoki z krótkim opisem po polsku. Dodatek pokazuje je „Po drodze” przy trasie. Działa bez internetu po pobraniu. '+(mj?'Teraz: '+mj.n+' miejsc z '+E(mj.built)+'.':'Jeszcze nie pobrane.')+'</p>'
+  +cb('pmj','1',P.miejsca,'Chcę ciekawe miejsca')+'<div style="margin-left:22px">'+Object.keys(MG).map(g=>cb('pmg',g,P.miejsca_grupy.includes(g),MG[g])).join('')+'</div>'
+  +'<h3>Mapa w dodatku (przeglądarka)</h3>'+cb('pbud','1',P.budynki,'Budynki (większy plik, dłuższa budowa)')
+  +'<p><button class=g onclick="zapiszPaczki()">Zapisz wybór</button></p><p><button onclick="akcja(&quot;buduj&quot;,{co:&quot;miejsca&quot;})">Pobierz ciekawe miejsca teraz</button> <button onclick="akcja(&quot;buduj&quot;,{co:&quot;przegladarka&quot;})">Przebuduj mapę dodatku</button></p>'
+  +'<p class=m>Przebudowa mapy dodatku trwa długo i na ten czas trasy się nie liczą. Ciekawe miejsca pobierają się w tle, trasy działają.</p></div>'}
+ h+='<div id=w class=k'+(kom?'':' hidden')+'>'+E(kom)+'</div>';document.getElementById('a').innerHTML=h;
  if(pr)setTimeout(load,10000)}).catch(e=>document.getElementById('a').textContent='błąd: '+e)}
 load();
 </script></html>"""
@@ -320,7 +365,7 @@ class H(SimpleHTTPRequestHandler):
             d = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
         except ValueError:
             return self._send(400, b'{"ok":false,"blad":"zly JSON"}', "application/json")
-        if path not in ("/api/buduj", "/api/zatwierdz", "/api/odrzuc"):
+        if path not in ("/api/buduj", "/api/zatwierdz", "/api/odrzuc", "/api/pakiety"):
             return self._send(404, b"", "text/plain")
         if not self._pin_ok(d):
             time.sleep(1)

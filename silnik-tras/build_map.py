@@ -206,6 +206,12 @@ POI_TAGS = (
     (("shop", "motorcycle_repair"), P_MOTO_SHOP), (("tourism", "picnic_site"), P_PICNIC),
     (("amenity", "parking"), P_PARKING),
 )
+# Paczki (strona serwera map → pakiety.json → MAPA_POI_BEZ): grupy punktów pominięte w tej budowie.
+# Puste = komplet jak dotąd. Mniej punktów nie zmienia formatu mapy, ekran czyta ją tak samo.
+POI_GRUPA = {P_RESTAURANT: "jedzenie", P_CAFE: "jedzenie", P_HOTEL: "noclegi", P_VIEWPOINT: "widoki", P_PASS: "widoki",
+             P_PICNIC: "widoki", P_CHARGING: "ladowarki", P_MOTO_SHOP: "moto", P_PARKING: "parkingi"}
+_BEZ = {g for g in os.environ.get("MAPA_POI_BEZ", "").split(",") if g}
+POI_TAGS = tuple((kv, kind) for kv, kind in POI_TAGS if POI_GRUPA.get(kind) not in _BEZ)
 NODE_FILTER = ["n/highway=speed_camera,motorway_junction,traffic_signals", "n/crossing=traffic_signals"] + ["n/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_FILTER = ["nwr/%s=%s" % kv for kv, _ in POI_TAGS]
 POI_TOWN_M = 10000  # bez addr:city: najbliższa miejscowość ze spisu adresów, jeśli nie dalej

@@ -725,6 +725,10 @@ def page_get(h, path, q):
                 return h.send(404, {"error": "brak trasy"}) or True
             kinds = {int(k) for k in q.get("kinds", "").split(",") if k.strip().isdigit()} or {ntt.P_FUEL}
             max_m = min(5000.0, max(200.0, SRV.num(q.get("max")) or 2000.0))
+            if q.get("ciekawe"):
+                # 1.6.2: paczka „Ciekawe miejsca” (Wikipedia) z serwera map; nie wymaga mapy ekranu w dodatku
+                pts = NAV.ciekawe_along(route, max_m)
+                return h.send(200, {"points": pts or [], "no_pack": pts is None}) or True
             if not NAV.map.available():
                 return h.send(200, {"points": [], "no_map": True}) or True
             return h.send(200, {"points": NAV.along_route(route, kinds, max_m)}) or True

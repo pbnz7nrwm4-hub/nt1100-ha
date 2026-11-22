@@ -10,8 +10,8 @@ const VARS=()=>NV.data.variants.concat([NV.data.mix||['mix','Mój plan']]);
 const VN=v=>(VARS().find(x=>x[0]===v)||[v,v])[1];
 const SHORT={szybko:'szybko',lekko:'lekko',kreto:'kręto',bardzo:'b. kręto'};
 const AVN={gruntowe:'drogi gruntowe (polne, leśne)',szutrowe:'drogi szutrowe',platne:'drogi płatne',autostrady:'autostrady',promy:'promy'};
-const KIND={1:['fotoradar','#e03131'],2:['odcinkowy pomiar – początek','#e03131'],3:['odcinkowy pomiar – koniec','#e03131'],10:['stacja paliw','#1c7ed6'],11:['restauracja','#f08c00'],12:['kawiarnia','#a0522d'],13:['punkt widokowy','#2f9e44'],14:['przełęcz','#087f5b'],15:['nocleg','#7950f2'],16:['ładowarka','#15aabf'],17:['sklep/serwis moto','#d6336c'],18:['miejsce piknikowe','#94d82d']};
-const CATS=[['Stacje','10'],['Jedzenie','11'],['Kawa','12'],['Nocleg','15'],['Widoki','13,14,18'],['Serwis moto','17'],['Ładowarki','16']];
+const KIND={1:['fotoradar','#e03131'],2:['odcinkowy pomiar – początek','#e03131'],3:['odcinkowy pomiar – koniec','#e03131'],10:['stacja paliw','#1c7ed6'],11:['restauracja','#f08c00'],12:['kawiarnia','#a0522d'],13:['punkt widokowy','#2f9e44'],14:['przełęcz','#087f5b'],15:['nocleg','#7950f2'],16:['ładowarka','#15aabf'],17:['sklep/serwis moto','#d6336c'],18:['miejsce piknikowe','#94d82d'],90:['ciekawe miejsce','#e8590c']};
+const CATS=[['Stacje','10'],['Jedzenie','11'],['Kawa','12'],['Nocleg','15'],['Widoki','13,14,18'],['Serwis moto','17'],['Ładowarki','16'],['Ciekawe','90']];
 const LEG=[[1,'fotoradar / odcinek'],[10,'stacja paliw'],[11,'restauracja'],[12,'kawiarnia'],[15,'nocleg'],[13,'widok / przełęcz / piknik'],[17,'serwis moto'],[16,'ładowarka']];
 const css=document.createElement('style');
 css.textContent='#navmap{height:420px;border-radius:10px;background:var(--card2)}#navmap.add{cursor:crosshair}.nmapfail{height:100%;min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;text-align:center;padding:min(22vh,200px) 20px 20px}'+
@@ -436,7 +436,7 @@ async function loadPoi(){if(!NV.map)return;const b=NV.map.getBounds();if(NV.map.
 const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // ceny Pb95 stacji (1.5.34): Google przez dodatek, pamięć 1 h; bez klucza lub bez ceny – po cichu nic
 async function fuelPrices(pts){try{const j=await post('api/nav/fuel_prices',{places:pts.slice(0,6).map(p=>({lat:p.lat,lon:p.lon,name:p.name||''}))});return j.prices||[]}catch(e){return[]}}
-function popupHtml(p,k){k=k||KIND[p.kind]||['punkt','#888'];return '<b>'+esc(p.name||k[0])+'</b>'+(p.name?'<br>'+esc(k[0]):'')+(p.limit?' · '+p.limit+' km/h':'')}
+function popupHtml(p,k){k=k||KIND[p.kind]||['punkt','#888'];return '<b>'+esc(p.name||k[0])+'</b>'+(p.name?'<br>'+esc(k[0]):'')+(p.limit?' · '+p.limit+' km/h':'')+(p.opis?'<br><small>'+esc(p.opis)+'</small>':'')+(p.wiki?'<br><a href="'+esc(p.wiki)+'" target="_blank" rel="noopener">Wikipedia</a>':'')}
 const kmTxt=x=>(x<10?x.toFixed(1):Math.round(x))+' km';
 function nearIdx(ll,lat,lon){let b=1e18,bi=0;for(let i=0;i<ll.length;i++){const a=ll[i],dy=a[0]-lat,dx=(a[1]-lon)*0.64,d=dy*dy+dx*dx;if(d<b){b=d;bi=i}}return bi}
 function insertWaypoint(p,ll){if(NV.pts.length<2){addPt(p);return}const a=NV.pts.slice();const last=a.pop();const k=nearIdx(ll,p.lat,p.lon);let at=a.length;for(let i=1;i<a.length;i++){if(nearIdx(ll,a[i].lat,a[i].lon)>k){at=i;break}}a.splice(at,0,p);a.push(last);setPts(a);autoPlan()}
@@ -449,7 +449,7 @@ function poiRows(box,points,opt){box.textContent='';if(!points.length){box.appen
   for(const p of points){const k=KIND[p.kind]||['punkt','#888'];const r=el('div','npo');const dot=el('i');dot.style.background=k[1];const tx=el('div','tx');tx.append(el('span',null,p.name||k[0]));
     tx.append(el('small',null,(p.name?k[0]+' · ':'')+opt.dist(p)+(p.off_m!==null&&p.off_m!==undefined?' · '+(p.off_m<1000?p.off_m+' m':(p.off_m/1000).toFixed(1)+' km')+' od trasy':'')));
     const sh=el('button',null,'Pokaż');sh.onclick=()=>{if(!NV.map)return;sheet('mid');NV.map.setView([p.lat,p.lon],15);if(p._m)p._m.openPopup()};
-    r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r);p._row=tx}
+    if(p.opis)tx.append(el('small','mut',p.opis));r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r);p._row=tx}
   const st=points.filter(p=>p.kind===10).slice(0,6);
   if(st.length)fuelPrices(st).then(pr=>st.forEach((p,i)=>{const x=pr[i];if(x&&p._row)p._row.append(el('small','fprice','⛽ Pb95 '+x.text))}))}
 
@@ -458,9 +458,9 @@ async function alongFor(q,label,ll){if(!P.along)return;NV.alongQ=q;NV.alongLL=ll
 async function renderAlong(){const A=P.along;A.textContent='';A.append(el('h2',null,'Po drodze: '+NV.alongLabel));
   const ch=el('div','chips');CATS.forEach((c,i)=>{const b=el('span','chip'+(i===NV.alongCat?' on':''),c[0]);b.onclick=()=>{NV.alongCat=i;renderAlong()};ch.append(b)});A.append(ch);
   const box=el('div','nlist');box.append(el('p','mut','szukanie...'));A.append(box);
-  try{const j=await J('api/nav/along?'+NV.alongQ+'&kinds='+CATS[NV.alongCat][1]+'&max=2000');if(NV.alongL)NV.alongL.remove();NV.alongL=L.layerGroup().addTo(NV.map);
+  try{const cw=CATS[NV.alongCat][1]==='90';const j=await J('api/nav/along?'+NV.alongQ+'&kinds='+CATS[NV.alongCat][1]+(cw?'&ciekawe=1&max=5000':'&max=2000'));if(NV.alongL)NV.alongL.remove();NV.alongL=L.layerGroup().addTo(NV.map);
     for(const p of j.points)p._m=poiMarker(NV.alongL,p,'km '+p.km+' trasy');
-    poiRows(box,j.points,{empty:j.no_map?'Brak mapy w dodatku – kliknij „Pobierz mapę z kontenera” na górze.':'Nic w tej kategorii do 2 km od trasy.',dist:p=>'km '+p.km+' trasy',
+    poiRows(box,j.points,{empty:j.no_pack?'Paczka „Ciekawe miejsca” nie jest pobrana. Włącz ją na stronie serwera map (Paczki) i kliknij „Pobierz ciekawe miejsca teraz”.':cw?'Brak ciekawych miejsc do 5 km od trasy.':j.no_map?'Brak mapy w dodatku – kliknij „Pobierz mapę z kontenera” na górze.':'Nic w tej kategorii do 2 km od trasy.',dist:p=>'km '+p.km+' trasy',
       buttons:p=>{const b=el('button',null,'Dodaj');b.title='dodaj jako punkt po drodze (potem policz trasy jeszcze raz)';b.onclick=()=>{insertWaypoint({lat:p.lat,lon:p.lon,name:p.name||(KIND[p.kind]||['punkt'])[0]},NV.alongLL||[]);toast('„'+(p.name||'punkt')+'” dodany jako przystanek')};return [b]}})}
   catch(e){box.textContent='';box.append(el('p','nmsg bad',e.message))}}
 

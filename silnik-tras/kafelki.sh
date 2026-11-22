@@ -5,6 +5,8 @@
 set -euo pipefail
 KAT=/opt/nt1100-trasy
 . "$KAT/obszar.env"
+# Paczki wybrane na stronie serwera map (pakiety.json) nadpisują ustawienia z obszar.env; bez pliku nic się nie zmienia.
+[ -s "$KAT/bin/pakiety.py" ] && eval "$(python3 "$KAT/bin/pakiety.py" env "$KAT/pakiety.json" 2>/dev/null || true)"
 PBF="$1"
 JAVA21="${JAVA21:-java}"
 WE="$PBF"

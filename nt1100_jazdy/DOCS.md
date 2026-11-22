@@ -46,6 +46,13 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.6.2 (ciekawe miejsca przy trasie)
+
+W „Po drodze” jest nowa kategoria **Ciekawe**: zamki, muzea, punkty widokowe i zabytki, które mają artykuł w polskiej
+Wikipedii, do 5 km od trasy, z krótkim opisem i odnośnikiem. Dane to paczka „Ciekawe miejsca” z serwera map
+(strona `http://ADRES-KONTENERA:8988/info` → Paczki → „Chcę ciekawe miejsca” → „Pobierz ciekawe miejsca teraz”).
+Bez paczki kategoria pokazuje, jak ją włączyć. Na ekran Tab5 paczka jeszcze nie trafia (wymaga nowej wersji ekranu).
+
 ## Zmiany w 1.6.1 (dziennik ekranu do odczytu)
 - Dopisek do kopii dzienników z karty ekranu: `GET /api/nav/dziennik-ekranu` (z kluczem ekranu) podaje listę plików, a z `?plik=awarie.txt&kb=64` ogon wybranego pliku. Dzięki temu dziennik z jazdy da się odczytać bez wyjmowania karty.
 

@@ -65,6 +65,17 @@ skrypt pisze ile i podpowiada `pct resize <numer kontenera> rootfs +10G` (na ho�
 
 Dziennik: `journalctl -u nt1100-trasy -f`, `cat /var/log/nt1100-trasy.log`.
 
+## Strona serwera map (`:8988/info`)
+
+Pokazuje wersję i wiek mapy, wolne miejsce i trwającą budowę. Zmiany wymagają PIN-u z pliku `/opt/nt1100-trasy/pin_mapy`
+(nie ma go w repozytorium; bez pliku przyciski odmawiają).
+
+- **Zbuduj nową mapę**: mapa-kandydat w `www/mapa.kandydat`, bieżąca zostaje. Kandydat przechodzi kontrolę
+  (`kontrola_zgodnosci.py` z `www/zgodnosc.json` z budowy firmware); dopiero zgodnego da się zatwierdzić.
+- **Paczki** (`pakiety.json`, czyta je `pakiety.py`): grupy punktów na mapie ekranu (stacje, fotoradary i światła zawsze),
+  budynki w mapie do przeglądarki, „Ciekawe miejsca” z Wikipedii (`miejsca.py` → `www/miejsca.json`, opisy pamiętane
+  w `dane/miejsca-cache.json`). Bez `pakiety.json` wszystko buduje się jak dotąd.
+
 ## Pliki
 
 - `install-lxc.sh` – instalacja (pakiety, usługi, pierwsza budowa).

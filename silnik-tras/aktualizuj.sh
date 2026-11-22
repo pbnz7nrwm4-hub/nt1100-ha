@@ -7,6 +7,8 @@
 set -euo pipefail
 KAT=/opt/nt1100-trasy
 . "$KAT/obszar.env"
+# Paczki wybrane na stronie serwera map (pakiety.json) nadpisują ustawienia z obszar.env; bez pliku nic się nie zmienia.
+[ -s "$KAT/bin/pakiety.py" ] && eval "$(python3 "$KAT/bin/pakiety.py" env "$KAT/pakiety.json" 2>/dev/null || true)"
 PBF="$KAT/dane/mapa.osm.pbf"
 URL="https://download.geofabrik.de/${OBSZAR}-latest.osm.pbf"
 STAN="$KAT/www/stan.json"
@@ -67,7 +69,7 @@ aktualizuj_skrypty() {
   fi
   # 1.5.48: config.yml i motocykl.json z repozytorium leżą w bin/ jako wzór; do użytku wchodzą dopiero przy budowie
   # grafu (krok 5), bo działający silnik musi pasować do swojego grafu (np. tryb LM z e3)
-  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py kontrola_zgodnosci.py config.yml motocykl.json; do
+  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py kontrola_zgodnosci.py pakiety.py miejsca.py config.yml motocykl.json; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"
@@ -78,7 +80,7 @@ aktualizuj_skrypty() {
   rm -rf "$tmp"
   [ -z "$zmiany" ] && return 0
   echo "$(date '+%F %T') nowe skrypty:$zmiany"
-  case "$zmiany" in *mapa-serwer.py*) systemctl restart nt1100-mapa.service || true ;; esac
+  case "$zmiany" in *mapa-serwer.py*|*pakiety.py*) systemctl restart nt1100-mapa.service || true ;; esac
   case "$zmiany" in *aktualizuj.sh*) exec env NT1100_SKRYPTY=1 "$KAT/bin/aktualizuj.sh" "$@" ;; esac
 }
 # 1.5.48: także po przejściu na nowy aktualizuj.sh (NT1100_SKRYPTY=1) – stara wersja nie znała config.yml
@@ -112,6 +114,28 @@ buduj_mape() {
   systemctl start nt1100-mapa.service
   systemctl start nt1100-trasy.service || true
 }
+
+# Paczka „Ciekawe miejsca” (Wikipedia): www/miejsca.json dla dodatku; błąd nie psuje reszty budowy.
+buduj_miejsca() {
+  [ "${MAPA_MIEJSCA:-0}" = "1" ] || { rm -f "$KAT/www/miejsca.json"; return 0; }
+  python3 "$KAT/bin/miejsca.py" "$PBF" "$KAT/www/miejsca.json" --cache "$KAT/dane/miejsca-cache.json" \
+    --grupy "${MAPA_MIEJSCA_GRUPY:-}"
+}
+# Z GUI: tylko ciekawe miejsca (silnik tras działa dalej) albo tylko mapa do przeglądarki (np. po włączeniu budynków).
+if [ "${1:-}" = "--miejsca" ]; then
+  [ -s "$PBF" ] || { koniec false "brak danych OSM"; exit 1; }
+  etap "ciekawe miejsca (Wikipedia)" 2
+  if buduj_miejsca; then koniec true "ciekawe miejsca gotowe"; else koniec false "ciekawe miejsca nieudane (dziennik: /var/log/nt1100-trasy.log)"; fi
+  exit 0
+fi
+if [ "${1:-}" = "--kafelki" ]; then
+  [ -s "$PBF" ] || { koniec false "brak danych OSM"; exit 1; }
+  etap "mapa do przeglądarki (trasy nie liczą się)" 3
+  systemctl stop nt1100-trasy.service || true
+  trap 'systemctl start nt1100-trasy.service || true' EXIT
+  if "$KAT/bin/kafelki.sh" "$PBF"; then koniec true "mapa do przeglądarki gotowa"; else koniec false "mapa do przeglądarki nieudana, zostaje poprzednia"; fi
+  exit 0
+fi
 
 # Kandydat (z GUI „Buduj”): mapa budowana do www/mapa.kandydat z obecnych danych OSM, bieżąca mapa NIETKNIĘTA.
 # Dodatkowe argumenty (np. --bbox) idą do build_map.py. Wynik kontroli zgodności: www/kandydat.json.
@@ -182,6 +206,8 @@ systemctl stop nt1100-trasy.service || true
 "$KAT/bin/kafelki.sh" "$PBF" || { echo "$(date '+%F %T') kafelki nieudane, zostaje poprzednia mapa"; BLAD="mapa do przeglądarki nieudana"; }
 etap "dane wysokości gór (pobiera tylko brakujące)" 4
 python3 "$KAT/bin/dem.py" "$KAT/www" || { echo "$(date '+%F %T') dane wysokości niepełne"; BLAD="${BLAD:+$BLAD, }dane gór niepełne"; }
+
+buduj_miejsca || { echo "$(date '+%F %T') ciekawe miejsca nieudane"; BLAD="${BLAD:+$BLAD, }ciekawe miejsca nieudane"; }
 
 etap "graf tras (trasy nie liczą się)" 5
 # 1.5.48: ustawienia silnika z repozytorium (e3 LM, e5, wysokości) wchodzą razem z nowym grafem; gdy import się nie
