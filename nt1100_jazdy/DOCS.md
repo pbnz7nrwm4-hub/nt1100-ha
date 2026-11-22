@@ -46,6 +46,11 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.6.4
+
+Dodatek odświeża paczkę ciekawych miejsc co 5 minut (było 6 godzin), więc po „Pobierz ciekawe miejsca teraz” zdjęcia i opisy
+pojawiają się od razu, bez restartu dodatku.
+
 ## Zmiany w 1.6.3 (zdjęcia ciekawych miejsc)
 
 Ciekawe miejsca mają miniaturę zdjęcia z Wikipedii (jeśli artykuł ją ma). Zdjęcie ładuje się z internetu przy
