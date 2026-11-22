@@ -196,6 +196,9 @@ def info_mapy(root):
         out["kandydat"]["jest"] = os.path.isdir(os.path.join(root, "mapa.kandydat"))
     except (OSError, ValueError):
         out["kandydat"] = None
+    if out["stan"] and out["stan"].get("pracuje") and not budowa_trwa() and time.time() - out["stan"].get("t", 0) > 20:
+        out["stan"] = dict(out["stan"], pracuje=False, ok=False,
+                           etap="budowa przerwana na etapie „%s” – uruchom ją jeszcze raz" % out["stan"].get("etap", "?"))
     if PAK:
         out["pakiety"] = PAK.wczytaj(os.path.join(root, "..", "pakiety.json"))
         out["pakiety_opis"] = {"poi": PAK.POI_GRUPY}
@@ -214,14 +217,45 @@ def info_mapy(root):
 
 
 BBOX = re.compile(r"^-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?$")
-_BUDOWA = {"p": None}
+
+
+BLOKADA = os.environ.get('NT_BLOKADA', '/run/nt1100-aktualizuj.lock')
+
+
+def budowa_trwa():
+    """Czy aktualizuj.sh naprawdę działa: trzyma blokadę pliku. Sam stan.json nie wystarcza – po zabitej budowie
+    zostaje w nim „pracuje” na zawsze (22.11: budowa uruchomiona ze strony zginęła przy restarcie usługi mapy)."""
+    import fcntl
+    try:
+        with open(BLOKADA, "a") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return True
+            fcntl.flock(f, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    return False
+
+
+def uruchom(kat, args):
+    """Budowa jako osobna jednostka systemd (nie w grupie procesów usługi mapy, więc restart mapy jej nie zabija);
+    bez systemd-run – zwykły proces w tle."""
+    cmd = [os.path.join(kat, "bin", "aktualizuj.sh")] + args
+    log = "/var/log/nt1100-trasy.log"
+    if shutil.which("systemd-run"):
+        r = subprocess.run(["systemd-run", "--no-block", "--collect", "--unit", "nt1100-budowa-%d" % int(time.time()),
+                            "--property", "StandardOutput=append:" + log, "--property", "StandardError=append:" + log]
+                           + cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode == 0:
+            return
+    subprocess.Popen(cmd, stdout=open(log, "a"), stderr=subprocess.STDOUT, start_new_session=True)
 
 
 def akcja(root, path, d):
     kat = os.path.dirname(os.path.abspath(root.rstrip("/")))
     www = os.path.abspath(root)
-    p = _BUDOWA["p"]
-    if p is not None and p.poll() is None:
+    if path != "/api/pakiety" and budowa_trwa():
         return {"ok": False, "blad": "budowa już trwa"}
     kand = os.path.join(www, "mapa.kandydat")
     if path == "/api/pakiety":
@@ -236,10 +270,7 @@ def akcja(root, path, d):
     if path == "/api/buduj":
         co = str(d.get("co", "ekran"))
         if co in ("miejsca", "przegladarka"):
-            _BUDOWA["p"] = subprocess.Popen([os.path.join(kat, "bin", "aktualizuj.sh"),
-                                             "--miejsca" if co == "miejsca" else "--kafelki"],
-                                            stdout=open("/var/log/nt1100-trasy.log", "a"), stderr=subprocess.STDOUT,
-                                            start_new_session=True)
+            uruchom(kat, ["--miejsca" if co == "miejsca" else "--kafelki"])
             return {"ok": True, "komunikat": "budowa ruszyła: " + ("ciekawe miejsca" if co == "miejsca" else "mapa do przeglądarki")}
         if co != "ekran":
             return {"ok": False, "blad": "nieznany rodzaj budowy"}
@@ -249,10 +280,8 @@ def akcja(root, path, d):
             if not BBOX.match(bb):
                 return {"ok": False, "blad": "obszar: podaj 4 liczby oddzielone przecinkami"}
             arg = ["--bbox", bb]
-        _BUDOWA["p"] = subprocess.Popen([os.path.join(kat, "bin", "aktualizuj.sh"), "--kandydat"] + arg,
-                                        stdout=open("/var/log/nt1100-trasy.log", "a"), stderr=subprocess.STDOUT,
-                                        start_new_session=True)
-        return {"ok": True, "komunikat": "budowa kandydata ruszyła; bieżąca mapa bez zmian"}
+        uruchom(kat, ["--kandydat"] + arg)
+        return {"ok": True, "komunikat": "budowa nowej mapy na próbę ruszyła; obecna mapa bez zmian"}
     if path == "/api/odrzuc":
         shutil.rmtree(kand, ignore_errors=True)
         for n in ("kandydat.json",):
@@ -260,15 +289,15 @@ def akcja(root, path, d):
                 os.remove(os.path.join(www, n))
             except OSError:
                 pass
-        return {"ok": True, "komunikat": "kandydat usunięty"}
+        return {"ok": True, "komunikat": "nowa mapa na próbę usunięta"}
     # /api/zatwierdz: tylko zgodny kandydat; stara mapa zostaje jako mapa.stara (Cofnij = /api/cofnij w kolejnym wydaniu)
     try:
         with open(os.path.join(www, "kandydat.json")) as f:
             k = json.load(f)
     except (OSError, ValueError):
-        return {"ok": False, "blad": "brak wyniku kontroli kandydata"}
+        return {"ok": False, "blad": "nie ma nowej mapy na próbę do zatwierdzenia"}
     if not k.get("ok") or not os.path.isdir(kand):
-        return {"ok": False, "blad": "kandydat niezgodny z ekranem: " + "; ".join(k.get("powody", ["brak"]))}
+        return {"ok": False, "blad": "nowa mapa nie pasuje do ekranu: " + "; ".join(k.get("powody", ["brak"]))}
     stara = os.path.join(www, "mapa.stara")
     shutil.rmtree(stara, ignore_errors=True)
     os.replace(os.path.join(www, "mapa"), stara)
@@ -277,7 +306,7 @@ def akcja(root, path, d):
         os.remove(os.path.join(www, "kandydat.json"))
     except OSError:
         pass
-    return {"ok": True, "komunikat": "kandydat jest bieżącą mapą; poprzednia czeka jako mapa.stara"}
+    return {"ok": True, "komunikat": "nowa mapa zastąpiła obecną; poprzednia została jako kopia"}
 
 
 STRONA_INFO = """<!doctype html><html lang=pl><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -308,6 +337,8 @@ function load(){fetch('/info.json').then(r=>r.json()).then(i=>{
  let h='<div class=k><div class=w>'+ocena+'</div><dl><dt>Wersja mapy<dd>'+(m?m.wersja+' (format '+m.format+')':'–')+'<dt>Zbudowana<dd>'+(m?E(m.built):'–')
   +'<dt>Dane OSM sprzed<dd>'+(d==null?'–':d+' dni')+'<dt>Rozmiar<dd>'+(m?mb(m.bytes):'–')+'<dt>Wolne miejsce<dd>'+mb(i.wolne_bajty)+'</dl>'
   +'<p class=m>Mapa buduje się sama co miesiąc. Tu możesz zbudować nową wcześniej, np. z innymi ustawieniami.</p></div>';
+ if(s&&!pr&&s.ok===false)h+='<div class=k><h2 class=c>Ostatnia budowa nieudana</h2>'+E(s.etap)+'</div>';
+ else if(s&&!pr&&s.ok)h+='<div class=k class=m><span class=m>Ostatnia budowa: '+E(s.etap)+'</span></div>';
  if(pr)h+='<div class=k><h2>Trwa budowa</h2>'+E(s.etap)+(s.krok?' (krok '+s.krok+' z '+s.z+')':'')+'<p class=m>Na czas budowy trasy nie liczą się. Strona odświeża się sama.</p></div>';
  else if(k&&k.jest)h+='<div class=k><h2>Nowa mapa czeka na decyzję</h2>'+(k.ok?'<span class=z>Pasuje do ekranu.</span> Wersja '+k.wersja+', zbudowana '+E(k.built)+'.':'<span class=c>Nie pasuje do ekranu, nie da się jej zatwierdzić:</span><ul>'+(k.powody||[]).map(x=>'<li>'+E(x)).join('')+'</ul>')
   +'<p class=m>Stara mapa działa dalej. Zatwierdzenie zamienia ją na nową (stara zostaje jako kopia).</p><button class=g onclick="akcja(&quot;zatwierdz&quot;)"'+(k.ok?'':' disabled')+'>Zatwierdź</button> <button onclick="akcja(&quot;odrzuc&quot;)">Odrzuć</button></div>';

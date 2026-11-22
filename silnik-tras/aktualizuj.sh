@@ -141,19 +141,19 @@ fi
 # Dodatkowe argumenty (np. --bbox) idą do build_map.py. Wynik kontroli zgodności: www/kandydat.json.
 if [ "${1:-}" = "--kandydat" ]; then
   shift
-  [ -s "$PBF" ] || { koniec false "brak danych OSM do budowy kandydata"; exit 1; }
-  etap "kandydat: budowa mapy (trasy nie liczą się)" 2
+  [ -s "$PBF" ] || { koniec false "brak danych OSM do budowy nowej mapy"; exit 1; }
+  etap "nowa mapa na próbę: budowa (trasy nie liczą się)" 2
   systemctl stop nt1100-trasy.service || true
   trap 'systemctl start nt1100-trasy.service || true' EXIT
   rm -rf "$KAT/www/mapa.kandydat"
-  python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.kandydat" "$@" || { koniec false "budowa kandydata nieudana"; exit 1; }
-  etap "kandydat: kontrola zgodności" 3
+  python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.kandydat" "$@" || { koniec false "budowa nowej mapy nieudana, obecna mapa bez zmian"; exit 1; }
+  etap "nowa mapa na próbę: sprawdzanie, czy pasuje do ekranu" 3
   if [ -s "$KAT/www/zgodnosc.json" ]; then
     python3 "$KAT/bin/kontrola_zgodnosci.py" "$KAT/www/mapa.kandydat" "$KAT/www/zgodnosc.json" --json "$KAT/www/kandydat.json" || true
   else
     echo '{"ok":false,"powody":["brak zgodnosc.json z firmware – nie ma z czym porównać"]}' > "$KAT/www/kandydat.json"
   fi
-  koniec true "kandydat gotowy (kontrola: www/kandydat.json), bieżąca mapa bez zmian"
+  koniec true "nowa mapa na próbę gotowa, czeka na decyzję; obecna mapa bez zmian"
   exit 0
 fi
 
