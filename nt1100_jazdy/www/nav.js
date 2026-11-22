@@ -63,7 +63,7 @@ document.head.append(css);
 /* 1.5.26: formularz Start/Cel, wyszukiwarka na cały ekran, pinezki, zakładki panelu */
 const css2=document.createElement('style');
 css2.textContent=[
-'.nstabs{margin:2px 0 12px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
+'.nstabs{margin:0 0 12px;position:sticky;top:0;z-index:5;background:var(--card);padding-top:2px}.nsub{position:sticky;top:var(--st1,52px);z-index:4;background:var(--card);margin-top:0}.nstk2{position:sticky;top:var(--st2,100px);z-index:3;background:var(--card);padding-bottom:4px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
 '.nhead{align-items:center;margin-bottom:8px}.nhead>b{font-size:19px;font-weight:700}',
 '.nvseg{display:flex;background:var(--card2);border-radius:999px;padding:3px;gap:2px}.nvseg button{border:0;background:none;border-radius:999px;padding:5px 11px;font-size:13px;color:var(--mut)}.nvseg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 3px #0003}',
 '.nmode{margin:0 0 10px}.nmode button{font-size:14px}',
@@ -155,11 +155,11 @@ async function navView(){const V=document.getElementById('v-nav');V.textContent=
   plannerCard(P.pane.plan);RC=null;routesCard(P.pane.saved);tripCard(P.pane.trip);P.sc.append(el('div','nattr','Mapa: © OpenStreetMap, OpenMapTiles, OpenFreeMap · Leaflet, MapLibre'));
   if(!NV.pts.length){const d=defStart();if(d)setPts([d])}
   paneTab(NV.pane||'plan');sheet(NV.sheetH||'mid');await initMap();renderSkip();drawFav()}
-function paneTab(k){NV.pane=k;if(!P.tabs)return;for(const b of P.tabs.children)b.classList.toggle('on',b._k===k);for(const x in P.pane)P.pane[x].hidden=x!==k;if(k==='trip'&&T.box)tripLoad();if(P.sc)P.sc.scrollTop=0}
+function paneTab(k){NV.pane=k;if(!P.tabs)return;for(const b of P.tabs.children)b.classList.toggle('on',b._k===k);for(const x in P.pane)P.pane[x].hidden=x!==k;if(k==='trip'&&T.box)tripLoad();if(P.sc)P.sc.scrollTop=0;stickyVars()}
 // domyślny start: świeża pozycja motocykla z ekranu, inaczej dom
 function defStart(){const s=NV.data.screen,fresh=s&&s.t&&Date.now()/1000-s.t<3*3600;if(fresh)return{lat:s.lat,lon:s.lon,name:'pozycja motocykla'};const h=NV.data.settings.home;return h?{lat:h.lat,lon:h.lon,name:h.name||'Dom'}:null}
 // wysokość panelu: 'min' | 'mid' | 'max' albo piksele
-function sheet(h){if(!P.sheet)return;NV.sheetH=h;const H=document.getElementById('nwrap').clientHeight||600;const px=typeof h==='number'?h:h==='min'?SH.min:Math.round(H*SH[h]);P.sheet.style.setProperty('--sh',px+'px');P.sheet.classList.toggle('min',h==='min');document.body.classList.remove('nmin')}
+function sheet(h){if(!P.sheet)return;setTimeout(stickyVars,50);NV.sheetH=h;const H=document.getElementById('nwrap').clientHeight||600;const px=typeof h==='number'?h:h==='min'?SH.min:Math.round(H*SH[h]);P.sheet.style.setProperty('--sh',px+'px');P.sheet.classList.toggle('min',h==='min');document.body.classList.remove('nmin')}
 function sheetPx(){return P.sheet?P.sheet.getBoundingClientRect().height:0}
 function sheetDrag(g){let y0=null,h0=0,moved=false;
   g.addEventListener('pointerdown',e=>{y0=e.clientY;h0=sheetPx();moved=false;P.sheet.classList.add('drag');g.setPointerCapture(e.pointerId)});
@@ -240,7 +240,8 @@ function plannerCard(V){let k=el('div','card');V.append(k);
   P.alongEmpty=el('p','mut','Policz albo wybierz trasę, a tu pojawią się miejsca po drodze: ciekawe miejsca, stacje, jedzenie.');ap.prepend(P.alongEmpty);
   P.along=el('div');P.along.hidden=true;ap.append(P.along);subTab(NV.sub||'to');
   renderVehicle(true);renderDrive();renderMode()}
-function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden}
+function stickyVars(){if(!P.sc||!P.tabs)return;const t=P.tabs.offsetHeight+12;P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+2:0))+'px')}
+function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
   renderModeBtn();renderPts()}
@@ -460,8 +461,8 @@ function poiRows(box,points,opt){box.textContent='';if(!points.length){box.appen
 
 /* ---- po drodze: POI wzdłuż wybranej trasy */
 async function alongFor(q,label,ll){if(!P.along)return;NV.alongQ=q;NV.alongLL=ll;NV.alongLabel=label;if(NV.alongCat===undefined)NV.alongCat=0;P.along.hidden=false;if(P.alongEmpty)P.alongEmpty.hidden=true;renderAlong()}
-async function renderAlong(){const A=P.along;A.textContent='';A.append(el('h2',null,'Po drodze: '+NV.alongLabel));
-  const ch=el('div','chips');CATS.forEach((c,i)=>{const b=el('span','chip'+(i===NV.alongCat?' on':''),c[0]);b.onclick=()=>{NV.alongCat=i;renderAlong()};ch.append(b)});A.append(ch);
+async function renderAlong(){const A=P.along;A.textContent='';const hd=el('div','nstk2');hd.append(el('h2',null,'Po drodze: '+NV.alongLabel));
+  const ch=el('div','chips');CATS.forEach((c,i)=>{const b=el('span','chip'+(i===NV.alongCat?' on':''),c[0]);b.onclick=()=>{NV.alongCat=i;renderAlong()};ch.append(b)});hd.append(ch);A.append(hd);stickyVars();
   const box=el('div','nlist');box.append(el('p','mut','szukanie...'));A.append(box);
   try{const cw=CATS[NV.alongCat][1]==='90';const j=await J('api/nav/along?'+NV.alongQ+'&kinds='+CATS[NV.alongCat][1]+(cw?'&ciekawe=1&max=5000':'&max=2000'));if(NV.alongL)NV.alongL.remove();NV.alongL=L.layerGroup().addTo(NV.map);
     for(const p of j.points)p._m=poiMarker(NV.alongL,p,'km '+p.km+' trasy');
