@@ -245,7 +245,8 @@ const POPOPT={maxWidth:300,get autoPanPaddingTopLeft(){const d=window.innerWidth
 function stickyVars(){if(!P.sc||!P.tabs)return;const t=window.innerWidth>=900?P.tabs.offsetHeight+12:0;   // telefon: kart Planuj/Moje trasy/W trasie nie przyklejamy (zabierały 1/3 panelu)
   P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+8:0))+'px')}
 window.addEventListener('resize',()=>stickyVars());
-function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
+function subTab(m){const prev=NV.sub;NV.sub=m;if(m==='along'&&prev!=='along'&&window.innerWidth<900&&P.sheet&&NV.sheetH!=='max')sheet('max');   // telefon: lista miejsc dostaje całą wysokość
+if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
   renderModeBtn();renderPts()}
