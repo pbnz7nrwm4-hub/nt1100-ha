@@ -247,21 +247,41 @@ def akcja(root, path, d):
     return {"ok": True, "komunikat": "kandydat jest bieżącą mapą; poprzednia czeka jako mapa.stara"}
 
 
-STRONA_INFO = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Mapa tras</title><style>body{font:16px system-ui;margin:16px;max-width:520px}td{padding:4px 12px 4px 0}
-.z{color:#080}.o{color:#b60}.c{color:#b00}</style><h2>Mapa tras</h2><div id=a>ładuję…</div>
+STRONA_INFO = """<!doctype html><html lang=pl><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Mapa tras</title><style>
+:root{--t:#1b1f24;--b:#fff;--k:#f3f5f8;--l:#d5dae1;--m:#5b6573;--z:#1a7f37;--o:#b35900;--c:#c62828;--a:#2563eb}
+@media(prefers-color-scheme:dark){:root{--t:#e8ecf1;--b:#12161b;--k:#1b2128;--l:#2c343d;--m:#98a3b0;--z:#4cc26a;--o:#f0a040;--c:#ff7b72;--a:#6ea0ff}}
+body{font:17px/1.4 system-ui;margin:0;background:var(--b);color:var(--t)}main{max-width:560px;margin:auto;padding:16px}
+.k{background:var(--k);border:1px solid var(--l);border-radius:14px;padding:14px 16px;margin:12px 0}
+h1{font-size:24px;margin:8px 0}h2{font-size:18px;margin:0 0 6px}.m{color:var(--m);font-size:14px}.z{color:var(--z)}.o{color:var(--o)}.c{color:var(--c)}
+.w{font-size:20px;font-weight:600}button{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--l);background:var(--b);color:var(--t)}
+button.g{background:var(--a);color:#fff;border-color:var(--a)}input{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--l);background:var(--b);color:var(--t);width:100%;box-sizing:border-box}
+label{display:block;margin:6px 0}input[type=radio]{width:auto;margin-right:6px}dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0 0}dt{color:var(--m)}dd{margin:0}
+</style><main><h1>Mapa tras</h1><div id=a class=m>ładuję…</div></main>
 <script>
-const mb=b=>b==null?'-':(b/1048576).toFixed(0)+' MB',dni=t=>t?Math.floor((Date.now()/1000-t)/86400):null;
-fetch('/info.json').then(r=>r.json()).then(i=>{const m=i.mapa,o=i.osm,s=i.stan,d=o?dni(o.t):null;
-let h='<table>';
-h+='<tr><td>Wersja mapy<td>'+(m?m.wersja+' (format '+m.format+')':'brak')+'<tr><td>Zbudowana<td>'+(m?m.built:'-')
-+'<tr><td>Rozmiar<td>'+(m?mb(m.bytes):'-')+'<tr><td>Dane OSM<td>'+(d==null?'-':'<span class='+(d>60?'c':d>35?'o':'z')+'>'+d+' dni temu</span>')
-+'<tr><td>Wolne miejsce<td>'+mb(i.wolne_bajty)+'<tr><td>Teraz<td>'+(s?(s.pracuje?s.etap+(s.krok?' ('+s.krok+'/'+s.z+')':''):(s.ok===false?'<span class=c>'+s.etap+'</span>':'nic nie trwa')):'-')+'</table>';
-if(i.kandydat){const k=i.kandydat;h+='<h3>Kandydat</h3>'+(k.ok?'<span class=z>zgodny z ekranem</span>':'<span class=c>niezgodny: '+(k.powody||[]).join('; ')+'</span>')+(k.jest?' · wersja '+k.wersja+' · '+k.built:'');}
-h+='<h3>Buduj</h3><p>Obszar (opcjonalnie: S,W,N,E):<br><input id=bb> <br>PIN: <input id=pin type=password><br><button onclick=akcja("buduj")>Zbuduj kandydata</button> <button onclick=akcja("zatwierdz")>Zatwierdź</button> <button onclick=akcja("odrzuc")>Odrzuć</button></p><div id=w></div>';
-document.getElementById('a').innerHTML=h}).catch(e=>document.getElementById('a').textContent='błąd: '+e);
-function akcja(a){fetch('/api/'+a,{method:'POST',body:JSON.stringify({pin:document.getElementById('pin').value,bbox:document.getElementById('bb').value})}).then(r=>r.json()).then(j=>document.getElementById('w').textContent=j.komunikat||j.blad)}
-</script>"""
+const mb=b=>b==null?'–':b>=1073741824?(b/1073741824).toFixed(1)+' GB':(b/1048576).toFixed(0)+' MB',
+dni=t=>t?Math.floor((Date.now()/1000-t)/86400):null,E=x=>String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let pin='';
+function zapytajPin(){if(!pin)pin=prompt('PIN do budowy mapy')||'';return pin}
+async function akcja(a,extra){const p=zapytajPin();if(!p)return;
+ const r=await fetch('/api/'+a,{method:'POST',body:JSON.stringify(Object.assign({pin:p},extra||{}))});
+ if(r.status==403)pin='';const j=await r.json();document.getElementById('w').textContent=j.komunikat||j.blad;load()}
+function buduj(){const own=document.getElementById('own').checked;akcja('buduj',own?{bbox:document.getElementById('bb').value}:{})}
+function load(){fetch('/info.json').then(r=>r.json()).then(i=>{
+ const m=i.mapa,o=i.osm,s=i.stan,k=i.kandydat,d=o?dni(o.t):null,pr=s&&s.pracuje;
+ let stare=d!=null&&d>60,ocena=!m?'<span class=c>Brak mapy na serwerze.</span>':stare?'<span class=o>Dane są stare, czas zbudować nową mapę.</span>':'<span class=z>Mapa jest aktualna.</span>';
+ let h='<div class=k><div class=w>'+ocena+'</div><dl><dt>Wersja mapy<dd>'+(m?m.wersja+' (format '+m.format+')':'–')+'<dt>Zbudowana<dd>'+(m?E(m.built):'–')
+  +'<dt>Dane OSM sprzed<dd>'+(d==null?'–':d+' dni')+'<dt>Rozmiar<dd>'+(m?mb(m.bytes):'–')+'<dt>Wolne miejsce<dd>'+mb(i.wolne_bajty)+'</dl>'
+  +'<p class=m>Mapa buduje się sama co miesiąc. Tu możesz zbudować nową wcześniej, np. z innymi ustawieniami.</p></div>';
+ if(pr)h+='<div class=k><h2>Trwa budowa</h2>'+E(s.etap)+(s.krok?' (krok '+s.krok+' z '+s.z+')':'')+'<p class=m>Na czas budowy trasy nie liczą się. Strona odświeża się sama.</p></div>';
+ else if(k&&k.jest)h+='<div class=k><h2>Nowa mapa czeka na decyzję</h2>'+(k.ok?'<span class=z>Pasuje do ekranu.</span> Wersja '+k.wersja+', zbudowana '+E(k.built)+'.':'<span class=c>Nie pasuje do ekranu, nie da się jej zatwierdzić:</span><ul>'+(k.powody||[]).map(x=>'<li>'+E(x)).join('')+'</ul>')
+  +'<p class=m>Stara mapa działa dalej. Zatwierdzenie zamienia ją na nową (stara zostaje jako kopia).</p><button class=g onclick="akcja(&quot;zatwierdz&quot;)"'+(k.ok?'':' disabled')+'>Zatwierdź</button> <button onclick="akcja(&quot;odrzuc&quot;)">Odrzuć</button></div>';
+ if(!pr)h+='<div class=k><h2>Zbuduj nową mapę</h2><label><input type=radio name=z checked onclick="document.getElementById(&quot;own&quot;).checked=false"> Cała Polska <span class=m>(tak jak dziś)</span></label>'
+  +'<label><input type=radio id=own name=z> Własny obszar <span class=m>(mniejsza i szybsza mapa)</span></label><input id=bb placeholder="4 liczby: S,W,N,E, np. 49.5,18,50.5,20"><p class=m>Budowa trwa od pół godziny do godziny. Powstaje mapa „na próbę” obok obecnej, ekran jej nie widzi, dopóki nie zatwierdzisz. PIN zapytam przy kliknięciu.</p><button class=g onclick="buduj()">Zbuduj nową mapę</button></div>';
+ h+='<div id=w class=m></div>';document.getElementById('a').innerHTML=h;
+ if(pr)setTimeout(load,10000)}).catch(e=>document.getElementById('a').textContent='błąd: '+e)}
+load();
+</script></html>"""
 
 
 class H(SimpleHTTPRequestHandler):
