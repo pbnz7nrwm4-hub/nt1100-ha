@@ -316,6 +316,9 @@ class TestZadania(unittest.TestCase):
             Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan) VALUES(?,?,?,?)", nowe, "t",
                  (d - dt.timedelta(days=i)).isoformat(), stan)
         self.assertEqual(Z.seria(nowe), 3)   # dzień 3 bez zadań nie przerywa; dzień 9 dalej niż 3 puste dni
+        # zadania z wcześniejszych testów z terminem „dziś 20:00” wpadały w okno przypomnienia między 19:00 a 20:00
+        # i test padał zależnie od godziny uruchomienia; liczymy tylko przypomnienie dla zadania z tego testu
+        Z.ex("UPDATE zadania SET przypomniano=1 WHERE termin IS NOT NULL")
         POWIADOMIENIA.clear()
         Z.ex("INSERT INTO zadania(dziecko_id,tytul,dzien,stan,termin) VALUES(?,?,?,?,?)", nowe, "Pies", d.isoformat(),
              "do_zrobienia", Z.iso(Z.teraz() + dt.timedelta(minutes=30)))
