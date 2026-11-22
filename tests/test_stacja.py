@@ -98,7 +98,18 @@ class Stacja(unittest.TestCase):
         self.assertTrue(self.post("api/aktualizuj")["ok"])
         self.assertTrue(os.path.exists(os.path.join(T, "st", "aktualizuj")))
         self.assertTrue(json.loads(urllib.request.urlopen(self.url + "api/stan").read())["aktualizacja"]["czeka"])
+        # 1.0.8: alarm, gdy aktualizator stoi (znacznik przycisku nieodebrany >5 min, ostatni bieg >3 h temu)
+        self.assertIsNone(json.loads(urllib.request.urlopen(self.url + "api/stan").read())["aktualizacja"]["stoi"])
+        stary = time.time() - 600
+        os.utime(os.path.join(T, "st", "aktualizuj"), (stary, stary))
+        self.assertIn("przycisk", json.loads(urllib.request.urlopen(self.url + "api/stan").read())["aktualizacja"]["stoi"])
         os.remove(os.path.join(T, "st", "aktualizuj"))
+        with open(os.path.join(T, "st", "aktualizacja"), "w") as f:
+            f.write("2026-11-17 18:07")
+        stary = time.time() - 5 * 3600
+        os.utime(os.path.join(T, "st", "aktualizacja"), (stary, stary))
+        self.assertIn("od 5 h", json.loads(urllib.request.urlopen(self.url + "api/stan").read())["aktualizacja"]["stoi"])
+        os.remove(os.path.join(T, "st", "aktualizacja"))
         self.assertEqual(st["najnowsza"]["wersja"], "2.16.0")
         self.assertTrue(st["port"])
         # 3. wgranie poprzedniej wersji z nagrywaniem od startu

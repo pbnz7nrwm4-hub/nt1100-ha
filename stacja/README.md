@@ -69,6 +69,8 @@ Nagranie przy wgrywaniu startuje dopiero po esptool – otwarty port w czasie re
 
 `python3 tests/test_stacja.py` – port to pty, esptool to atrapa, repozytorium budów to lokalny serwer.
 
+**1.0.8:** instalator zawsze startuje od nowa obie jednostki aktualizatora (`stacja-aktualizacja.timer` i `.path`) i sprawdza, że działają; zegar aktualizacji jest kalendarzowy (co godzinę). Strona pokazuje czerwone ostrzeżenie, gdy aktualizator nie biegł od ponad 3 h albo przycisk „Zaktualizuj teraz” czeka ponad 5 min. Powód: 17–22.11 jednostki stały i Stacja nie aktualizowała się przez 5 dni.
+
 **1.0.7:** kafelek **Mapa** ma odnośnik do strony serwera map (`:8988/info`: wersja, wiek danych, Buduj kandydata). Widok „kandydat kontra wzorzec” dojdzie po zmianach ekranu.
 
 **1.0.6:** przycisk **„Pobierz dziennik z karty ekranu”** (sekcja Demo). Stacja wysyła ekranowi polecenie `DZIENNIK` na USB (ekran 2.17.0 lub nowszy) i zapisuje końcówki `awarie.txt`, `funkcje.txt` i `pamiec.txt` jako dziennik „demo-karta-…” z „Pokaż Claude”. Nie działa w trakcie nagrywania ani wgrywania; karty nie trzeba wyjmować.

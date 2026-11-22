@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.7"
+WERSJA = "1.0.8"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -531,8 +531,22 @@ def aktualizacja():
             kiedy = f.read().strip()
     except OSError:
         kiedy = None
+    # 1.0.8: aktualizator ma biec co godzinę; cisza ponad 3 h (albo znacznik przycisku nieodebrany od 5 min)
+    # znaczy, że jego jednostki stoją – 17–22.11 stały 5 dni i nikt tego nie widział
+    stoi = None
+    try:
+        wiek = time.time() - os.path.getmtime(os.path.join(KAT, "aktualizacja"))
+        if wiek > 3 * 3600:
+            stoi = "aktualizator nie biegł od %d h" % (wiek // 3600)
+    except OSError:
+        pass
+    try:
+        if time.time() - os.path.getmtime(os.path.join(KAT, "aktualizuj")) > 300:
+            stoi = "przycisk „Zaktualizuj teraz” czeka od ponad 5 min – aktualizator nie odbiera"
+    except OSError:
+        pass
     return {"sprawdzono": kiedy, "przycisk": os.path.exists(AKT_JEDNOSTKA),
-            "czeka": os.path.exists(os.path.join(KAT, "aktualizuj"))}
+            "czeka": os.path.exists(os.path.join(KAT, "aktualizuj")), "stoi": stoi}
 
 
 def stan():

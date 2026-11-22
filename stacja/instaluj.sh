@@ -134,9 +134,12 @@ cat > /etc/systemd/system/stacja-aktualizacja.timer <<EOT
 Description=Stacja ekranu – sprawdzanie aktualizacji co godzinę
 
 [Timer]
+# 1.0.8: zegar kalendarzowy zamiast „godzinę po ostatnim uruchomieniu” – nie zależy od historii jednostki,
+# więc rusza także po instalatorze uruchomionym z samego aktualizatora
+OnCalendar=hourly
 OnBootSec=10min
-OnUnitActiveSec=1h
 RandomizedDelaySec=5min
+Persistent=true
 
 [Install]
 WantedBy=timers.target
@@ -144,8 +147,14 @@ EOT
 
 systemctl daemon-reload
 rm -f "$DANE/aktualizuj"
-systemctl enable -q --now stacja.service stacja-aktualizacja.timer stacja-aktualizacja.path
+systemctl enable -q stacja.service stacja-aktualizacja.timer stacja-aktualizacja.path
+# 1.0.8: obie jednostki aktualizatora zawsze startowane od nowa (17.11 po aktualizacji zostały zatrzymane na 5 dni);
+# restart zamiast start, bo instalator bywa uruchamiany z samego aktualizatora, a pliki jednostek właśnie się zmieniły
+systemctl restart stacja-aktualizacja.timer stacja-aktualizacja.path
 systemctl restart stacja.service
+for j in stacja-aktualizacja.timer stacja-aktualizacja.path; do
+  systemctl is-active --quiet "$j" || { echo "UWAGA: $j nie działa – Stacja nie będzie się aktualizować"; systemctl status "$j" --no-pager -n 5 || true; }
+done
 sleep 2
 systemctl is-active --quiet stacja && echo "Stacja działa: http://$(hostname -I | awk '{print $1}'):$PORT" || { journalctl -u stacja -n 30 --no-pager; exit 1; }
 [ -s /etc/stacja/github_token ] || echo "Brak klucza do budów. Wpisz go poleceniem: stacja-klucz"
