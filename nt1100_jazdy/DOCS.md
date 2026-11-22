@@ -46,6 +46,10 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.7.1
+
+Lista „Po drodze” (i lista w zakładce „W trasie”) nie ma już stałej wysokości 340 px: zajmuje tyle miejsca, ile ma panel, a panel przewija się cały.
+
 ## Zmiany w 1.7.0 (Trasy w trzech kartach)
 
 Karta „Planuj” ma trzy części: **Dokąd** (start, cel, pętla, wynik i wysłanie na ekran), **Po drodze** (ciekawe miejsca, stacje,
