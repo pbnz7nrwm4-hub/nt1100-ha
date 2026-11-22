@@ -64,8 +64,8 @@ class Miejsca(unittest.TestCase):
 
         def pob(t):
             wolane.append(list(t))
-            return {x: ("Zdanie pierwsze. " + "x" * 500, "https://upload.wikimedia.org/%s.jpg" % x) for x in t}
-        miejsca.opisy(ms, {"A": {"o": "z pamięci", "z": "https://a/a.jpg"}}, pob, pauza=0)
+            return {x: ("Zdanie pierwsze. " + "x" * 500, "https://upload.wikimedia.org/%s.jpg" % x, 1234) for x in t}
+        miejsca.opisy(ms, {"A": {"o": "z pamięci", "z": "https://a/a.jpg", "d": 99}}, pob, pauza=0)
         self.assertEqual(wolane, [["B"]])
         self.assertEqual((ms[0]["o"], ms[0]["z"]), ("z pamięci", "https://a/a.jpg"))
         self.assertLessEqual(len(ms[1]["o"]), miejsca.OPIS_MAX)
@@ -81,6 +81,44 @@ class Miejsca(unittest.TestCase):
             raise OSError("brak sieci")
         ms2 = miejsca.opisy([{"t": "C"}], {}, pada, pauza=0, log=lambda *_: None)
         self.assertEqual(ms2[0]["o"], "")
+
+
+class Ntm(unittest.TestCase):
+    PRZYKLAD = [
+        {"n": "Zamek Żółć", "g": "zamki", "lat": 50.0, "lon": 19.0, "t": "Zamek w Żółci", "o": "Opis zażółć. " * 3, "d": 50000},
+        {"n": "Muzeum", "g": "muzea", "lat": 49.5, "lon": 20.1, "t": "Muzeum", "o": "Krótko.", "d": 500},
+        {"n": "Bez opisu", "g": "przyroda", "lat": 49.9, "lon": 19.5, "t": "Bez opisu", "o": "", "d": 0},
+    ]
+
+    def test_obie_strony(self):
+        b = miejsca.ntm(self.PRZYKLAD)
+        self.assertEqual(b[:4], b"NTM1")
+        self.assertEqual(len(b), 14 + 20 * 3 + int.from_bytes(b[10:14], "little"))
+        w = miejsca.czytaj_ntm(b)
+        self.assertEqual([x["lat"] for x in w], [49.5, 49.9, 50.0])   # posortowane po szerokości
+        zamek = w[2]
+        self.assertEqual((zamek["g"], zamek["w"], zamek["t"]), (1, 255, "Zamek w Żółci"))
+        self.assertTrue(zamek["o"].startswith("Opis zażółć."))
+        self.assertLess(w[0]["w"], zamek["w"])
+        self.assertEqual(w[1]["w"], 0)   # bez długości artykułu waga 0
+
+    def test_zle_pliki(self):
+        b = miejsca.ntm(self.PRZYKLAD)
+        for zly in (b"", b[:20], b"XXXX" + b[4:], b + b"x", b[:-3]):
+            with self.assertRaises(ValueError):
+                miejsca.czytaj_ntm(zly)
+
+    def test_opis_obciety_do_700_bajtow(self):
+        m = [{"n": "X", "g": "zamki", "lat": 50, "lon": 19, "t": "X", "o": "ż" * 600, "d": 10}]
+        w = miejsca.czytaj_ntm(miejsca.ntm(m))
+        self.assertLessEqual(len(w[0]["o"].encode("utf-8")), 700)
+
+    def test_przyklad_dla_ekranu(self):
+        """Bajty wspólnego testu z parserem ekranu: zapisujemy je, żeby wątek ekranu miał ten sam plik."""
+        sciezka = os.environ.get("NTM_PRZYKLAD")
+        if sciezka:
+            with open(sciezka, "wb") as f:
+                f.write(miejsca.ntm(self.PRZYKLAD))
 
 
 class Zgodnosc(unittest.TestCase):
