@@ -93,6 +93,7 @@ function render(){const se=$("#sel");if(se)WYB=se.value;const d=D,naj=d.najnowsz
  <section class="card" style="order:${window.innerWidth<=640?1:2}"><div class="hd">${IKO.demo}<h2>Demo</h2></div>
   <div class="kv">${nag?`<span>Nagrywa</span><span>${Math.floor(nag.sekund/60)} min ${nag.sekund%60} s · ${Math.round(nag.bajty/1024)} KB</span>`:(ost?`<span>Ostatnie</span><span>${esc(kiedy(ost.kiedy))} · ${ost.minut??"?"} min</span><span>Wynik</span><span style="color:${ost.restarty||ost.awarie?"var(--bad)":"var(--ok)"}">${ost.restarty} restartów${ost.awarie?" · awarie "+ost.awarie:""}</span>`:`<span>Ostatnie</span><span>brak</span>`)}</div>
   <button type="button" class="b-rec" id="bn">${nag?"■ Zatrzymaj nagrywanie":"● Nagrywaj demo"}</button>
+  <button type="button" class="b-link" id="bk" style="min-height:0;font-size:14px;margin-top:8px">Pobierz dziennik z karty ekranu</button>
   <p class="note">Zapis rusza od pierwszej sekundy. Zatrzymaj po ok. 10 min, potem „Pokaż Claude” przy dzienniku.</p></section>
  <section class="card" style="order:3"><div class="hd">${IKO.ratuj}<h2>Ratuj ekran</h2></div>
   <p style="margin:0;color:var(--ink2)">Gdy ekran restartuje się w kółko albo wgrywanie się przerwało.</p>
@@ -114,7 +115,7 @@ function render(){const se=$("#sel");if(se)WYB=se.value;const d=D,naj=d.najnowsz
  $("#app").innerHTML=h;
  const on=(id,f)=>{const e=$(id);if(e)e.onclick=f};
  on("#bw",()=>akcja("api/wgraj",{}));on("#bwp",()=>akcja("api/wgraj",{wersja:$("#sel").value}));on("#br",()=>akcja("api/ratuj",{}));
- on("#bn",()=>akcja(nag?"api/stop":"api/nagrywaj",{}));on("#bs",()=>akcja("api/sprawdz",{}));on("#bakt",()=>akcja("api/aktualizuj",{}));on("#bbl",()=>arkusz(D.blad_wgrania));
+ on("#bn",()=>akcja(nag?"api/stop":"api/nagrywaj",{}));on("#bk",()=>akcja("api/karta",{}));on("#bs",()=>akcja("api/sprawdz",{}));on("#bakt",()=>akcja("api/aktualizuj",{}));on("#bbl",()=>arkusz(D.blad_wgrania));
  document.querySelectorAll("[data-cl]").forEach(b=>b.onclick=()=>pokazClaude(b.dataset.cl))}
 async function akcja(p,b){try{await api(p,b)}catch(e){alert(e.message)}odswiez()}
 async function pokazClaude(plik){arkusz(await api("claude/"+encodeURIComponent(plik)))}

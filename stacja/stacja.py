@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.5"
+WERSJA = "1.0.6"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -219,8 +219,8 @@ def znajdz_port(czekaj_s=0):
         time.sleep(0.5)
 
 
-def otworz_port(port):
-    fd = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+def otworz_port(port, zapis=False):
+    fd = os.open(port, (os.O_RDWR if zapis else os.O_RDONLY) | os.O_NOCTTY | os.O_NONBLOCK)
     try:
         a = termios.tcgetattr(fd)
         a[0] = 0
@@ -280,6 +280,51 @@ class Nagranie(threading.Thread):
                     out.write(("\n# [port zamknięty %s]\n" % time.strftime("%H:%M:%S")).encode())
             if fd is not None:
                 os.close(fd)
+
+
+def pobierz_karte():
+    """1.0.6: polecenie DZIENNIK na porcie ekranu (firmware 2.17.0+) – ekran wypisuje końcówki dzienników z karty
+    (awarie, funkcje, pamięć). Zapis jako dziennik „demo-karta-…”, widoczny na liście z „Pokaż Claude”.
+    Nie w trakcie nagrywania ani wgrywania (port ma wtedy inny właściciel)."""
+    if STAN["nagrywa"] or STAN["zadanie"]:
+        komunikat("Najpierw zatrzymaj nagrywanie albo poczekaj na koniec wgrywania.")
+        return False
+    p = znajdz_port(0)
+    if not p:
+        komunikat("Nie widzę ekranu na USB.")
+        return False
+    try:
+        fd = otworz_port(p, True)
+    except OSError as e:
+        komunikat("Nie mogę otworzyć portu ekranu: %s" % e)
+        return False
+    dane = b""
+    try:
+        os.write(fd, b"\nDZIENNIK\n")
+        koniec = time.time() + 20
+        while time.time() < koniec and b"=== KARTA KONIEC ===" not in dane:
+            r, _, _ = select.select([fd], [], [], 0.5)
+            if r:
+                d = os.read(fd, 4096)
+                if not d:
+                    break
+                dane += d
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+    i = dane.find(b"=== KARTA POCZATEK ===")
+    if i < 0:
+        komunikat("Ekran nie odpowiedział (potrzebna wersja 2.17.0 lub nowsza).")
+        return False
+    os.makedirs(DZIENNIKI, exist_ok=True)
+    plik = os.path.join(DZIENNIKI, "demo-karta-%s.txt" % time.strftime("%Y%m%d-%H%M%S"))
+    with open(plik, "wb") as f:
+        f.write(("# Stacja: nagranie %s, wersja karta\n" % teraz()).encode())
+        f.write(dane[i:])
+    wpis_historii(co="karta", plik=os.path.basename(plik), bajty=len(dane) - i)
+    komunikat("Odczytano dzienniki z karty (%d KB): %s" % ((len(dane) - i) // 1024, os.path.basename(plik)))
+    return True
 
 
 def nagrywaj_start(wersja=None):
@@ -449,6 +494,14 @@ def blad_wgrania():
 def dla_claude(nazwa, linii=80):
     """Krótki tekst do wklejenia w czacie: podsumowanie + błędy + ostatnie linie."""
     p = os.path.join(DZIENNIKI, nazwa)
+    if nazwa.startswith("demo-karta-"):   # odczyt z karty: najpierw awarie (ogon), potem końcówka reszty
+        with open(p, "rb") as f:
+            t = f.read().decode("utf-8", "replace")
+        czesci = re.split(r"(?m)^(?==== plik )", t)
+        awarie = next((c for c in czesci if c.startswith("=== plik awarie.txt")), "")
+        reszta = "".join(c for c in czesci if c.startswith("=== plik ") and c is not awarie)
+        a = awarie[:1] + awarie[1:][-5000:] if len(awarie) > 5000 else awarie
+        return (a + "\n" + reszta[-(MAX_ZNAKOW - len(a) - 2):])[-MAX_ZNAKOW:]
     s = podsumowanie(p)
     with open(p, "rb") as f:
         lin = f.read().decode("utf-8", "replace").splitlines()
@@ -547,6 +600,8 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/nagrywaj":
             nagrywaj_start()
             return self.wyslij(200, {"ok": True})
+        if path == "/api/karta":
+            return self.wyslij(200, {"ok": w_tle(pobierz_karte)})
         if path == "/api/stop":
             nagrywaj_stop()
             return self.wyslij(200, {"ok": True})
