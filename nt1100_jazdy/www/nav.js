@@ -100,7 +100,7 @@ css2.textContent=[
 '.ndemo{margin:12px 0 0}.ndemo .nlink{font-weight:500;font-size:13px;color:var(--mut)}.nempty{text-align:center;padding:22px 10px 8px}.nempty b{display:block;font-size:16px;margin-bottom:4px}',
 '.npick .opt.warn{color:var(--bad)}.npick>div{max-height:85vh;overflow:auto}',
 '.nhero{display:grid;grid-template-columns:1fr 1fr;gap:10px}.nht{background:var(--card2);border-radius:12px;padding:10px 12px;min-width:0}.nhl{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut)}.nht b{display:block;font-size:19px;margin:3px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nht small{display:block;color:var(--mut);font-size:12px;line-height:1.3}@media(min-width:620px){.nhero{grid-template-columns:repeat(4,1fr)}}',
-'@media(min-width:900px){.nsbtn{max-width:480px}}'
+'@media(min-width:900px){.nsbtn{max-width:480px}}.nsbtn[hidden]{display:none}'
 ].join('');
 document.head.append(css2);
 const msg=(e,t,c)=>{e.className='nmsg'+(c?' '+c:'');e.textContent=t||''};
@@ -214,7 +214,7 @@ function plannerCard(V){let k=el('div','card');V.append(k);
   P.sub=el('div','seg nsub');P.subBox={};for(const [m,t] of [['to','Dokąd'],['along','Po drodze'],['opts','Opcje']]){const b=el('button',null,t);b.type='button';b._k=m;b.onclick=()=>subTab(m);P.sub.append(b);P.subBox[m]=el('div','nsubp')}
   k.append(P.sub,P.subBox.to,P.subBox.along,P.subBox.opts);k=P.subBox.to;
   // nad mapą: jedno duże pole „Dokąd jedziesz?” (otwiera wyszukiwarkę celu)
-  const sb=el('button','nsbtn');sb.type='button';sb.innerHTML=ICO.search;sb.append(el('span',null,'Dokąd jedziesz?'));sb.onclick=()=>openSearch('cel');P.bar.append(sb);
+  const sb=el('button','nsbtn');sb.type='button';sb.innerHTML=ICO.search;sb.append(el('span',null,'Dokąd jedziesz?'));sb.onclick=()=>openSearch('cel');P.bar.append(sb);P.sbtn=sb;
   P.trip=el('div','ntrip');P.trip.hidden=true;P.trip.append(el('i'),el('span',null,'Motocykl w trasie · co po drodze ›'));P.trip.onclick=()=>{paneTab('trip');sheet('max')};P.bar.append(P.trip);
   P.pickBar=el('div','npickbar');P.pickBar.hidden=true;P.bar.append(P.pickBar);
   // do celu albo pętla
@@ -245,7 +245,7 @@ const POPOPT={maxWidth:300,get autoPanPaddingTopLeft(){const d=window.innerWidth
 function stickyVars(){if(!P.sc||!P.tabs)return;const t=window.innerWidth>=900?P.tabs.offsetHeight+12:0;   // telefon: kart Planuj/Moje trasy/W trasie nie przyklejamy (zabierały 1/3 panelu)
   P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+8:0))+'px')}
 window.addEventListener('resize',()=>stickyVars());
-function subTab(m){const prev=NV.sub;NV.sub=m;if(m==='along'&&prev!=='along'&&window.innerWidth<900&&P.sheet&&NV.sheetH!=='max')sheet('max');   // telefon: lista miejsc dostaje całą wysokość
+function subTab(m){const prev=NV.sub;NV.sub=m;barVis();if(m==='along'&&prev!=='along'&&window.innerWidth<900&&P.sheet&&NV.sheetH!=='max')sheet('max');   // telefon: lista miejsc dostaje całą wysokość
 if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
@@ -271,7 +271,8 @@ function renderSkip(){if(!P.skipBox)return;P.skipBox.textContent='';const row=el
   for(const sp of NV.skip){const c=el('span','chip');c.append(el('b',null,'✕'),'omiń: '+(sp.name||'miejsce'));c.title='usuń z pomijanych';c.onclick=()=>{NV.skip=NV.skip.filter(x=>x!==sp);renderSkip()};row.append(c)}
   const add=el('span','chip nadd','+ omiń miejscowość');add.onclick=()=>openSearch('skip');row.append(add);P.skipBox.append(row);
   if(NV.map){if(NV.skipL)NV.skipL.remove();NV.skipL=L.layerGroup().addTo(NV.map);for(const sp of NV.skip)L.circle([sp.lat,sp.lon],{radius:sp.r,color:'#e03131',weight:2,dashArray:'6 6',fillOpacity:.08}).bindTooltip('omijam: '+(sp.name||'miejsce')).addTo(NV.skipL)}}
-function setPts(p){NV.pts=p;const n=Math.max(0,p.length-1);NV.legs=NV.legs.slice(0,n);while(NV.legs.length<n)NV.legs.push('');renderPts();drawMarkers()}
+function barVis(){if(P.sbtn)P.sbtn.hidden=!((NV.sub||'to')==='to'&&NV.pts.length<2)}   // 1.7.5: pole „Dokąd jedziesz?” nad mapą tylko do wybrania celu; gdy start i cel są wybrane, jest zbędne
+function setPts(p){NV.pts=p;barVis();const n=Math.max(0,p.length-1);NV.legs=NV.legs.slice(0,n);while(NV.legs.length<n)NV.legs.push('');renderPts();drawMarkers()}
 function setStart(p){const rest=NV.pts.slice(1);setPts([p].concat(rest))}
 function addPt(p){applyPick(NV.pts.length>=2?'stop':'cel',p)}
 const coordTxt=p=>p.lat.toFixed(5)+', '+p.lon.toFixed(5);
