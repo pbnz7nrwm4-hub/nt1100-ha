@@ -46,6 +46,9 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.6.1 (dziennik ekranu do odczytu)
+- Dopisek do kopii dzienników z karty ekranu: `GET /api/nav/dziennik-ekranu` (z kluczem ekranu) podaje listę plików, a z `?plik=awarie.txt&kb=64` ogon wybranego pliku. Dzięki temu dziennik z jazdy da się odczytać bez wyjmowania karty.
+
 ## Zmiany w 1.6.0 (przebieg z Pojazdów, Telegram)
 - **Jedno źródło przebiegu.** Gdy dodatek Pojazdy ma nowszy ręczny odczyt licznika NT1100 (z tankowania, kosztu albo wpisany w Pojazdach) niż ten wpisany tutaj, przebieg liczy się od niego plus jazdy zapisane później. Dzięki temu nie wpisujesz licznika dwa razy, a liczniki serwisowe (olej, łańcuch, przegląd) działają od razu. Wymaga Pojazdów 1.6.0.
 - **Telegram.** Nowa opcja dodatku „Telegram - numer czatu” (Konfiguracja dodatku; numer nie trafia do repozytorium). Idą tam: podsumowanie po jeździe, przypomnienie o serwisie i ostrzeżenie o baterii skrzynki.
