@@ -206,10 +206,13 @@ const ICO={search:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" s
   plus:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   more:'<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'};
 function ib(svg,label,cls){const b=el('button','nib'+(cls?' '+cls:''));b.type='button';b.innerHTML=svg;b.title=label;b.setAttribute('aria-label',label);return b}
-function plannerCard(V){const k=el('div','card');V.append(k);
+function plannerCard(V){let k=el('div','card');V.append(k);
   const hd=el('div','nhead');hd.append(el('b',null,'Nowa trasa'));
   P.veh=el('div','nvseg');for(const [v,t,ti] of [['moto','🏍 Motocykl','motocykl: warianty krętości'],['auto','🚗 Auto','samochód: najszybsza trasa']]){const c=el('button',null,t);c.type='button';c._v=v;c.title=ti;c.onclick=()=>setVehicle(v);P.veh.append(c)}hd.append(P.veh);k.append(hd);
   P.drv=el('div','nrt ndrv');P.drv.hidden=true;k.append(P.drv);
+  // 1.7.0 (Adrian 22.11, propozycja 1): karta Planuj w trzech częściach zamiast jednego długiego słupka
+  P.sub=el('div','seg nsub');P.subBox={};for(const [m,t] of [['to','Dokąd'],['along','Po drodze'],['opts','Opcje']]){const b=el('button',null,t);b.type='button';b._k=m;b.onclick=()=>subTab(m);P.sub.append(b);P.subBox[m]=el('div','nsubp')}
+  k.append(P.sub,P.subBox.to,P.subBox.along,P.subBox.opts);k=P.subBox.to;
   // nad mapą: jedno duże pole „Dokąd jedziesz?” (otwiera wyszukiwarkę celu)
   const sb=el('button','nsbtn');sb.type='button';sb.innerHTML=ICO.search;sb.append(el('span',null,'Dokąd jedziesz?'));sb.onclick=()=>openSearch('cel');P.bar.append(sb);
   P.trip=el('div','ntrip');P.trip.hidden=true;P.trip.append(el('i'),el('span',null,'Motocykl w trasie · co po drodze ›'));P.trip.onclick=()=>{paneTab('trip');sheet('max')};P.bar.append(P.trip);
@@ -224,18 +227,20 @@ function plannerCard(V){const k=el('div','card');V.append(k);
   // pomijane miejscowości
   P.skipBox=el('div','nskip');k.append(P.skipBox);renderSkip();
   const S=NV.data.settings;
-  const op=el('details','ngrp nopts');op.append(el('summary',null,'Więcej: warianty, omijanie dróg, nazwa, punkty na mapie, GPX'));k.append(op);
-  P.var={};P.varC={};const vc=el('div','chips');for(const [v,t] of NV.data.variants){const c=el('span','chip on',t);c.onclick=()=>{c.classList.toggle('on');P.var[v]=c.classList.contains('on')};P.var[v]=true;P.varC[v]=c;vc.append(c)}op.append(el('small',null,'Warianty do porównania:'),vc);
-  P.av={};const ac=el('div','chips');for(const v of NV.data.avoid_all){const on=(S.avoid||[]).includes(v);const c=el('span','chip'+(on?' on':''),'omijaj: '+AVN[v]);c.onclick=()=>{c.classList.toggle('on');P.av[v]=c.classList.contains('on')};P.av[v]=on;ac.append(c)}op.append(ac);
+  const op=P.subBox.opts,ap=P.subBox.along;
+  P.var={};P.varC={};const vc=el('div','chips');for(const [v,t] of NV.data.variants){const c=el('span','chip on',t);c.onclick=()=>{c.classList.toggle('on');P.var[v]=c.classList.contains('on')};P.var[v]=true;P.varC[v]=c;vc.append(c)}op.append(el('b',null,'Rodzaje trasy do porównania'),vc);
+  P.av={};const ac=el('div','chips');for(const v of NV.data.avoid_all){const on=(S.avoid||[]).includes(v);const c=el('span','chip'+(on?' on':''),AVN[v]);c.onclick=()=>{c.classList.toggle('on');P.av[v]=c.classList.contains('on')};P.av[v]=on;ac.append(c)}const ah=el('b',null,'Omijaj');ah.style.cssText='display:block;margin-top:12px';op.append(ah,ac);
   const r3=el('div','nrow');P.name=el('input');P.name.placeholder='nazwa trasy (opcjonalnie)';P.name.maxLength=40;r3.append(P.name);op.append(r3);
-  const mo=el('div','acts');P.poiBtn=el('button',null,'Pokaż na mapie: fotoradary, stacje, widoki');P.poiBtn.onclick=togglePoi;mo.append(P.poiBtn);op.append(mo);P.leg=el('div','nleg');P.leg.hidden=true;for(const [kd,t] of LEG){const sp=el('span');const i=el('i');i.style.background=KIND[kd][1];sp.append(i,t);P.leg.append(sp)}P.legHint=el('small','mut','');P.leg.append(P.legHint);op.append(P.leg);
+  const mo=el('div','acts');P.poiBtn=el('button',null,'Pokaż na mapie: fotoradary, stacje, widoki');P.poiBtn.onclick=togglePoi;mo.append(P.poiBtn);ap.append(mo);P.leg=el('div','nleg');P.leg.hidden=true;for(const [kd,t] of LEG){const sp=el('span');const i=el('i');i.style.background=KIND[kd][1];sp.append(i,t);P.leg.append(sp)}P.legHint=el('small','mut','');P.leg.append(P.legHint);ap.append(P.leg);
   const g=el('div','acts');const f=el('input');f.type='file';f.accept='.gpx,application/gpx+xml';f.hidden=true;const gb=el('button',null,'Wczytaj GPX (np. z Kurvigera) i wyślij na ekran');const gm=el('span','nmsg');gb.onclick=()=>f.click();
   f.onchange=async()=>{const file=f.files[0];if(!file)return;gb.disabled=true;msg(gm,'wczytywanie...');try{const body=await file.arrayBuffer();const r=await api('api/nav/gpx?name='+encodeURIComponent(file.name.replace(/\.gpx$/i,'')),{method:'POST',headers:{'Content-Type':'application/gpx+xml'},body});const j=await r.json();if(!r.ok)throw new Error(j.error||'błąd');msg(gm,'trasa „'+j.route.name+'” ('+j.route.km+' km) zapisana i ustawiona na ekran','ok');NV.data=await J('api/nav/routes');routesCard(null);showRoute(j.route)}catch(e){msg(gm,e.message,'bad')}gb.disabled=false;f.value=''};
   g.append(gb,f,gm);op.append(g);
   const a=el('div','acts ngo');P.go=el('button','pri','Policz trasę');P.go.onclick=plan;a.append(P.go);k.append(a);P.msg=el('div','nmsg');k.append(P.msg);
   P.out=el('div');k.append(P.out);
-  P.along=el('div');P.along.hidden=true;k.append(P.along);
+  P.alongEmpty=el('p','mut','Policz albo wybierz trasę, a tu pojawią się miejsca po drodze: ciekawe miejsca, stacje, jedzenie.');ap.prepend(P.alongEmpty);
+  P.along=el('div');P.along.hidden=true;ap.append(P.along);subTab(NV.sub||'to');
   renderVehicle(true);renderDrive();renderMode()}
+function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
   renderModeBtn();renderPts()}
@@ -423,7 +428,7 @@ function safeFit(b){const m=NV.map;if(!m||!b||!b.isValid())return;m.invalidateSi
   if(!fits(p))p={paddingTopLeft:[10,10],paddingBottomRight:[10,10]};try{m.fitBounds(b,p)}catch(e){try{m.fitBounds(b)}catch(x){}}}
 function fitRoute(b){NV.fit=b;safeFit(b);lockMap(true)}
 function fitAll(){if(!NV.map||!NV.pts.length)return;if(NV.pts.length===1){NV.map.setView([NV.pts[0].lat,NV.pts[0].lon],11);return}safeFit(L.latLngBounds(NV.pts.map(p=>[p.lat,p.lon])))}
-function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];setTimeout(drawLegs,0);NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent=''}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
+function clearPlan(){for(const l of NV.lines)l.remove();NV.lines=[];setTimeout(drawLegs,0);NV.plan=null;NV.sel=null;if(P.out)P.out.textContent='';if(P.along){P.along.hidden=true;P.along.textContent='';if(P.alongEmpty)P.alongEmpty.hidden=false}if(NV.alongL){NV.alongL.remove();NV.alongL=null}}
 function showRoute(r){clearPlan();if(!NV.map||!r.pts)return;const ll=r.pts.map(p=>[p[0],p[1]]);const l=(r.legs&&r.legs.length>1?legLine(r,ll).setStyle({opacity:.9,weight:5}):L.polyline(ll,{color:VCOL[r.variant]||'#3d8bfd',weight:5,opacity:.85})).addTo(NV.map);NV.lines.push(l);fitRoute(l.getBounds());if(r.id)alongFor('id='+r.id,r.name||'trasa',ll);
   if(r.waypoints)for(const w of r.waypoints){if(!w.name||w.name==='cel'||w.name==='start')continue}NV.shown=r.id}
 async function togglePoi(){NV.poiOn=!NV.poiOn;P.leg.hidden=!NV.poiOn;P.poiBtn.textContent=NV.poiOn?'Ukryj POI':'Pokaż POI z mapy (fotoradary, stacje, widoki)';if(NV.poiOn)await loadPoi();else if(NV.poi){NV.poi.remove();NV.poi=null}}
@@ -454,7 +459,7 @@ function poiRows(box,points,opt){box.textContent='';if(!points.length){box.appen
   if(st.length)fuelPrices(st).then(pr=>st.forEach((p,i)=>{const x=pr[i];if(x&&p._row)p._row.append(el('small','fprice','⛽ Pb95 '+x.text))}))}
 
 /* ---- po drodze: POI wzdłuż wybranej trasy */
-async function alongFor(q,label,ll){if(!P.along)return;NV.alongQ=q;NV.alongLL=ll;NV.alongLabel=label;if(NV.alongCat===undefined)NV.alongCat=0;P.along.hidden=false;renderAlong()}
+async function alongFor(q,label,ll){if(!P.along)return;NV.alongQ=q;NV.alongLL=ll;NV.alongLabel=label;if(NV.alongCat===undefined)NV.alongCat=0;P.along.hidden=false;if(P.alongEmpty)P.alongEmpty.hidden=true;renderAlong()}
 async function renderAlong(){const A=P.along;A.textContent='';A.append(el('h2',null,'Po drodze: '+NV.alongLabel));
   const ch=el('div','chips');CATS.forEach((c,i)=>{const b=el('span','chip'+(i===NV.alongCat?' on':''),c[0]);b.onclick=()=>{NV.alongCat=i;renderAlong()};ch.append(b)});A.append(ch);
   const box=el('div','nlist');box.append(el('p','mut','szukanie...'));A.append(box);

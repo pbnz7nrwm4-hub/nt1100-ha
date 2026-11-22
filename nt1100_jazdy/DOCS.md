@@ -46,6 +46,11 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.7.0 (Trasy w trzech kartach)
+
+Karta „Planuj” ma trzy części: **Dokąd** (start, cel, pętla, wynik i wysłanie na ekran), **Po drodze** (ciekawe miejsca, stacje,
+jedzenie wzdłuż policzonej trasy oraz punkty na mapie) i **Opcje** (rodzaje trasy, omijanie, nazwa, GPX).
+
 ## Zmiany w 1.6.4
 
 Dodatek odświeża paczkę ciekawych miejsc co 5 minut (było 6 godzin), więc po „Pobierz ciekawe miejsca teraz” zdjęcia i opisy
