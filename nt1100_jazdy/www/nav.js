@@ -63,7 +63,7 @@ document.head.append(css);
 /* 1.5.26: formularz Start/Cel, wyszukiwarka na cały ekran, pinezki, zakładki panelu */
 const css2=document.createElement('style');
 css2.textContent=[
-'.seg.nstabs{margin:0;position:sticky;top:0;z-index:5;background:var(--card);padding-top:2px;box-shadow:0 12px 0 var(--card)}.seg.nsub{position:sticky;top:var(--st1,52px);z-index:4;margin:0;box-shadow:0 8px 0 var(--card)}.nstk2{position:sticky;top:var(--st2,100px);z-index:3;background:var(--card);padding:6px 0 4px}.nstk2 h2{margin:0 0 6px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
+'.seg.nstabs{margin:0;position:sticky;top:0;z-index:5;background:var(--card);padding-top:2px;box-shadow:0 12px 0 var(--card)}.seg.nsub{position:sticky;top:var(--st1,52px);z-index:4;margin:0;box-shadow:0 8px 0 var(--card)}@media(max-width:899px){.seg.nstabs{position:static;box-shadow:none}}.nstk2{position:sticky;top:var(--st2,100px);z-index:3;background:var(--card);padding:6px 0 4px}.nstk2 h2{margin:0 0 6px}.nstabs button{font-size:14px;padding:8px 4px}.npane[hidden]{display:none}',
 '.nhead{align-items:center;margin-bottom:8px}.nhead>b{font-size:19px;font-weight:700}',
 '.nvseg{display:flex;background:var(--card2);border-radius:999px;padding:3px;gap:2px}.nvseg button{border:0;background:none;border-radius:999px;padding:5px 11px;font-size:13px;color:var(--mut)}.nvseg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 3px #0003}',
 '.nmode{margin:0 0 10px}.nmode button{font-size:14px}',
@@ -242,8 +242,11 @@ function plannerCard(V){let k=el('div','card');V.append(k);
   renderVehicle(true);renderDrive();renderMode()}
 // 1.7.3: dymek miejsca ma się otwierać w widocznej części mapy: poza panelem (komputer: z lewej, telefon: u dołu) i paskiem szukania
 const POPOPT={maxWidth:300,get autoPanPaddingTopLeft(){const d=window.innerWidth>=900;return L.point(d?460:16,80)},get autoPanPaddingBottomRight(){const d=window.innerWidth>=900;return L.point(16,d?16:sheetPx()+16)}};
-function stickyVars(){if(!P.sc||!P.tabs)return;const t=P.tabs.offsetHeight+12;P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+8:0))+'px')}
-function subTab(m){NV.sub=m;if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
+function stickyVars(){if(!P.sc||!P.tabs)return;const t=window.innerWidth>=900?P.tabs.offsetHeight+12:0;   // telefon: kart Planuj/Moje trasy/W trasie nie przyklejamy (zabierały 1/3 panelu)
+  P.sc.style.setProperty('--st1',t+'px');P.sc.style.setProperty('--st2',(t+(P.sub?P.sub.offsetHeight+8:0))+'px')}
+window.addEventListener('resize',()=>stickyVars());
+function subTab(m){const prev=NV.sub;NV.sub=m;if(m==='along'&&prev!=='along'&&window.innerWidth<900&&P.sheet&&NV.sheetH!=='max')sheet('max');   // telefon: lista miejsc dostaje całą wysokość
+if(!P.sub)return;for(const b of P.sub.children)b.classList.toggle('on',b._k===m);for(const x in P.subBox)P.subBox[x].hidden=x!==m;if(P.alongEmpty)P.alongEmpty.hidden=!P.along.hidden;stickyVars()}
 function setMode(m){NV.loop=m==='loop';if(!NV.loop){NV.rt=null;if(P.rt)P.rt.value='';renderRt()}clearPlan();renderMode()}
 function renderMode(){if(P.mode)for(const b of P.mode.children)b.classList.toggle('on',(b._m==='loop')===!!NV.loop);if(P.rtBox)P.rtBox.hidden=!NV.loop;if(P.favBox)P.favBox.hidden=!!NV.loop;
   renderModeBtn();renderPts()}
