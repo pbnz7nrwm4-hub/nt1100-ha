@@ -46,6 +46,12 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.6.3 (zdjęcia ciekawych miejsc)
+
+Ciekawe miejsca mają miniaturę zdjęcia z Wikipedii (jeśli artykuł ją ma). Zdjęcie ładuje się z internetu przy
+wyświetlaniu, paczka zawiera tylko adres. Żeby zdjęcia się pojawiły, trzeba raz pobrać paczkę jeszcze raz
+(strona serwera map → „Pobierz ciekawe miejsca teraz”). Na ekranie Tab5 zdjęć nie będzie.
+
 ## Zmiany w 1.6.2 (ciekawe miejsca przy trasie)
 
 W „Po drodze” jest nowa kategoria **Ciekawe**: zamki, muzea, punkty widokowe i zabytki, które mają artykuł w polskiej

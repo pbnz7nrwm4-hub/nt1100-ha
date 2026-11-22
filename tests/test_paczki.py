@@ -64,11 +64,18 @@ class Miejsca(unittest.TestCase):
 
         def pob(t):
             wolane.append(list(t))
-            return {"B": "Zdanie pierwsze. " + "x" * 500}
-        miejsca.opisy(ms, {"A": "z pamięci"}, pob, pauza=0)
+            return {x: ("Zdanie pierwsze. " + "x" * 500, "https://upload.wikimedia.org/%s.jpg" % x) for x in t}
+        miejsca.opisy(ms, {"A": {"o": "z pamięci", "z": "https://a/a.jpg"}}, pob, pauza=0)
         self.assertEqual(wolane, [["B"]])
-        self.assertEqual(ms[0]["o"], "z pamięci")
+        self.assertEqual((ms[0]["o"], ms[0]["z"]), ("z pamięci", "https://a/a.jpg"))
         self.assertLessEqual(len(ms[1]["o"]), miejsca.OPIS_MAX)
+        self.assertTrue(ms[1]["z"].endswith("B.jpg"))
+        # stary cache (sam napis, bez zdjęcia) jest pobierany jeszcze raz
+        wolane.clear()
+        ms3 = [{"t": "A"}]
+        miejsca.opisy(ms3, {"A": "stary opis"}, pob, pauza=0)
+        self.assertEqual(wolane, [["A"]])
+        self.assertTrue(ms3[0]["z"])
 
         def pada(t):
             raise OSError("brak sieci")

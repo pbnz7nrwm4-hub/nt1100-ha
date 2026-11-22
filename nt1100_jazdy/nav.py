@@ -1030,7 +1030,7 @@ class Nav:
             if d > max_m:
                 continue
             out.append({"lat": m["lat"], "lon": m["lon"], "kind": self.P_CIEKAWE, "name": m.get("n") or m["t"],
-                        "km": round(cum[j] / 1000.0, 1), "off_m": int(d), "idx": j, "opis": m.get("o", ""),
+                        "km": round(cum[j] / 1000.0, 1), "off_m": int(d), "idx": j, "opis": m.get("o", ""), "foto": m.get("z", ""),
                         "grupa": m.get("g", ""),
                         "wiki": "https://pl.wikipedia.org/wiki/" + urllib.parse.quote(m["t"].replace(" ", "_"))})
         out.sort(key=lambda x: (x["km"], x["off_m"]))

@@ -436,7 +436,7 @@ async function loadPoi(){if(!NV.map)return;const b=NV.map.getBounds();if(NV.map.
 const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // ceny Pb95 stacji (1.5.34): Google przez dodatek, pamięć 1 h; bez klucza lub bez ceny – po cichu nic
 async function fuelPrices(pts){try{const j=await post('api/nav/fuel_prices',{places:pts.slice(0,6).map(p=>({lat:p.lat,lon:p.lon,name:p.name||''}))});return j.prices||[]}catch(e){return[]}}
-function popupHtml(p,k){k=k||KIND[p.kind]||['punkt','#888'];return '<b>'+esc(p.name||k[0])+'</b>'+(p.name?'<br>'+esc(k[0]):'')+(p.limit?' · '+p.limit+' km/h':'')+(p.opis?'<br><small>'+esc(p.opis)+'</small>':'')+(p.wiki?'<br><a href="'+esc(p.wiki)+'" target="_blank" rel="noopener">Wikipedia</a>':'')}
+function popupHtml(p,k){k=k||KIND[p.kind]||['punkt','#888'];return '<b>'+esc(p.name||k[0])+'</b>'+(p.name?'<br>'+esc(k[0]):'')+(p.limit?' · '+p.limit+' km/h':'')+(p.foto?'<br><img src="'+esc(p.foto)+'" alt="" loading="lazy" referrerpolicy="no-referrer" style="max-width:240px;border-radius:8px;margin:4px 0">':'')+(p.opis?'<br><small>'+esc(p.opis)+'</small>':'')+(p.wiki?'<br><a href="'+esc(p.wiki)+'" target="_blank" rel="noopener">Wikipedia</a>':'')}
 const kmTxt=x=>(x<10?x.toFixed(1):Math.round(x))+' km';
 function nearIdx(ll,lat,lon){let b=1e18,bi=0;for(let i=0;i<ll.length;i++){const a=ll[i],dy=a[0]-lat,dx=(a[1]-lon)*0.64,d=dy*dy+dx*dx;if(d<b){b=d;bi=i}}return bi}
 function insertWaypoint(p,ll){if(NV.pts.length<2){addPt(p);return}const a=NV.pts.slice();const last=a.pop();const k=nearIdx(ll,p.lat,p.lon);let at=a.length;for(let i=1;i<a.length;i++){if(nearIdx(ll,a[i].lat,a[i].lon)>k){at=i;break}}a.splice(at,0,p);a.push(last);setPts(a);autoPlan()}
@@ -449,7 +449,7 @@ function poiRows(box,points,opt){box.textContent='';if(!points.length){box.appen
   for(const p of points){const k=KIND[p.kind]||['punkt','#888'];const r=el('div','npo');const dot=el('i');dot.style.background=k[1];const tx=el('div','tx');tx.append(el('span',null,p.name||k[0]));
     tx.append(el('small',null,(p.name?k[0]+' · ':'')+opt.dist(p)+(p.off_m!==null&&p.off_m!==undefined?' · '+(p.off_m<1000?p.off_m+' m':(p.off_m/1000).toFixed(1)+' km')+' od trasy':'')));
     const sh=el('button',null,'Pokaż');sh.onclick=()=>{if(!NV.map)return;sheet('mid');NV.map.setView([p.lat,p.lon],15);if(p._m)p._m.openPopup()};
-    if(p.opis)tx.append(el('small','mut',p.opis));r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r);p._row=tx}
+    if(p.foto){const im=el('img');im.src=p.foto;im.loading='lazy';im.referrerPolicy='no-referrer';im.alt='';im.style.cssText='width:100%;max-width:240px;border-radius:8px;margin:4px 0;display:block';im.onerror=()=>im.remove();tx.append(im)}if(p.opis)tx.append(el('small','mut',p.opis));r.append(dot,tx,sh);for(const b of opt.buttons(p))r.append(b);box.append(r);p._row=tx}
   const st=points.filter(p=>p.kind===10).slice(0,6);
   if(st.length)fuelPrices(st).then(pr=>st.forEach((p,i)=>{const x=pr[i];if(x&&p._row)p._row.append(el('small','fprice','⛽ Pb95 '+x.text))}))}
 

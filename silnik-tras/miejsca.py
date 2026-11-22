@@ -5,8 +5,8 @@
 
 Źródło: znacznik OSM wikipedia=pl:Tytuł (obiekt jest „znany”, bo ma artykuł). Opis (2 zdania wstępu) pobierany
 raz z pl.wikipedia.org i pamiętany w pliku cache – kolejne budowy pytają tylko o nowe tytuły, a wynik działa
-bez internetu. Wynik: {"built","n","grupy":{...},"miejsca":[{"n","g","lat","lon","t","o"}]}
-(n nazwa, g grupa, t tytuł artykułu, o opis). Obiekty z artykułem tylko w innym języku są pomijane (liczone).
+bez internetu. Wynik: {"built","n","grupy":{...},"miejsca":[{"n","g","lat","lon","t","o","z"}]}
+(n nazwa, g grupa, t tytuł artykułu, o opis, z adres miniatury zdjęcia z Wikipedii/Commons albo ""). Obiekty z artykułem tylko w innym języku są pomijane (liczone).
 """
 import json
 import os
@@ -36,6 +36,7 @@ TAGI = (
 FILTR = ["nwr/wikipedia"]
 API = "https://pl.wikipedia.org/w/api.php"
 OPIS_MAX = 320
+MINIATURA = 320   # szerokość miniatury zdjęcia w pikselach
 
 
 def grupa(tags):
@@ -102,9 +103,10 @@ def skroc(tekst):
 
 
 def pobierz_wiki(tytuly):
-    """Wstępy artykułów dla do 20 tytułów: {tytuł podany: opis}. Sieć; w testach podmieniane."""
-    q = urllib.parse.urlencode({"action": "query", "prop": "extracts", "exintro": 1, "explaintext": 1, "exsentences": 2,
-                                "exlimit": 20, "redirects": 1, "format": "json", "titles": "|".join(tytuly)})
+    """Wstępy i miniatury artykułów dla do 20 tytułów: {tytuł podany: (opis, adres miniatury)}. Sieć; w testach podmieniane."""
+    q = urllib.parse.urlencode({"action": "query", "prop": "extracts|pageimages", "exintro": 1, "explaintext": 1,
+                                "exsentences": 2, "exlimit": 20, "piprop": "thumbnail", "pithumbsize": MINIATURA,
+                                "redirects": 1, "format": "json", "titles": "|".join(tytuly)})
     req = urllib.request.Request(API + "?" + q, headers={"User-Agent": "NT1100-mapa/1 (mapa offline)"})
     with urllib.request.urlopen(req, timeout=30) as r:
         d = json.loads(r.read()).get("query", {})
@@ -112,30 +114,36 @@ def pobierz_wiki(tytuly):
     for k in ("normalized", "redirects"):
         for e in d.get(k, []):
             alias[e["from"]] = e["to"]
-    strony = {p.get("title"): p.get("extract", "") for p in d.get("pages", {}).values()}
+    strony = {p.get("title"): (p.get("extract", ""), (p.get("thumbnail") or {}).get("source", ""))
+              for p in d.get("pages", {}).values()}
     out = {}
     for t in tytuly:
         cel = t
         for _ in range(3):
             cel = alias.get(cel, cel)
-        out[t] = strony.get(cel, "")
+        out[t] = strony.get(cel, ("", ""))
     return out
 
 
 def opisy(miejsca, cache, pobierz=pobierz_wiki, pauza=0.2, log=print):
     """Dopisuje „o” z cache albo z Wikipedii (po 20 tytułów). Błąd sieci nie przerywa: miejsce zostaje bez opisu."""
-    brak = [m["t"] for m in miejsca if m["t"] not in cache]
+    # wpisy z cache sprzed zdjęć (zwykły napis) pobieramy jeszcze raz, żeby mieć miniaturę
+    brak = [m["t"] for m in miejsca if not isinstance(cache.get(m["t"]), dict)]
     for i in range(0, len(brak), 20):
         part = brak[i:i + 20]
         try:
-            for t, o in pobierz(part).items():
-                cache[t] = skroc(o)
+            for t, (o, z) in pobierz(part).items():
+                cache[t] = {"o": skroc(o), "z": z}
         except Exception as e:  # noqa: BLE001 - sieć bywa niedostępna, budowa ma się skończyć
             log("Wikipedia: błąd przy %d–%d: %s" % (i, i + len(part), e))
         if pauza:
             time.sleep(pauza)
     for m in miejsca:
-        m["o"] = cache.get(m["t"], "")
+        c = cache.get(m["t"], "")
+        if isinstance(c, dict):
+            m["o"], m["z"] = c.get("o", ""), c.get("z", "")
+        else:
+            m["o"], m["z"] = c, ""
     return miejsca
 
 
@@ -168,11 +176,13 @@ def main():
         json.dump(cache, f, ensure_ascii=False)
     os.replace(cache_p + ".tmp", cache_p)
     wynik = {"built": time.strftime("%Y-%m-%d"), "n": len(miejsca), "bez_opisu": sum(1 for m in miejsca if not m["o"]),
+             "ze_zdjeciem": sum(1 for m in miejsca if m.get("z")),
              "inny_jezyk": inny, "grupy": GRUPY, "miejsca": miejsca}
     with open(wyj + ".tmp", "w") as f:
         json.dump(wynik, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(wyj + ".tmp", wyj)
-    print("ciekawe miejsca: %d (bez opisu %d, pominięte bez polskiego artykułu %d)" % (wynik["n"], wynik["bez_opisu"], inny))
+    print("ciekawe miejsca: %d (bez opisu %d, ze zdjęciem %d, pominięte bez polskiego artykułu %d)"
+          % (wynik["n"], wynik["bez_opisu"], wynik["ze_zdjeciem"], inny))
 
 
 if __name__ == "__main__":
