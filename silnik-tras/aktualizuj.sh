@@ -67,7 +67,7 @@ aktualizuj_skrypty() {
   fi
   # 1.5.48: config.yml i motocykl.json z repozytorium leżą w bin/ jako wzór; do użytku wchodzą dopiero przy budowie
   # grafu (krok 5), bo działający silnik musi pasować do swojego grafu (np. tryb LM z e3)
-  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py config.yml motocykl.json; do
+  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py kontrola_zgodnosci.py config.yml motocykl.json; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"
@@ -112,6 +112,26 @@ buduj_mape() {
   systemctl start nt1100-mapa.service
   systemctl start nt1100-trasy.service || true
 }
+
+# Kandydat (z GUI „Buduj”): mapa budowana do www/mapa.kandydat z obecnych danych OSM, bieżąca mapa NIETKNIĘTA.
+# Dodatkowe argumenty (np. --bbox) idą do build_map.py. Wynik kontroli zgodności: www/kandydat.json.
+if [ "${1:-}" = "--kandydat" ]; then
+  shift
+  [ -s "$PBF" ] || { koniec false "brak danych OSM do budowy kandydata"; exit 1; }
+  etap "kandydat: budowa mapy (trasy nie liczą się)" 2
+  systemctl stop nt1100-trasy.service || true
+  trap 'systemctl start nt1100-trasy.service || true' EXIT
+  rm -rf "$KAT/www/mapa.kandydat"
+  python3 "$KAT/bin/build_map.py" "$PBF" "$KAT/www/mapa.kandydat" "$@" || { koniec false "budowa kandydata nieudana"; exit 1; }
+  etap "kandydat: kontrola zgodności" 3
+  if [ -s "$KAT/www/zgodnosc.json" ]; then
+    python3 "$KAT/bin/kontrola_zgodnosci.py" "$KAT/www/mapa.kandydat" "$KAT/www/zgodnosc.json" --json "$KAT/www/kandydat.json" || true
+  else
+    echo '{"ok":false,"powody":["brak zgodnosc.json z firmware – nie ma z czym porównać"]}' > "$KAT/www/kandydat.json"
+  fi
+  koniec true "kandydat gotowy (kontrola: www/kandydat.json), bieżąca mapa bez zmian"
+  exit 0
+fi
 
 if [ "${1:-}" = "--sprawdz" ]; then
   if [ -s "$KAT/www/mapa/manifest.json" ] && [ -s "$PBF" ] && ! mapa_aktualna; then
