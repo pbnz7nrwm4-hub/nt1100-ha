@@ -46,6 +46,11 @@ z encjami (MQTT), pogoda na trasie, przebieg i serwis oraz powiadomienie po każ
 
 Więcej objawów i przyczyn: `docs/problemy.md` w repozytorium.
 
+## Zmiany w 1.7.2
+
+Przy przewijaniu panelu Tras na górze zostają przyciski kart (Planuj, Moje trasy, W trasie), części (Dokąd, Po drodze, Opcje) oraz
+nagłówek i rodzaje miejsc w „Po drodze” (stacje, jedzenie, ciekawe…). Przewija się tylko lista.
+
 ## Zmiany w 1.7.1
 
 Lista „Po drodze” (i lista w zakładce „W trasie”) nie ma już stałej wysokości 340 px: zajmuje tyle miejsca, ile ma panel, a panel przewija się cały.
