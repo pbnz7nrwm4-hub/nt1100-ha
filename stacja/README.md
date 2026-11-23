@@ -69,6 +69,8 @@ Nagranie przy wgrywaniu startuje dopiero po esptool – otwarty port w czasie re
 
 `python3 tests/test_stacja.py` – port to pty, esptool to atrapa, repozytorium budów to lokalny serwer.
 
+**1.1.0:** „Odczytaj kartę” (ekran 2.19.1+) pobiera też najnowszy zrzut awarii z karty (`awaria-….bin`, zapis obok dziennika w katalogu dzienników) i dłuższy dziennik (funkcje.txt do 96 KB, czas oczekiwania 60 s). Działa przy podłączonym ekranie, bez wyjmowania karty; zrzut rozszyfrowuje się plikiem .elf tej budowy.
+
 **1.0.9:** w tabeli dzienników przy „RAM min” widać, od której sekundy po starcie ekranu pamięć po raz pierwszy zeszła do najniższej wartości, i różnicę względem poprzedniego dziennika z odczytem pamięci (np. „od 25 min od startu · −129 KB wobec poprzedniego”). Powód: w demo 2.19.0 RAM min spadło do 106 KB (wzorzec 235 KB) i trzeba wskazać moment spadku.
 
 **1.0.8:** instalator zawsze startuje od nowa obie jednostki aktualizatora (`stacja-aktualizacja.timer` i `.path`) i sprawdza, że działają; zegar aktualizacji jest kalendarzowy (co godzinę). Strona pokazuje czerwone ostrzeżenie, gdy aktualizator nie biegł od ponad 3 h albo przycisk „Zaktualizuj teraz” czeka ponad 5 min. Powód: 17–22.11 jednostki stały i Stacja nie aktualizowała się przez 5 dni.

@@ -9,6 +9,8 @@ Tylko biblioteka standardowa; port szeregowy przez termios; wgrywanie przez espt
 Uruchom: python3 stacja.py [--port-www 8990]
 """
 import argparse
+import base64
+import binascii
 import glob
 import hashlib
 import json
@@ -25,7 +27,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.0.9"
+WERSJA = "1.1.0"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -301,7 +303,7 @@ def pobierz_karte():
     dane = b""
     try:
         os.write(fd, b"\nDZIENNIK\n")
-        koniec = time.time() + 20
+        koniec = time.time() + 60   # 1.1.0: plik funkcje.txt do 96 KB i zrzut awarii (base64)
         while time.time() < koniec and b"=== KARTA KONIEC ===" not in dane:
             r, _, _ = select.select([fd], [], [], 0.5)
             if r:
@@ -323,8 +325,28 @@ def pobierz_karte():
         f.write(("# Stacja: nagranie %s, wersja karta\n" % teraz()).encode())
         f.write(dane[i:])
     wpis_historii(co="karta", plik=os.path.basename(plik), bajty=len(dane) - i)
-    komunikat("Odczytano dzienniki z karty (%d KB): %s" % ((len(dane) - i) // 1024, os.path.basename(plik)))
+    zr = zapisz_zrzut(dane[i:], plik)
+    komunikat("Odczytano dzienniki z karty (%d KB): %s%s" % ((len(dane) - i) // 1024, os.path.basename(plik),
+                                                        (", zrzut awarii: %s" % zr) if zr else ""))
     return True
+
+
+def zapisz_zrzut(dane, plik_dziennika):
+    """1.1.0: ekran (2.19.1+) wysyła najnowszy zrzut awarii jako base64 między znacznikami; zapis jako .bin obok dziennika
+    (do rozszyfrowania z plikiem .elf tej budowy). Zwraca nazwę pliku albo None."""
+    m = re.search(rb"=== awaria (awaria-[A-Za-z0-9_.-]+\.bin) (\d+) ===\r?\n(.*?)=== awaria koniec ===", dane, re.S)
+    if not m:
+        return None
+    try:
+        bin_ = base64.b64decode(b"".join(m.group(3).split()))
+    except (ValueError, binascii.Error):
+        return None
+    if len(bin_) != int(m.group(2)):
+        return None
+    nazwa = m.group(1).decode()
+    with open(os.path.join(os.path.dirname(plik_dziennika), nazwa), "wb") as f:
+        f.write(bin_)
+    return nazwa
 
 
 def nagrywaj_start(wersja=None):
