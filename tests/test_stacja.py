@@ -200,3 +200,19 @@ class RamRoznica(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ZrzutAwarii(unittest.TestCase):
+    def test_zapis_zrzutu_z_base64(self):
+        """1.1.0: zrzut awarii przesłany przez ekran jako base64 trafia do pliku .bin obok dziennika."""
+        import base64
+        dane = bytes(range(256)) * 3
+        tekst = ("=== plik funkcje.txt (1 B, od 0) ===\nx\n=== awaria awaria-6662643164-1795392615.bin %d ===\n" % len(dane)).encode()
+        b = base64.b64encode(dane)
+        tekst += b"\n".join(b[i:i + 192] for i in range(0, len(b), 192)) + b"\n=== awaria koniec ===\n=== KARTA KONIEC ===\n"
+        kat = tempfile.mkdtemp(prefix="stacja-zr-")
+        nazwa = S.zapisz_zrzut(tekst, os.path.join(kat, "demo-karta-x.txt"))
+        self.assertEqual(nazwa, "awaria-6662643164-1795392615.bin")
+        with open(os.path.join(kat, nazwa), "rb") as f:
+            self.assertEqual(f.read(), dane)
+        self.assertIsNone(S.zapisz_zrzut(b"nic", os.path.join(kat, "x.txt")))
