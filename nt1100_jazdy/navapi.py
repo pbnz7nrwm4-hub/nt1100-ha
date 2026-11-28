@@ -1134,6 +1134,38 @@ def screen_routes(idx, n=8):
              "fav": bool(r.get("fav"))} for r in rs[:n]]
 
 
+def apex_proxy(h, name):
+    """Apex 0.2: paczka mapy aplikacji na Androida z kontenera nawigacji (www/apex, buduje apex-paczka.sh).
+    manifest.json: {bytes, sha256, built}; map.zip przesyłany kawałkami, bez trzymania w pamięci dodatku."""
+    import urllib.request
+    base = NAV.settings().get("map_url")
+    if not base:
+        return h.send(404, {"ok": False, "error": "brak kontenera mapy"})
+    try:
+        r = urllib.request.urlopen("%s/apex/%s" % (base.rstrip("/"), name), timeout=15)
+    except urllib.error.HTTPError as e:
+        return h.send(404 if e.code == 404 else 502, {"ok": False, "error": "paczka Apex niegotowa (MAPA_APEX=1 w obszar.env i przebudowa)"})
+    except Exception:
+        return h.send(502, {"ok": False, "error": "kontener mapy nie odpowiada"})
+    with r:
+        if name == "manifest.json":
+            return h.send(200, json.loads(r.read(65536)))
+        size = int(r.headers.get("Content-Length") or 0)
+        h.send_response(200)
+        h.send_header("Content-Type", "application/zip")
+        h.send_header("Content-Length", str(size))
+        h.send_header("Cache-Control", "no-store")
+        h.end_headers()
+        if h.command == "HEAD":
+            return True
+        while True:
+            chunk = r.read(262144)
+            if not chunk:
+                break
+            h.wfile.write(chunk)
+    return True
+
+
 def screen_authorized(h, q):
     """Ekran: własny klucz ekranu zawsze; klucz skrzynki tylko, dopóki nie włączono „tylko klucz ekranu”
     (ekrany sprzed 1.5.35 mają wpisany klucz skrzynki). Klucz w nagłówku X-Klucz albo ?klucz=."""
@@ -1258,6 +1290,8 @@ def screen_get(h, path, q):
             if rid <= 0 or not os.path.exists(p):
                 return h.send(404, {"ok": False, "error": "brak trasy"}) or True
             return h.send_path(p, "application/octet-stream" if p.endswith(".ntr") else "application/json") or True
+        if path in ("/api/nav/apex/manifest.json", "/api/nav/apex/map.zip"):
+            return apex_proxy(h, path.rsplit("/", 1)[1]) or True
         if path == "/api/nav/mapa/manifest.json":
             m = NAV.screen_manifest()
             if not m:
