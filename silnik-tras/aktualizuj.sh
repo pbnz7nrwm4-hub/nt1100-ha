@@ -69,7 +69,7 @@ aktualizuj_skrypty() {
   fi
   # 1.5.48: config.yml i motocykl.json z repozytorium leżą w bin/ jako wzór; do użytku wchodzą dopiero przy budowie
   # grafu (krok 5), bo działający silnik musi pasować do swojego grafu (np. tryb LM z e3)
-  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py kontrola_zgodnosci.py pakiety.py miejsca.py config.yml motocykl.json; do
+  for plik in build_map.py siec.py mapa-serwer.py aktualizuj.sh kafelki.sh dem.py pusta_woda.py pomiar_mapy.py kontrola_zgodnosci.py pakiety.py miejsca.py config.yml motocykl.json apex-paczka.sh apex-build.sh apex-prep-vector.py apex-style-moto-day.json apex-style-moto-night.json apex-style-car-day.json apex-style-car-night.json; do
     [ -s "$tmp/$plik" ] || continue
     if ! cmp -s "$tmp/$plik" "$KAT/bin/$plik"; then
       cp "$tmp/$plik" "$KAT/bin/$plik.nowy" && mv "$KAT/bin/$plik.nowy" "$KAT/bin/$plik"
@@ -113,6 +113,16 @@ buduj_mape() {
   rm -rf "$KAT/www/mapa.stara"
   systemctl start nt1100-mapa.service
   systemctl start nt1100-trasy.service || true
+  buduj_apex
+}
+
+# Apex (aplikacja na Androida): paczka mapy do pobrania przez dodatek (www/apex). Włączane MAPA_APEX=1 w obszar.env;
+# błąd nie psuje reszty budowy, poprzednia paczka zostaje.
+buduj_apex() {
+  [ "${MAPA_APEX:-0}" = "1" ] || return 0
+  [ -x "$KAT/bin/apex-paczka.sh" ] || chmod +x "$KAT/bin/apex-paczka.sh" "$KAT/bin/apex-build.sh" 2>/dev/null || true
+  etap "paczka mapy dla Apex" 2
+  "$KAT/bin/apex-paczka.sh" || echo "$(date '+%F %T') paczka Apex nieudana, zostaje poprzednia"
 }
 
 # Paczka „Ciekawe miejsca” (Wikipedia): www/miejsca.json dla dodatku; błąd nie psuje reszty budowy.
