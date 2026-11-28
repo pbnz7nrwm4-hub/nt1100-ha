@@ -1151,13 +1151,36 @@ def apex_proxy(h, name):
         if name == "manifest.json":
             return h.send(200, json.loads(r.read(65536)))
         size = int(r.headers.get("Content-Length") or 0)
-        h.send_response(200)
+        start = 0
+        rng = (h.headers.get("Range") or "").strip()
+        if rng:
+            import re
+            m = re.fullmatch(r"bytes=(\d+)-", rng)
+            if not m or int(m.group(1)) >= size > 0:
+                h.send_response(416)
+                h.send_header("Content-Range", "bytes */%d" % size)
+                h.send_header("Content-Length", "0")
+                h.end_headers()
+                return True
+            start = int(m.group(1))
+        if start:
+            h.send_response(206)
+            h.send_header("Content-Range", "bytes %d-%d/%d" % (start, size - 1, size))
+        else:
+            h.send_response(200)
         h.send_header("Content-Type", "application/zip")
-        h.send_header("Content-Length", str(size))
+        h.send_header("Content-Length", str(size - start))
+        h.send_header("Accept-Ranges", "bytes")
         h.send_header("Cache-Control", "no-store")
         h.end_headers()
         if h.command == "HEAD":
             return True
+        skip = start
+        while skip:
+            skipped = r.read(min(skip, 262144))
+            if not skipped:
+                return True
+            skip -= len(skipped)
         while True:
             chunk = r.read(262144)
             if not chunk:
