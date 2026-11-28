@@ -78,3 +78,23 @@ Nagranie przy wgrywaniu startuje dopiero po esptool – otwarty port w czasie re
 **1.0.7:** kafelek **Mapa** ma odnośnik do strony serwera map (`:8988/info`: wersja, wiek danych, Buduj kandydata). Widok „kandydat kontra wzorzec” dojdzie po zmianach ekranu.
 
 **1.0.6:** przycisk **„Pobierz dziennik z karty ekranu”** (sekcja Demo). Stacja wysyła ekranowi polecenie `DZIENNIK` na USB (ekran 2.17.0 lub nowszy) i zapisuje końcówki `awarie.txt`, `funkcje.txt` i `pamiec.txt` jako dziennik „demo-karta-…” z „Pokaż Claude”. Nie działa w trakcie nagrywania ani wgrywania; karty nie trzeba wyjmować.
+
+## Apex – serwer aplikacji nawigacji na Androida (od 1.2.0)
+
+Strona `/apex` (zakładka „Apex” obok „Ekran Tab5”) i adresy `/api/nav/apex/…` dla tabletu. Tylko sieć domowa (żądanie
+z adresu spoza sieci prywatnej albo ze śladem serwera pośredniego, np. tunelu, dostaje 403); dostęp spoza domu osobno.
+
+**Pierwsze uruchomienie:** otwórz `/apex`, ustaw PIN (4–12 cyfr), w „Klucze” kliknij „Generuj nowy” (klucz aplikacji) i wklej
+klucz TomTom, potem „Pokaż” przy kluczu aplikacji i wpisz go na tablecie (Apex → Ustawienia → Połączenia, razem z adresem Stacji).
+Klucze i skrót PIN-u leżą tylko w `/var/lib/stacja/apex/ustawienia.json` (0600), nigdy w repozytorium, logach ani w stanie strony.
+
+**Wgrywanie wersji:** pobierz artefakt `nt1100-debug` z GitHub Actions, rozpakuj ZIP i wgraj `app-debug.apk`. Stacja odczytuje
+pakiet, `versionCode` i `versionName` z pliku; odrzuca inny pakiet niż `pl.nt1100` oraz `versionCode` nie większy od najnowszego
+(Android nie zaktualizuje do niższej; „wymuś” tylko świadomie). Gdy wersji nie da się odczytać, wpisz ją ręcznie (też z „wymuś”).
+Nowo wgrana wersja jest bieżąca; „Ustaw jako bieżącą” cofa wydanie. Usunięcie: z potwierdzeniem, bieżącej i jedynej wersji tylko z ostrzeżeniem.
+
+**Kontrakt (nagłówek `X-Klucz`, brak/zły = 401):** `GET …/app/manifest.json` (`versionCode`, `versionName`, `bytes`, `sha256`; 404 gdy
+brak wersji), `GET …/app/apex.apk` (Range: 206/416), `GET …/config` (`{"tomtomKey": …}`), `POST …/log` (tekst albo zip do 5 MB,
+nazwa z datą i wersją z `User-Agent: Apex/<wersja>`), `POST …/route.ntr` (501). Dzienniki: `/var/lib/stacja/apex/dzienniki/`
+(ostatnie 200), w GUI podgląd i pobranie. Pliki wersji: `/var/lib/stacja/apex/wersje/<versionCode>/` (kopia katalogu danych Stacji
+obejmuje je razem z resztą).

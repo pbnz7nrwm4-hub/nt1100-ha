@@ -27,7 +27,9 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-WERSJA = "1.1.0"
+import apex  # 1.2.0: serwer aplikacji Apex (APK, konfiguracja, dziennik z tabletu)
+
+WERSJA = "1.2.0"
 KAT = os.path.expanduser(os.environ.get("STACJA_KATALOG", "/var/lib/stacja"))
 BUDOWY = os.path.join(KAT, "budowy")
 DZIENNIKI = os.path.join(KAT, "dzienniki")
@@ -613,6 +615,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if apex.obsluz(self, "GET"):
+            return
+        if path == "/apex":
+            with open(os.path.join(WWW, "apex.html"), "rb") as f:
+                return self.wyslij(200, f.read(), "text/html; charset=utf-8")
         if path in ("/", "/index.html"):
             with open(os.path.join(WWW, "index.html"), "rb") as f:
                 return self.wyslij(200, f.read(), "text/html; charset=utf-8")
@@ -628,6 +635,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        if apex.obsluz(self, "POST"):
+            return
         n = int(self.headers.get("Content-Length") or 0)
         try:
             j = json.loads(self.rfile.read(min(n, 65536)) or b"{}") if n else {}
@@ -665,6 +674,7 @@ def main():
     a = ap.parse_args()
     for d in (KAT, BUDOWY, DZIENNIKI):
         os.makedirs(d, exist_ok=True)
+    apex.otworz(KAT)
     komunikat("Stacja uruchomiona.")
     if os.environ.get("STACJA_PETLA", "1") == "1":
         threading.Thread(target=petla_budow, daemon=True).start()
